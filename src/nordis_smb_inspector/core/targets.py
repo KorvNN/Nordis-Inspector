@@ -8,11 +8,10 @@ import socket
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TypeAlias
 
-IPAddress: TypeAlias = ipaddress.IPv4Address | ipaddress.IPv6Address
-IPNetwork: TypeAlias = ipaddress.IPv4Network | ipaddress.IPv6Network
-Resolver: TypeAlias = Callable[[str], Sequence[str | IPAddress]]
+type IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+type IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+type Resolver = Callable[[str], Sequence[str | IPAddress]]
 
 _SPLIT_TARGETS = re.compile(r"[\n,]+")
 _HOST_LABEL = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
@@ -65,7 +64,7 @@ class ResolutionFailure:
     message: str
 
 
-ExpansionEvent: TypeAlias = ExpandedTarget | ResolutionFailure
+type ExpansionEvent = ExpandedTarget | ResolutionFailure
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,10 +195,10 @@ def _parse_one(raw: str) -> TargetSpec:
 
     try:
         address = ipaddress.ip_address(raw)
-    except ValueError:
+    except ValueError as exc:
         # A mistyped IPv4 address must not silently become a DNS hostname.
         if _IPV4_LIKE.fullmatch(raw):
-            raise ValueError("Invalid IP address.")
+            raise ValueError("Invalid IP address.") from exc
         hostname = _normalize_hostname(raw)
         return TargetSpec(source=raw, kind=TargetKind.HOSTNAME, value=hostname)
     return TargetSpec(source=raw, kind=TargetKind.IP, value=address)

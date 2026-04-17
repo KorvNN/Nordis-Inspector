@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Nordis SMB Inspector</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body data-csrf-token="{{ csrf_token }}" data-origin="{{ app_origin }}">
+  <header class="topbar">
+    <div>
+      <h1>NordisGlobal SMB Inspector</h1>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero-grid">
+      <article class="panel scope-panel">
+        <div class="section-heading">
+          <div>
+            <p class="step">01 · Kapsam</p>
+            <h2>Hedefleri tanımla</h2>
+          </div>
+          <span id="scope-state" class="state idle">Bekliyor</span>
+        </div>
+
+        <label for="targets">IP, CIDR veya hostname</label>
+        <textarea id="targets" rows="6" spellcheck="false"
+          placeholder="10.20.30.15, 10.20.40.0/24&#10;filesrv01.nordis.local"></textarea>
+        <p class="hint">Virgül veya yeni satırla karışık girebilirsin. Önizleme tarama yapmaz.</p>
+        <div class="actions">
+          <button id="preview-button" type="button">Kapsamı çözümle</button>
+          <span id="preview-summary" class="summary" aria-live="polite"></span>
+        </div>
+      </article>
+
+      <article class="panel status-panel">
+        <div class="section-heading">
+          <div>
+            <p class="step">Canlı durum</p>
+            <h2 id="scan-phase">Tarama yok</h2>
+          </div>
+          <span id="scan-status" class="state idle">IDLE</span>
+        </div>
+        <div class="progress-track" aria-label="Tarama ilerlemesi">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+        <div class="metric-grid">
+          <div><strong id="inventory-count">0</strong><span>Envanter</span></div>
+          <div><strong id="finding-count">0</strong><span>Bulgu</span></div>
+          <div><strong id="phase-percent">—</strong><span>Faz</span></div>
+        </div>
+        <p id="progress-message" class="hint">Yeni bir tarama başlatılmadı.</p>
+      </article>
+    </section>
+
+    <section class="panel preview-panel">
+      <div class="section-heading">
+        <div>
+          <p class="step">Çözümlenen kapsam</p>
+          <h2>Hedef envanteri</h2>
+        </div>
+        <span id="row-count" class="summary">0 satır</span>
+      </div>
+      <div id="preview-errors" class="error-list" hidden></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Kaynak</th>
+              <th>Çözümlenen adres</th>
+              <th>Tür</th>
+              <th>Durum</th>
+            </tr>
+          </thead>
+          <tbody id="target-rows">
+            <tr class="empty-row"><td colspan="4">Henüz kapsam çözümlenmedi.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

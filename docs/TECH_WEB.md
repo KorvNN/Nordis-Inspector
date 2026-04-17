@@ -135,13 +135,14 @@ iptal düğmesi, uygulama kapanışı veya fatal scan hatasıyla gerçekleşir.
 
 CCache ve yüklenen wordlist için genel multipart `UploadFile` akışına güvenmek
 yerine ayrı bir raw-body upload endpoint'i kullanılmalı. İstek
-`Request.stream()` ile parçalı okunur, açık bir request-body limiti içinde RAM'de
-tutulur ve scan session'a devredilir. Starlette, `Request.stream()` kullanımında
-tüm body'nin bellekte biriktirilmediğini ve request body limit middleware'ini
-belgeler ([request streaming](https://www.starlette.io/requests/),
-[body limit](https://www.starlette.io/middleware/#requestbodylimitmiddleware)).
-Bu seçim, framework'ün multipart parser'ının olası spool/temp-file davranışına
-bağımlı kalmamamızı sağlar.
+`Request.stream()` ile parçalı okunur, uygulamanın kendi byte sayacı açık limite
+ulaştığında akışı keser ve kabul edilen veri RAM'de scan session'a devredilir.
+Starlette, `Request.stream()` kullanımında tüm body'nin bellekte
+biriktirilmediğini belgeler
+([request streaming](https://www.starlette.io/requests/)). Framework'te yerleşik
+bir body-limit middleware varmış gibi davranılmayacak; limit bizim ASGI/route
+katmanımızda test edilecektir. Bu seçim, multipart parser'ın olası
+spool/temp-file davranışına bağımlı kalmamamızı sağlar.
 
 > Buradaki “kalıcılık yok” tarama çalışma verisi içindir. Repo ile gelen default
 > wordlist/share listeleri normal paket asset'leridir. Panelde yapılan liste

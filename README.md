@@ -7,6 +7,22 @@ aramak için tasarlanan salt-okunur bir denetim aracıdır.
 İlk ürün kapsamı [kapsam belgesinde](docs/SCOPE.md) v1.0 olarak kilitlenmiştir.
 Uygulama kodu test edilebilir aşamalar halinde geliştirilmektedir.
 
+## Mevcut geliştirme durumu
+
+Yerel panel çalıştırılabilir durumdadır; IP/CIDR/hostname kapsamını doğrular,
+genişletilmiş hedefleri önizler ve RAM içi tarama oturumu/SSE altyapısını sunar.
+SMB ağ adaptörünün salt-okunur sözleşmeleri hazırdır; gerçek SMB bağlantı ve
+dosya yürüyüşü henüz panele bağlanmamıştır.
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/nordis-smb-inspector
+```
+
+Panel yalnız `http://127.0.0.1:8765` üzerinde açılır. Farklı bir loopback portu
+için `--port` kullanılabilir; dış arayüzde dinleme seçeneği yoktur.
+
 ## Planlanan temel yetenekler
 
 - CIDR veya tekil hedef listesiyle sınırlandırılmış SMB keşfi

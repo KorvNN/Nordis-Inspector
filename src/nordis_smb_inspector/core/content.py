@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from itertools import chain
 
-
 _DECODE_BLOCK_BYTES = 64 * 1024
 
 

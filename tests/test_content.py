@@ -18,7 +18,7 @@ def every_byte(value: bytes):
 
 class ContentScanTests(unittest.TestCase):
     def test_utf8_bom_and_crlf_across_single_byte_chunks(self) -> None:
-        content = codecs.BOM_UTF8 + "ilk\r\nPassword=bir\r\nson".encode()
+        content = codecs.BOM_UTF8 + b"ilk\r\nPassword=bir\r\nson"
 
         result = scan_text(every_byte(content), ["password"])
 
