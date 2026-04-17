@@ -42,7 +42,7 @@ kapsamını tanımlar. Uygulama test edilebilir aşamalar halinde geliştirilece
 - `Auto (Kerberos öncelikli)`, `Yalnız Kerberos` ve `Yalnız NTLM` modları
 - Kerberos için hedef IP'yi FQDN'e çözme ve `cifs/<hostname>` SPN'ini kullanma
 - Her hedefte gerçekten kullanılan kimlik doğrulama yöntemini gösterme
-- Port, zaman aşımı, eşzamanlılık ve azami dosya boyutu ayarları
+- Port, zaman aşımı, eşzamanlılık ve çıkarıcıya özgü kaynak sınırı ayarları
 - Kullanıcı tarafından ayarlanabilen maksimum klasör derinliği
 - Kapsamın kullanıcı tarafından onaylandığına dair zorunlu onay kutusu
 - Tarama başlatma, iptal etme ve durum görüntüleme
@@ -54,7 +54,7 @@ Credential girdileri:
 | Tür | Kullanım |
 |---|---|
 | Parola | Kerberos kimlik doğrulaması; izin verilmişse NTLM fallback |
-| NT hash | NTLM pass-the-hash; KDC RC4 kullanımına izin veriyorsa Kerberos denemesi |
+| NT hash | Yalnız NTLM pass-the-hash; Kerberos anahtarı olarak yorumlanmaz |
 | CCache | Cache içindeki TGT veya uygun `cifs/<hostname>` service ticket ile Kerberos |
 
 - NT hash alanı 32 hexadecimal karakteri doğrular; uyumluluk için `LMHASH:NTHASH`
@@ -64,6 +64,9 @@ Credential girdileri:
   canlı arayüzde gösterilir; ticket içeriği loglanmaz.
 - Parola, NT hash ve ccache birbirinden ayrı credential türleridir; kullanıcı
   aktif tarama için kullanılacak türü seçer.
+- NT hash seçildiğinde auth modu `Yalnız NTLM` olur. `Auto` ve `Yalnız
+  Kerberos` bu credential türü için sunulmaz; böylece desteklenmeyen bir
+  Kerberos denemesi yapılıyor izlenimi oluşmaz.
 - Yalnız ccache sağlanmışsa NTLM fallback yapılamaz; bu durum
   `NTLM_FALLBACK_UNAVAILABLE` olarak gösterilir.
 
@@ -186,6 +189,10 @@ SMB protokol görüşmesinden alınabilen bilgiler hedef bazında gösterilir:
 Bu bölüm yalnız görüşme ve kurulan oturum bilgisini raporlar; zafiyet sömürüsü
 veya ayar değiştirme yapmaz.
 
+Ana tarama veri yolu SMB 2.0.2–3.1.1 destekler. Yalnız SMB1 sunan hedef varsa
+salt-okunur görüşme probu bunu `SMB1_ONLY_UNSUPPORTED` olarak gösterir; SMB1 ile
+dosya ağacına bağlanılmaz.
+
 ### 3.6 İçerik arama
 
 Planlanan biçimler:
@@ -246,7 +253,7 @@ Dosya işleme durumları:
 | `SHARING_VIOLATION` | Dosya başka bir işlem nedeniyle okumaya açılamadı |
 | `UNSUPPORTED_TYPE` | Dosya mevcut fakat içerik çıkarıcısı bulunmuyor |
 | `ENCRYPTED_OR_PROTECTED` | Dosya mevcut fakat parola/koruma nedeniyle okunamadı |
-| `SIZE_LIMIT_SKIPPED` | Dosya mevcut fakat belirlenen boyut sınırını aşıyor |
+| `EXTRACTOR_LIMIT_REACHED` | Dosya mevcut; seçilen çıkarıcının açık kaynak sınırına ulaşıldı |
 | `READ_ERROR` | Diğer okuma/protokol hatası; özgün status kodu ayrıca gösterilir |
 
 İkili dosyalar, şifreli belgeler ve görüntü tabanlı PDF/OCR ilk sürümde içerik
@@ -331,12 +338,14 @@ seçilsin, dosya atlanmaz; yalnız çalışma paralelliği değişir.
 - Credential ve tarama sonuçları kalıcı depolamaya yazılmaz.
 - Bulunan eşleşme satırları canlı web görünümünde maskelenmeden gösterilir.
 - Credential, hedef durumu, dosya yolu ve eşleşme içeriği loglanmaz.
-- Dosya içerikleri geçici dosya oluşturulmadan, boyutu sınırlandırılmış bellek
-  akışları üzerinden işlenir.
+- Dosya içerikleri geçici dosya oluşturulmadan, sabit boyutlu parçalar ve
+  sınırlandırılmış bellek tamponları üzerinden işlenir. Düz metinler için genel
+  bir dosya boyutu kesmesi uygulanmaz.
 - Web yanıtlarında `Cache-Control: no-store` kullanılır; tarama verileri
   `localStorage`, `sessionStorage`, IndexedDB veya service worker'a yazılmaz.
 - Web sunucusunun erişim logları kapatılır.
-- Dosya boyutu, derinlik, süre ve eşzamanlılık limitleri zorunludur.
+- Tek satır/tampon boyutu, çıkarıcı kaynak kullanımı, derinlik, süre ve
+  eşzamanlılık limitleri zorunludur; bu limitler dosyayı envanterden çıkarmaz.
 - Tanılama ve hata ayrıntıları yalnızca canlı web oturumunda gösterilir.
 
 ## 5. Kapsam dışı
@@ -353,7 +362,12 @@ seçilsin, dosya atlanmaz; yalnız çalışma paralelliği değişir.
 ## 6. Teknik yaklaşım
 
 - Python 3.12+
-- Web çatısı henüz seçilmedi; FastAPI proje gereksinimi değildir
+- SMB veri yolu için sabitlenmiş `smbprotocol[kerberos]` + `pyspnego`; düşük
+  seviyeli `Connection -> Session -> TreeConnect -> Open` adaptörü. Ayrıntılar
+  ve laboratuvar geçitleri [TECH_SMB.md](TECH_SMB.md) belgesindedir.
+- Yerel panel için Starlette + Uvicorn + Jinja2 + vanilla JavaScript; canlı
+  akış için SSE kullanılacak. Karar ve kabul kontrolleri
+  [TECH_WEB.md](TECH_WEB.md) belgesindedir.
 - İlk olarak SMB/Kerberos kitaplıkları küçük bir teknik deneyle karşılaştırılacak
 - Lisansı uygun başlangıç secret rule corpus'u Nordis kategori/modeline dahil
   edilir ve harici runtime bağımlılığı olmadan Nordis motorunda çalıştırılır
