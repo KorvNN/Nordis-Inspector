@@ -1,0 +1,36 @@
+# General credentials and secrets
+password
+passwd
+pwd
+passphrase
+credential
+credentials
+secret
+client_secret
+api_key
+apikey
+access_token
+refresh_token
+bearer
+connection_string
+database_password
+db_password
+private_key
+BEGIN PRIVATE KEY
+BEGIN RSA PRIVATE KEY
+
+# Turkish terms
+şifre
+parola
+kullanıcı adı
+gizli anahtar
+erişim anahtarı
+veritabanı şifresi
+
+# Common cloud and application keys
+aws_access_key_id
+aws_secret_access_key
+azure_client_secret
+slack_token
+github_token
+

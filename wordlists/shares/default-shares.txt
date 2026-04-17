@@ -1,0 +1,42 @@
+# Windows and Active Directory shares
+ADMIN$
+C$
+D$
+IPC$
+NETLOGON
+SYSVOL
+
+# Common organizational shares
+Public
+Shared
+Share
+Shares
+Users
+Home
+Homes
+Profiles
+Data
+Documents
+Projects
+Software
+Install
+Deploy
+Development
+Dev
+IT
+Finance
+Accounting
+HR
+Backup
+Backups
+
+# Common Turkish names
+Ortak
+Paylasim
+Yedek
+Yedekler
+Muhasebe
+Finans
+InsanKaynaklari
+Belgeler
+Projeler
