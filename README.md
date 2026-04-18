@@ -15,13 +15,15 @@ SMB ağ adaptörünün salt-okunur sözleşmeleri hazırdır; gerçek SMB bağla
 dosya yürüyüşü henüz panele bağlanmamıştır.
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
-.venv/bin/nordis-smb-inspector
+./setup.sh
+./run.sh
 ```
 
 Panel yalnız `http://127.0.0.1:8765` üzerinde açılır. Farklı bir loopback portu
-için `--port` kullanılabilir; dış arayüzde dinleme seçeneği yoktur.
+için `./run.sh --port 9000` kullanılabilir; dış arayüzde dinleme seçeneği yoktur.
+
+Geliştirme/test bağımlılıkları ayrıca
+`.venv/bin/pip install -e '.[dev]'` komutuyla kurulabilir.
 
 ## Planlanan temel yetenekler
 
