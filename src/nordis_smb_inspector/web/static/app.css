@@ -103,13 +103,31 @@ button:disabled { opacity: .55; cursor: wait; }
 .metric-grid span { margin-top: 4px; color: var(--muted); font-size: .7rem; }
 
 .preview-panel { margin-top: 18px; }
-.table-wrap { overflow: auto; margin-top: 16px; }
+.target-groups { display: grid; gap: 10px; margin-top: 16px; }
+.target-group { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #0a1513; }
+.target-group summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.target-group summary::-webkit-details-marker { display: none; }
+.target-group summary::before { content: "›"; color: var(--accent); font-size: 1.25rem; transition: transform .15s ease; }
+.target-group[open] summary::before { transform: rotate(90deg); }
+.group-identity { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.group-identity code { overflow: hidden; color: var(--text); font-size: .86rem; text-overflow: ellipsis; white-space: nowrap; }
+.group-identity span { padding: 4px 7px; border-radius: 999px; color: var(--muted); background: #182624; font-size: .65rem; text-transform: uppercase; }
+.group-table-wrap { overflow: auto; border-top: 1px solid var(--line); }
 table { width: 100%; border-collapse: collapse; font-size: .82rem; }
 th { color: var(--muted); font-size: .68rem; letter-spacing: .08em; text-align: left; text-transform: uppercase; }
 th, td { padding: 12px 10px; border-bottom: 1px solid var(--line); }
 td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-.empty-row td { padding: 34px; color: var(--muted); text-align: center; }
+.empty-state { margin: 0; padding: 34px; color: var(--muted); text-align: center; }
 .ok-text { color: var(--accent); }
+.warning-text { color: var(--warning); }
 .error-text { color: var(--danger); }
 .error-list { margin-top: 14px; padding: 12px 14px; border: 1px solid #633138; border-radius: 10px; background: #2c171a; }
 .error-list p { margin: 4px 0; color: #ffb7ba; font: .8rem ui-monospace, monospace; }

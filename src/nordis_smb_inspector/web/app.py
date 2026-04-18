@@ -144,6 +144,7 @@ async def scope_preview(request: Request) -> JSONResponse:
     events = list(islice(plan.iter_expanded(), _PREVIEW_ROW_LIMIT + 1))
     display_limited = len(events) > _PREVIEW_ROW_LIMIT
     visible_events = events[:_PREVIEW_ROW_LIMIT]
+    rows = [_target_event_payload(event) for event in visible_events]
     return JSONResponse(
         {
             "ok": True,
@@ -151,7 +152,8 @@ async def scope_preview(request: Request) -> JSONResponse:
             "hostname_count": plan.hostname_count,
             "display_limit": _PREVIEW_ROW_LIMIT,
             "display_limited": display_limited,
-            "rows": [_target_event_payload(event) for event in visible_events],
+            "rows": rows,
+            "groups": _group_target_rows(rows),
         }
     )
 
@@ -294,3 +296,26 @@ def _target_event_payload(event: ExpandedTarget | ResolutionFailure) -> dict[str
         "address": str(event.address),
         "ip_version": event.address.version,
     }
+
+
+def _group_target_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    groups: dict[str, dict[str, object]] = {}
+    for row in rows:
+        source = str(row["source"])
+        group = groups.get(source)
+        if group is None:
+            group = {
+                "source": source,
+                "source_kind": row.get("source_kind", "hostname"),
+                "resolved_count": 0,
+                "failure_count": 0,
+                "rows": [],
+            }
+            groups[source] = group
+
+        grouped_rows = group["rows"]
+        assert isinstance(grouped_rows, list)
+        grouped_rows.append(row)
+        counter = "resolved_count" if row["status"] == "resolved" else "failure_count"
+        group[counter] = int(group[counter]) + 1
+    return list(groups.values())

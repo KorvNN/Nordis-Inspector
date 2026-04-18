@@ -8,7 +8,7 @@ const previewButton = document.querySelector("#preview-button");
 const scopeState = document.querySelector("#scope-state");
 const previewSummary = document.querySelector("#preview-summary");
 const previewErrors = document.querySelector("#preview-errors");
-const targetRows = document.querySelector("#target-rows");
+const targetGroups = document.querySelector("#target-groups");
 const rowCount = document.querySelector("#row-count");
 
 function textCell(value) {
@@ -32,27 +32,72 @@ function showErrors(errors) {
   previewErrors.hidden = errors.length === 0;
 }
 
-function renderRows(rows) {
-  targetRows.replaceChildren();
-  if (rows.length === 0) {
-    const row = document.createElement("tr");
-    row.className = "empty-row";
-    const cell = textCell("Çözümlenen hedef yok.");
-    cell.colSpan = 4;
-    row.append(cell);
-    targetRows.append(row);
+function groupStatus(group) {
+  if (group.failure_count > 0 && group.resolved_count > 0) return ["Kısmi", "warning-text"];
+  if (group.failure_count > 0) return ["Çözümlenemedi", "error-text"];
+  return [`${group.resolved_count} adres`, "ok-text"];
+}
+
+function renderGroups(groups) {
+  targetGroups.replaceChildren();
+  if (groups.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Çözümlenen hedef yok.";
+    targetGroups.append(empty);
     return;
   }
 
-  for (const item of rows) {
-    const row = document.createElement("tr");
-    row.append(textCell(item.source));
-    row.append(textCell(item.address ?? item.hostname));
-    row.append(textCell(item.source_kind ?? "hostname"));
-    const status = textCell(item.status === "resolved" ? "Çözümlendi" : item.error_code);
-    status.className = item.status === "resolved" ? "ok-text" : "error-text";
-    row.append(status);
-    targetRows.append(row);
+  for (const group of groups) {
+    const details = document.createElement("details");
+    details.className = "target-group";
+    details.open = group.failure_count > 0;
+
+    const summary = document.createElement("summary");
+    const identity = document.createElement("span");
+    identity.className = "group-identity";
+    const source = document.createElement("code");
+    source.textContent = group.source;
+    const kind = document.createElement("span");
+    kind.textContent = group.source_kind;
+    identity.append(source, kind);
+
+    const [statusLabel, statusClass] = groupStatus(group);
+    const status = document.createElement("span");
+    status.className = statusClass;
+    status.textContent = statusLabel;
+    summary.append(identity, status);
+    details.append(summary);
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "group-table-wrap";
+    const table = document.createElement("table");
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    for (const label of ["Çözümlenen adres", "IP sürümü", "Durum"]) {
+      const heading = document.createElement("th");
+      heading.textContent = label;
+      headRow.append(heading);
+    }
+    head.append(headRow);
+    table.append(head);
+
+    const body = document.createElement("tbody");
+    for (const item of group.rows) {
+      const row = document.createElement("tr");
+      row.append(textCell(item.address ?? item.hostname));
+      row.append(textCell(item.ip_version ? `IPv${item.ip_version}` : "—"));
+      const rowStatus = textCell(
+        item.status === "resolved" ? "Çözümlendi" : item.error_code,
+      );
+      rowStatus.className = item.status === "resolved" ? "ok-text" : "error-text";
+      row.append(rowStatus);
+      body.append(row);
+    }
+    table.append(body);
+    wrapper.append(table);
+    details.append(wrapper);
+    targetGroups.append(details);
   }
 }
 
@@ -81,14 +126,14 @@ async function previewScope() {
         value: item.value ?? item.code,
         reason: item.reason ?? item.message,
       })));
-      renderRows([]);
+      renderGroups([]);
       rowCount.textContent = "0 satır";
       setScopeState("Hatalı", "error");
       return;
     }
 
-    renderRows(payload.rows);
-    rowCount.textContent = `${payload.rows.length} satır`;
+    renderGroups(payload.groups);
+    rowCount.textContent = `${payload.groups.length} kaynak · ${payload.rows.length} sonuç`;
     const known = Number(payload.known_address_count).toLocaleString("tr-TR");
     previewSummary.textContent = `${known} bilinen adres · ${payload.hostname_count} hostname`;
     if (payload.display_limited) {

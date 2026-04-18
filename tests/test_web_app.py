@@ -62,6 +62,12 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
             [row["address"] for row in payload["rows"]],
             ["192.0.2.9", "192.0.2.1", "192.0.2.2"],
         )
+        self.assertEqual([group["source"] for group in payload["groups"]], [
+            "192.0.2.9",
+            "192.0.2.0/30",
+        ])
+        self.assertEqual(payload["groups"][0]["resolved_count"], 1)
+        self.assertEqual(payload["groups"][1]["resolved_count"], 2)
 
     async def test_preview_returns_all_validation_errors_without_echoing_to_logs(self) -> None:
         response = await self.post(
