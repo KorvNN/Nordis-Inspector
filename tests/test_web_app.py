@@ -48,7 +48,7 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
 
-    async def test_preview_expands_mixed_targets(self) -> None:
+    async def test_preview_keeps_cidr_expansion_out_of_browser_payload(self) -> None:
         response = await self.post(
             "/scope/preview",
             json={"targets": "192.0.2.9, 192.0.2.0/30"},
@@ -58,16 +58,30 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         payload = response.json()
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["known_address_count"], 3)
-        self.assertEqual(
-            [row["address"] for row in payload["rows"]],
-            ["192.0.2.9", "192.0.2.1", "192.0.2.2"],
-        )
+        self.assertEqual(payload["candidate_address_count"], 3)
         self.assertEqual([group["source"] for group in payload["groups"]], [
             "192.0.2.9",
             "192.0.2.0/30",
         ])
-        self.assertEqual(payload["groups"][0]["resolved_count"], 1)
-        self.assertEqual(payload["groups"][1]["resolved_count"], 2)
+        self.assertTrue(payload["groups"][0]["details_hidden"])
+        self.assertTrue(payload["groups"][1]["details_hidden"])
+        self.assertEqual(payload["groups"][0]["rows"], [])
+        self.assertEqual(payload["groups"][1]["candidate_count"], 2)
+        self.assertEqual(payload["groups"][1]["rows"], [])
+
+    async def test_preview_summarizes_a_slash_24_as_one_group(self) -> None:
+        response = await self.post(
+            "/scope/preview",
+            json={"targets": "10.10.50.0/24"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["candidate_address_count"], 254)
+        self.assertEqual(len(payload["groups"]), 1)
+        self.assertEqual(payload["groups"][0]["source"], "10.10.50.0/24")
+        self.assertEqual(payload["groups"][0]["candidate_count"], 254)
+        self.assertEqual(payload["groups"][0]["rows"], [])
 
     async def test_preview_returns_all_validation_errors_without_echoing_to_logs(self) -> None:
         response = await self.post(

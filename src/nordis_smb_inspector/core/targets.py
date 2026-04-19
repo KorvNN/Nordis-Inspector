@@ -48,7 +48,7 @@ class TargetSpec:
 
 @dataclass(frozen=True, slots=True)
 class ExpandedTarget:
-    """One address row shown in the expanded-target view."""
+    """One address yielded to downstream target processing."""
 
     address: IPAddress
     source: str
@@ -139,9 +139,8 @@ class TargetPlan:
     def iter_scan_targets(self, resolver: Resolver | None = None) -> Iterator[ExpansionEvent]:
         """Yield each resolved address once while keeping DNS failures visible.
 
-        ``iter_expanded`` remains the source-to-address mapping for the preview
-        table. The scheduler uses this iterator so overlapping literals, CIDRs,
-        and hostnames never cause duplicate SMB authentication attempts.
+        The scheduler uses this iterator so overlapping literals, CIDRs, and
+        hostnames never cause duplicate SMB authentication attempts.
         """
 
         seen: set[IPAddress] = set()

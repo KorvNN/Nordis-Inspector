@@ -33,9 +33,32 @@ function showErrors(errors) {
 }
 
 function groupStatus(group) {
+  if (group.source_kind === "cidr") {
+    return [`${group.candidate_count} aday hedef`, "ok-text"];
+  }
+  if (group.source_kind === "ip") return ["1 hedef", "ok-text"];
   if (group.failure_count > 0 && group.resolved_count > 0) return ["Kısmi", "warning-text"];
   if (group.failure_count > 0) return ["Çözümlenemedi", "error-text"];
   return [`${group.resolved_count} adres`, "ok-text"];
+}
+
+function groupHeader(group, elementName) {
+  const header = document.createElement(elementName);
+  header.className = "group-summary";
+  const identity = document.createElement("span");
+  identity.className = "group-identity";
+  const source = document.createElement("code");
+  source.textContent = group.source;
+  const kind = document.createElement("span");
+  kind.textContent = group.source_kind;
+  identity.append(source, kind);
+
+  const [statusLabel, statusClass] = groupStatus(group);
+  const status = document.createElement("span");
+  status.className = statusClass;
+  status.textContent = statusLabel;
+  header.append(identity, status);
+  return header;
 }
 
 function renderGroups(groups) {
@@ -43,31 +66,24 @@ function renderGroups(groups) {
   if (groups.length === 0) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
-    empty.textContent = "Çözümlenen hedef yok.";
+    empty.textContent = "Hazırlanan hedef yok.";
     targetGroups.append(empty);
     return;
   }
 
   for (const group of groups) {
+    if (group.details_hidden) {
+      const compact = document.createElement("div");
+      compact.className = "target-group compact-group";
+      compact.append(groupHeader(group, "div"));
+      targetGroups.append(compact);
+      continue;
+    }
+
     const details = document.createElement("details");
     details.className = "target-group";
     details.open = group.failure_count > 0;
-
-    const summary = document.createElement("summary");
-    const identity = document.createElement("span");
-    identity.className = "group-identity";
-    const source = document.createElement("code");
-    source.textContent = group.source;
-    const kind = document.createElement("span");
-    kind.textContent = group.source_kind;
-    identity.append(source, kind);
-
-    const [statusLabel, statusClass] = groupStatus(group);
-    const status = document.createElement("span");
-    status.className = statusClass;
-    status.textContent = statusLabel;
-    summary.append(identity, status);
-    details.append(summary);
+    details.append(groupHeader(group, "summary"));
 
     const wrapper = document.createElement("div");
     wrapper.className = "group-table-wrap";
@@ -103,7 +119,7 @@ function renderGroups(groups) {
 
 async function previewScope() {
   previewButton.disabled = true;
-  setScopeState("Çözümleniyor", "working");
+  setScopeState("Hazırlanıyor", "working");
   previewSummary.textContent = "";
   showErrors([]);
 
@@ -133,11 +149,11 @@ async function previewScope() {
     }
 
     renderGroups(payload.groups);
-    rowCount.textContent = `${payload.groups.length} kaynak · ${payload.rows.length} sonuç`;
-    const known = Number(payload.known_address_count).toLocaleString("tr-TR");
-    previewSummary.textContent = `${known} bilinen adres · ${payload.hostname_count} hostname`;
+    const candidates = Number(payload.candidate_address_count).toLocaleString("tr-TR");
+    rowCount.textContent = `${payload.groups.length} kaynak · ${candidates} aday hedef`;
+    previewSummary.textContent = `${candidates} aday IP · ${payload.hostname_count} hostname`;
     if (payload.display_limited) {
-      previewSummary.textContent += ` · İlk ${payload.display_limit} satır gösteriliyor`;
+      previewSummary.textContent += ` · DNS ayrıntıları ${payload.display_limit} satırla sınırlı`;
     }
     setScopeState("Hazır", "ready");
   } catch (_error) {

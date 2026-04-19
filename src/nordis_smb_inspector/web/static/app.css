@@ -105,7 +105,7 @@ button:disabled { opacity: .55; cursor: wait; }
 .preview-panel { margin-top: 18px; }
 .target-groups { display: grid; gap: 10px; margin-top: 16px; }
 .target-group { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #0a1513; }
-.target-group summary {
+.group-summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -114,6 +114,7 @@ button:disabled { opacity: .55; cursor: wait; }
   cursor: pointer;
   list-style: none;
 }
+.compact-group .group-summary { padding-left: 43px; cursor: default; }
 .target-group summary::-webkit-details-marker { display: none; }
 .target-group summary::before { content: "›"; color: var(--accent); font-size: 1.25rem; transition: transform .15s ease; }
 .target-group[open] summary::before { transform: rotate(90deg); }

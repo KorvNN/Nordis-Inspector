@@ -35,8 +35,9 @@ kapsamını tanımlar. Uygulama test edilebilir aşamalar halinde geliştirilece
 - Tek metin alanında virgülle ayrılmış IP, CIDR ve hostname değerlerini karışık kullanma
 - Boşlukları temizleme, CIDR'ları IP'lere genişletme ve tekrarları tekilleştirme
 - Hatalı girdiyi tarama başlamadan, ilgili değerle birlikte gösterme
-- Genişletilmiş hedef listesini tarama öncesinde önizleme
-- CIDR'dan üretilen her IP'yi kaynak CIDR bilgisiyle ayrı satırda gösterme
+- Hedef kaynaklarını tarama öncesinde gruplu ve kompakt önizleme
+- CIDR'ı önizlemede tek satır ve kesin aday adres sayısıyla gösterme; adresleri
+  yalnız tarama kuyruğu tüketirken tembel olarak genişletme
 - Hostname birden fazla IP'ye çözülürse bütün adresleri kaynak hostname ile gösterme
 - Domain/kullanıcı adıyla birlikte parola, NT hash veya Kerberos ccache girdisi
 - `Auto (Kerberos öncelikli)`, `Yalnız Kerberos` ve `Yalnız NTLM` modları
@@ -268,7 +269,8 @@ aramasına dahil değildir; envanterde yine gösterilebilir.
 - Güncel tarama fazı, tahmini genel yüzde ve faza özel kesin sayaçlar
 - Aynı anda çalışan işler için aktif hedef/share/dosya listesi
 - Hedef bazında bağlantı aşamaları ve hata sınıfları tablosu
-- Girilen IP/CIDR ile genişletilmiş bütün IP'leri eşleyen hedef listesi
+- Önizlemede her IP/hostname/CIDR kaynağı için tek grup; CIDR için aday adres
+  sayısı, tarama başladıktan sonra ise işlenen IP'lerin sayfalı durum listesi
 - Okunabilen ve okunamayan öğeleri nedenleriyle içeren dosya envanteri görünümü
 - Maskesiz eşleşen satırı gösteren filtrelenebilir canlı bulgular tablosu
 - Wordlist, pattern ve entropy bulgularını ayrı ayrı filtreleme

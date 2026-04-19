@@ -6,7 +6,6 @@ import json
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from importlib.resources import files
-from itertools import islice
 from typing import Any
 
 import anyio
@@ -22,7 +21,9 @@ from nordis_smb_inspector.core.session import ScanSessionManager
 from nordis_smb_inspector.core.targets import (
     ExpandedTarget,
     ResolutionFailure,
+    TargetKind,
     TargetParseError,
+    TargetPlan,
     parse_targets,
 )
 from nordis_smb_inspector.web.events import InvalidEventCursor, SseEventBroker
@@ -36,7 +37,7 @@ from nordis_smb_inspector.web.security import (
 )
 
 _MAX_JSON_BODY_BYTES = 64 * 1024
-_PREVIEW_ROW_LIMIT = 500
+_PREVIEW_DETAIL_LIMIT = 500
 _STATIC_ASSETS: dict[str, str] = {
     "app.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
@@ -141,19 +142,16 @@ async def scope_preview(request: Request) -> JSONResponse:
             status_code=422,
         )
 
-    events = list(islice(plan.iter_expanded(), _PREVIEW_ROW_LIMIT + 1))
-    display_limited = len(events) > _PREVIEW_ROW_LIMIT
-    visible_events = events[:_PREVIEW_ROW_LIMIT]
-    rows = [_target_event_payload(event) for event in visible_events]
+    groups, hostname_address_count, display_limited = _target_preview_groups(plan)
     return JSONResponse(
         {
             "ok": True,
             "known_address_count": plan.known_address_count,
             "hostname_count": plan.hostname_count,
-            "display_limit": _PREVIEW_ROW_LIMIT,
+            "candidate_address_count": plan.known_address_count + hostname_address_count,
+            "display_limit": _PREVIEW_DETAIL_LIMIT,
             "display_limited": display_limited,
-            "rows": rows,
-            "groups": _group_target_rows(rows),
+            "groups": groups,
         }
     )
 
@@ -298,24 +296,71 @@ def _target_event_payload(event: ExpandedTarget | ResolutionFailure) -> dict[str
     }
 
 
-def _group_target_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-    groups: dict[str, dict[str, object]] = {}
-    for row in rows:
-        source = str(row["source"])
-        group = groups.get(source)
-        if group is None:
-            group = {
-                "source": source,
-                "source_kind": row.get("source_kind", "hostname"),
-                "resolved_count": 0,
-                "failure_count": 0,
-                "rows": [],
-            }
-            groups[source] = group
+def _target_preview_groups(
+    plan: TargetPlan,
+) -> tuple[list[dict[str, object]], int, bool]:
+    """Summarize sources without materializing CIDR addresses in the browser."""
 
-        grouped_rows = group["rows"]
-        assert isinstance(grouped_rows, list)
-        grouped_rows.append(row)
-        counter = "resolved_count" if row["status"] == "resolved" else "failure_count"
-        group[counter] = int(group[counter]) + 1
-    return list(groups.values())
+    groups: list[dict[str, object]] = []
+    hostname_address_count = 0
+    detail_count = 0
+    display_limited = False
+
+    for spec in plan.specs:
+        if spec.kind is TargetKind.CIDR:
+            candidate_count = TargetPlan((spec,)).known_address_count
+            groups.append(
+                {
+                    "source": spec.source,
+                    "source_kind": spec.kind.value,
+                    "candidate_count": candidate_count,
+                    "resolved_count": 0,
+                    "failure_count": 0,
+                    "details_hidden": True,
+                    "rows": [],
+                }
+            )
+            continue
+
+        if spec.kind is TargetKind.IP:
+            groups.append(
+                {
+                    "source": spec.source,
+                    "source_kind": spec.kind.value,
+                    "candidate_count": 1,
+                    "resolved_count": 1,
+                    "failure_count": 0,
+                    "details_hidden": True,
+                    "rows": [],
+                }
+            )
+            continue
+
+        rows: list[dict[str, object]] = []
+        resolved_count = 0
+        failure_count = 0
+        for event in TargetPlan((spec,)).iter_expanded():
+            if isinstance(event, ExpandedTarget):
+                resolved_count += 1
+                hostname_address_count += 1
+            else:
+                failure_count += 1
+            if detail_count < _PREVIEW_DETAIL_LIMIT:
+                rows.append(_target_event_payload(event))
+                detail_count += 1
+            else:
+                display_limited = True
+
+        groups.append(
+            {
+                "source": spec.source,
+                "source_kind": spec.kind.value,
+                "candidate_count": resolved_count,
+                "resolved_count": resolved_count,
+                "failure_count": failure_count,
+                "details_hidden": False,
+                "rows": rows,
+            }
+        )
+
+    return groups, hostname_address_count, display_limited
