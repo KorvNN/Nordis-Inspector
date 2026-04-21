@@ -72,7 +72,6 @@ bağımsız olarak uygulama yaşam döngüsünde yönetilecek.
 | Yöntem ve yol | Amaç |
 |---|---|
 | `GET /` | Server-rendered başlangıç paneli |
-| `POST /scope/preview` | IP/CIDR/hostname girdisini doğrula; CIDR'ı genişletmeden kaynakları ve aday sayılarını önizle |
 | `POST /scan` | Tek aktif taramayı başlat; credential ve ayarlar yalnız request body'de |
 | `GET /scan/snapshot` | Yenileme/yeniden bağlanma için mevcut RAM durumunu getir |
 | `GET /scan/events` | SSE ile faz, sayaç ve değişiklik olaylarını aktar |

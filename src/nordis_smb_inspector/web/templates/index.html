@@ -28,11 +28,17 @@
         <label for="targets">IP, CIDR veya hostname</label>
         <textarea id="targets" rows="6" spellcheck="false"
           placeholder="10.20.30.15, 10.20.40.0/24&#10;filesrv01.nordis.local"></textarea>
-        <p class="hint">Virgül veya yeni satırla karışık girebilirsin. Önizleme tarama yapmaz.</p>
+        <p class="hint">Virgül veya yeni satırla karışık girebilirsin.</p>
         <div class="actions">
-          <button id="preview-button" type="button">Kapsamı hazırla</button>
-          <span id="preview-summary" class="summary" aria-live="polite"></span>
+          <button id="start-scan-button" type="button">Taramayı başlat</button>
+          <button id="cancel-scan-button" class="secondary-button" type="button" disabled>
+            İptal et
+          </button>
+          <span id="preview-summary" class="scope-summary" aria-live="polite">
+            Adresler tarama sırasında doğrulanır.
+          </span>
         </div>
+        <div id="preview-errors" class="error-list" hidden></div>
       </article>
 
       <article class="panel status-panel">
@@ -55,18 +61,59 @@
       </article>
     </section>
 
-    <section class="panel preview-panel">
+    <section class="panel live-target-panel" aria-labelledby="live-target-heading">
       <div class="section-heading">
         <div>
-          <p class="step">Hazırlanan kapsam</p>
-          <h2>Kaynak grupları</h2>
+          <p class="step">Hedefler</p>
+          <h2 id="live-target-heading">Canlı hedef durumu</h2>
         </div>
-        <span id="row-count" class="summary">0 satır</span>
+        <span id="visible-target-count" class="summary">0 hedef</span>
       </div>
-      <div id="preview-errors" class="error-list" hidden></div>
-      <div id="target-groups" class="target-groups">
-        <p class="empty-state">Henüz kapsam hazırlanmadı.</p>
+
+      <div id="target-status-filters" class="status-filters" aria-label="Hedef durumu filtreleri">
+        <button class="status-filter is-active" type="button" data-target-filter="all"
+          aria-pressed="true">
+          <span>Yanıt veren</span><strong data-target-count="all">0</strong>
+        </button>
+        <button class="status-filter" type="button" data-target-filter="tcp_open"
+          aria-pressed="false">
+          <span>TCP açık</span><strong data-target-count="tcp_open">0</strong>
+        </button>
+        <button class="status-filter" type="button" data-target-filter="smb_ready"
+          aria-pressed="false">
+          <span>SMB hazır</span><strong data-target-count="smb_ready">0</strong>
+        </button>
+        <button class="status-filter" type="button" data-target-filter="authenticated"
+          aria-pressed="false">
+          <span>Doğrulandı</span><strong data-target-count="authenticated">0</strong>
+        </button>
+        <button class="status-filter" type="button" data-target-filter="attention"
+          aria-pressed="false">
+          <span>Sorunlu</span><strong data-target-count="attention">0</strong>
+        </button>
       </div>
+
+      <div class="target-status-table-wrap">
+        <table class="target-status-table">
+          <thead>
+            <tr>
+              <th scope="col">IP</th>
+              <th scope="col">TCP/445</th>
+              <th scope="col">SMB</th>
+              <th scope="col">Kimlik doğrulama</th>
+              <th scope="col">Son durum</th>
+            </tr>
+          </thead>
+          <tbody id="target-status-body">
+            <tr class="table-empty-row">
+              <td colspan="5">Henüz tarama başlatılmadı.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p id="target-table-note" class="table-note" aria-live="polite">
+        Yalnız bağlantıya yanıt verdiği doğrulanan hedefler burada görünecek.
+      </p>
     </section>
 
   </main>

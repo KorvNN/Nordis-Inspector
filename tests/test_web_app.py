@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import errno
 import unittest
 
 import httpx2
 
+from nordis_smb_inspector.core.connectivity import ConnectivityScanner
 from nordis_smb_inspector.web.app import create_app
 
 
@@ -33,6 +35,8 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("NordisGlobal SMB Inspector", response.text)
+        self.assertIn("Taramayı başlat", response.text)
+        self.assertIn("Canlı hedef durumu", response.text)
         self.assertIn(self.csrf, response.text)
         self.assertNotIn("https://", response.text)
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
@@ -48,44 +52,9 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
 
-    async def test_preview_keeps_cidr_expansion_out_of_browser_payload(self) -> None:
+    async def test_scan_returns_all_validation_errors_before_starting_worker(self) -> None:
         response = await self.post(
-            "/scope/preview",
-            json={"targets": "192.0.2.9, 192.0.2.0/30"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["known_address_count"], 3)
-        self.assertEqual(payload["candidate_address_count"], 3)
-        self.assertEqual([group["source"] for group in payload["groups"]], [
-            "192.0.2.9",
-            "192.0.2.0/30",
-        ])
-        self.assertTrue(payload["groups"][0]["details_hidden"])
-        self.assertTrue(payload["groups"][1]["details_hidden"])
-        self.assertEqual(payload["groups"][0]["rows"], [])
-        self.assertEqual(payload["groups"][1]["candidate_count"], 2)
-        self.assertEqual(payload["groups"][1]["rows"], [])
-
-    async def test_preview_summarizes_a_slash_24_as_one_group(self) -> None:
-        response = await self.post(
-            "/scope/preview",
-            json={"targets": "10.10.50.0/24"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["candidate_address_count"], 254)
-        self.assertEqual(len(payload["groups"]), 1)
-        self.assertEqual(payload["groups"][0]["source"], "10.10.50.0/24")
-        self.assertEqual(payload["groups"][0]["candidate_count"], 254)
-        self.assertEqual(payload["groups"][0]["rows"], [])
-
-    async def test_preview_returns_all_validation_errors_without_echoing_to_logs(self) -> None:
-        response = await self.post(
-            "/scope/preview",
+            "/scan",
             json={"targets": "10.0.0.999, broken_name!, 10.0.0.0/99"},
         )
 
@@ -94,12 +63,12 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_post_requires_exact_origin_and_csrf(self) -> None:
         wrong_origin = await self.client.post(
-            "/scope/preview",
+            "/scan",
             headers={"Origin": "http://localhost:8765", "X-CSRF-Token": self.csrf},
             json={"targets": "192.0.2.1"},
         )
         wrong_csrf = await self.client.post(
-            "/scope/preview",
+            "/scan",
             headers={"Origin": "http://127.0.0.1:8765", "X-CSRF-Token": "wrong"},
             json={"targets": "192.0.2.1"},
         )
@@ -111,7 +80,7 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_json_body_limit_is_applied_during_stream_read(self) -> None:
         response = await self.post(
-            "/scope/preview",
+            "/scan",
             content=b'{"targets":"' + (b"a" * (65 * 1024)) + b'"}',
             headers={"Content-Type": "application/json"},
         )
@@ -125,6 +94,39 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "idle")
         self.assertIsNone(response.json()["scan_id"])
+        self.assertEqual(response.json()["targets"], [])
+
+    async def test_scan_streams_real_connectivity_outcomes_into_target_snapshot(self) -> None:
+        def connector(address: object, _port: int, _timeout: float) -> None:
+            if str(address) == "192.0.2.2":
+                raise ConnectionRefusedError(errno.ECONNREFUSED, "refused")
+            if str(address) == "192.0.2.3":
+                raise TimeoutError("no response")
+
+        self.app.state.runtime.connectivity = ConnectivityScanner(connector=connector)
+
+        response = await self.post(
+            "/scan",
+            json={"targets": "192.0.2.1,192.0.2.2,192.0.2.3"},
+        )
+
+        self.assertEqual(response.status_code, 202)
+        worker = self.app.state.runtime.worker
+        self.assertIsNotNone(worker)
+        worker.join(timeout=2)
+        self.assertFalse(worker.is_alive())
+
+        snapshot = (await self.client.get("/scan/snapshot")).json()
+        self.assertEqual(snapshot["status"], "completed")
+        by_address = {row["address"]: row for row in snapshot["targets"]}
+        self.assertEqual(by_address["192.0.2.1"]["tcp_status"], "port_open")
+        self.assertEqual(
+            by_address["192.0.2.2"]["tcp_status"],
+            "connection_refused",
+        )
+        self.assertNotIn("192.0.2.3", by_address)
+        self.assertEqual(snapshot["progress"]["counters"]["timeout_no_response"], 1)
+        self.assertEqual(snapshot["progress"]["phase"], "completed")
 
     async def test_static_asset_traversal_and_unknown_names_are_rejected(self) -> None:
         response = await self.client.get("/static/missing.js")

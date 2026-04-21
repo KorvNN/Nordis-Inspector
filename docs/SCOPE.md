@@ -35,9 +35,8 @@ kapsamını tanımlar. Uygulama test edilebilir aşamalar halinde geliştirilece
 - Tek metin alanında virgülle ayrılmış IP, CIDR ve hostname değerlerini karışık kullanma
 - Boşlukları temizleme, CIDR'ları IP'lere genişletme ve tekrarları tekilleştirme
 - Hatalı girdiyi tarama başlamadan, ilgili değerle birlikte gösterme
-- Hedef kaynaklarını tarama öncesinde gruplu ve kompakt önizleme
-- CIDR'ı önizlemede tek satır ve kesin aday adres sayısıyla gösterme; adresleri
-  yalnız tarama kuyruğu tüketirken tembel olarak genişletme
+- CIDR adreslerini yalnız tarama kuyruğu tüketirken tembel olarak genişletme;
+  olası adres sayısını cihaz veya erişilebilir hedef sayısı olarak göstermeme
 - Hostname birden fazla IP'ye çözülürse bütün adresleri kaynak hostname ile gösterme
 - Domain/kullanıcı adıyla birlikte parola, NT hash veya Kerberos ccache girdisi
 - `Auto (Kerberos öncelikli)`, `Yalnız Kerberos` ve `Yalnız NTLM` modları
@@ -47,8 +46,7 @@ kapsamını tanımlar. Uygulama test edilebilir aşamalar halinde geliştirilece
 - Kullanıcı tarafından ayarlanabilen maksimum klasör derinliği
 - Kapsamın kullanıcı tarafından onaylandığına dair zorunlu onay kutusu
 - Tarama başlatma, iptal etme ve durum görüntüleme
-- Tarama başlamadan önce genişletilmiş toplam hedef sayısını gösteren kapsam
-  önizlemesi ve tek açık onay; gizli hedef sınırı uygulanmaz
+- Taranacak kaynak ifadesi için tek açık onay; gizli hedef sınırı uygulanmaz
 
 Credential girdileri:
 
@@ -269,8 +267,8 @@ aramasına dahil değildir; envanterde yine gösterilebilir.
 - Güncel tarama fazı, tahmini genel yüzde ve faza özel kesin sayaçlar
 - Aynı anda çalışan işler için aktif hedef/share/dosya listesi
 - Hedef bazında bağlantı aşamaları ve hata sınıfları tablosu
-- Önizlemede her IP/hostname/CIDR kaynağı için tek grup; CIDR için aday adres
-  sayısı, tarama başladıktan sonra ise işlenen IP'lerin sayfalı durum listesi
+- Canlı hedef tablosunda yalnız TCP yanıtı alınarak varlığı doğrulanan IP'ler;
+  yanıtsız/ulaşılamayan adresler satır olarak değil yalnız faz sayacı olarak tutulur
 - Okunabilen ve okunamayan öğeleri nedenleriyle içeren dosya envanteri görünümü
 - Maskesiz eşleşen satırı gösteren filtrelenebilir canlı bulgular tablosu
 - Wordlist, pattern ve entropy bulgularını ayrı ayrı filtreleme
