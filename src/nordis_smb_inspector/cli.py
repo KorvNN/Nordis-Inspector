@@ -31,7 +31,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     url = f"http://127.0.0.1:{args.port}"
     print(f"Nordis SMB Inspector: {url}")
-    print("Tarama verileri yalnız süreç belleğinde tutulur. Durdurmak için Ctrl+C.")
+    print("Durdurmak için Ctrl+C.")
     uvicorn.run(
         create_app(port=args.port),
         host="127.0.0.1",
@@ -42,6 +42,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         log_level="warning",
         server_header=False,
         date_header=False,
+        # Every open panel owns a long-lived SSE response. Without a finite
+        # grace period Uvicorn waits for that response forever on the first
+        # Ctrl+C instead of cancelling it.
+        timeout_graceful_shutdown=1,
     )
     return 0
 
