@@ -80,7 +80,45 @@ textarea {
   font: .9rem/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
   outline: none;
 }
-textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(84 225 185 / 12%); }
+input, select {
+  width: 100%;
+  border: 1px solid #304641;
+  border-radius: 10px;
+  padding: 11px 12px;
+  color: var(--text);
+  background: #091310;
+  font: inherit;
+  font-size: .86rem;
+  line-height: 1.35;
+  outline: none;
+}
+textarea:focus, input:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(84 225 185 / 12%);
+}
+select:disabled { color: var(--muted); opacity: .78; }
+.credential-block {
+  margin: 22px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 16px 16px;
+  background: #0a1513;
+}
+.credential-block legend {
+  padding: 0 7px;
+  color: var(--accent);
+  font-size: .72rem;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.credential-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 14px;
+}
+.credential-auth-field { grid-column: 1 / -1; }
+.form-field label { margin-top: 10px; }
 .hint, .summary, .scope-summary { color: var(--muted); font-size: .8rem; }
 .actions { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
 .scope-summary { font-variant-numeric: tabular-nums; }
@@ -184,7 +222,6 @@ td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .status-value.is-ok { color: var(--accent); background: var(--accent-dark); }
 .status-value.is-working { color: var(--warning); background: #382f1c; }
 .status-value.is-error { color: var(--danger); background: #3a2023; }
-.table-note { margin: 12px 2px 0; color: var(--muted); font-size: .78rem; }
 .ok-text { color: var(--accent); }
 .warning-text { color: var(--warning); }
 .error-text { color: var(--danger); }
@@ -196,4 +233,6 @@ td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
   .topbar, main { width: min(100% - 24px, 1180px); }
   .panel { padding: 18px; }
   .actions { align-items: flex-start; flex-direction: column; }
+  .credential-grid { grid-template-columns: 1fr; }
+  .credential-auth-field { grid-column: auto; }
 }

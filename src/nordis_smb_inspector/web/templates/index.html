@@ -29,6 +29,42 @@
         <textarea id="targets" rows="6" spellcheck="false"
           placeholder="10.20.30.15, 10.20.40.0/24&#10;filesrv01.nordis.local"></textarea>
         <p class="hint">Virgül veya yeni satırla karışık girebilirsin.</p>
+
+        <fieldset class="credential-block">
+          <legend>Kimlik bilgisi</legend>
+          <div class="credential-grid">
+            <div class="form-field">
+              <label for="credential-domain">Domain</label>
+              <input id="credential-domain" type="text" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="form-field">
+              <label for="credential-username">Kullanıcı</label>
+              <input id="credential-username" type="text" autocomplete="off" spellcheck="false"
+                required>
+            </div>
+            <div class="form-field">
+              <label for="credential-kind">Credential türü</label>
+              <select id="credential-kind">
+                <option value="password">Parola</option>
+                <option value="nt_hash">NT hash</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label id="credential-secret-label" for="credential-secret">Parola</label>
+              <input id="credential-secret" type="password" autocomplete="new-password"
+                spellcheck="false" required>
+            </div>
+            <div class="form-field credential-auth-field">
+              <label for="auth-mode">Kimlik doğrulama</label>
+              <select id="auth-mode">
+                <option value="auto">Auto (Kerberos öncelikli)</option>
+                <option value="kerberos_only">Yalnız Kerberos</option>
+                <option value="ntlm_only">Yalnız NTLM</option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
         <div class="actions">
           <button id="start-scan-button" type="button">Taramayı başlat</button>
           <button id="cancel-scan-button" class="secondary-button" type="button" disabled>
@@ -47,7 +83,6 @@
             <p class="step">Canlı durum</p>
             <h2 id="scan-phase">Tarama yok</h2>
           </div>
-          <span id="scan-status" class="state idle">IDLE</span>
         </div>
         <div class="progress-track" aria-label="Tarama ilerlemesi">
           <div id="progress-bar" class="progress-bar"></div>
@@ -111,9 +146,6 @@
           </tbody>
         </table>
       </div>
-      <p id="target-table-note" class="table-note" aria-live="polite">
-        Yalnız bağlantıya yanıt verdiği doğrulanan hedefler burada görünecek.
-      </p>
     </section>
 
   </main>

@@ -4,15 +4,19 @@ const body = document.body;
 const csrfToken = body.dataset.csrfToken;
 const origin = body.dataset.origin;
 const targets = document.querySelector("#targets");
+const credentialDomain = document.querySelector("#credential-domain");
+const credentialUsername = document.querySelector("#credential-username");
+const credentialKind = document.querySelector("#credential-kind");
+const credentialSecret = document.querySelector("#credential-secret");
+const credentialSecretLabel = document.querySelector("#credential-secret-label");
+const authMode = document.querySelector("#auth-mode");
 const startScanButton = document.querySelector("#start-scan-button");
 const cancelScanButton = document.querySelector("#cancel-scan-button");
 const scopeState = document.querySelector("#scope-state");
 const previewSummary = document.querySelector("#preview-summary");
 const previewErrors = document.querySelector("#preview-errors");
-const scanStatus = document.querySelector("#scan-status");
 const scanPhase = document.querySelector("#scan-phase");
 const targetStatusBody = document.querySelector("#target-status-body");
-const targetTableNote = document.querySelector("#target-table-note");
 const visibleTargetCount = document.querySelector("#visible-target-count");
 const targetFilters = [...document.querySelectorAll("[data-target-filter]")];
 const targetCountElements = [...document.querySelectorAll("[data-target-count]")];
@@ -30,7 +34,52 @@ const STATUS_LABELS = {
   network_unreachable: "Ağa ulaşılamıyor",
   connection_error: "Bağlantı hatası",
   dns_resolution_failed: "DNS çözümlenemedi",
+  negotiation_failed: "SMB görüşmesi başarısız",
+  smb1_only_unsupported: "Yalnız SMB1 destekleniyor",
+  authenticated: "Doğrulandı",
+  kerberos: "Kerberos",
+  ntlm: "NTLM",
+  ntlm_fallback_used: "NTLM fallback kullanıldı",
+  auth_failed: "Kimlik doğrulanamadı",
+  ntlm_fallback_unavailable: "NTLM fallback kullanılamıyor",
+  access_denied: "Erişim reddedildi",
+  partial_access: "Kısmi erişim",
   cancelled: "İptal edildi",
+  completed: "Tamamlandı",
+  failed: "Başarısız",
+};
+const SCAN_STATUS_LABELS = {
+  idle: "Tarama yok",
+  running: "Çalışıyor",
+  cancelling: "İptal ediliyor",
+  cancelled: "İptal edildi",
+  completed: "Tamamlandı",
+  failed: "Başarısız",
+};
+const PHASE_LABELS = {
+  preparing_targets: "Hedefler hazırlanıyor",
+  connectivity: "TCP/445 kontrolü",
+  authentication: "Kimlik doğrulama",
+  share_discovery: "Share keşfi",
+  file_inventory: "Dosya envanteri",
+  content_scan: "İçerik taraması",
+  cancelling: "İptal ediliyor",
+  cancelled: "İptal edildi",
+  completed: "Tamamlandı",
+  failed: "Başarısız",
+};
+const STATUS_MESSAGES = {
+  idle: "Yeni bir tarama başlatılmadı.",
+  running: "İşlem sürüyor.",
+  cancelling: "Tarama iptal ediliyor.",
+  cancelled: "Tarama iptal edildi.",
+  completed: "Tarama tamamlandı.",
+  failed: "Tarama başarısız.",
+};
+const MESSAGE_LABELS = {
+  "Cancellation requested.": "İptal isteği gönderildi.",
+  "Scan cancelled.": "Tarama iptal edildi.",
+  "Scan worker failed.": "Tarama başarısız.",
 };
 
 function textCell(value, className = "") {
@@ -44,7 +93,8 @@ function textCell(value, className = "") {
 
 function displayValue(value) {
   if (value === null || value === undefined || value === "") return "—";
-  return STATUS_LABELS[value] ?? String(value);
+  const raw = String(value);
+  return STATUS_LABELS[raw.toLowerCase()] ?? raw;
 }
 
 function firstValue(record, names) {
@@ -56,7 +106,8 @@ function firstValue(record, names) {
 }
 
 function normalizedStatus(value) {
-  return displayValue(value).trim().toUpperCase().replaceAll(" ", "_");
+  if (value === null || value === undefined || value === "") return "";
+  return String(value).trim().toUpperCase().replaceAll(" ", "_");
 }
 
 function statusTone(value) {
@@ -198,7 +249,46 @@ function showErrors(errors) {
   previewErrors.hidden = errors.length === 0;
 }
 
+function syncCredentialControls() {
+  const hashSelected = credentialKind.value === "nt_hash";
+  credentialSecretLabel.textContent = hashSelected ? "NT hash" : "Parola";
+  credentialSecret.value = "";
+  if (hashSelected) {
+    credentialSecret.setAttribute(
+      "pattern",
+      "(?:[0-9A-Fa-f]{32}|[0-9A-Fa-f]{32}:[0-9A-Fa-f]{32})",
+    );
+    credentialSecret.setAttribute("maxlength", "65");
+  } else {
+    credentialSecret.removeAttribute("pattern");
+    credentialSecret.removeAttribute("maxlength");
+  }
+
+  for (const option of authMode.options) {
+    option.disabled = hashSelected && option.value !== "ntlm_only";
+  }
+  authMode.value = hashSelected ? "ntlm_only" : "auto";
+  authMode.disabled = hashSelected;
+}
+
+function credentialPayload() {
+  const kind = credentialKind.value;
+  const secretField = kind === "nt_hash" ? "nt_hash" : "password";
+  return {
+    kind,
+    domain: credentialDomain.value.trim() || null,
+    username: credentialUsername.value.trim(),
+    auth_mode: authMode.value,
+    [secretField]: credentialSecret.value,
+  };
+}
+
+function credentialIsValid() {
+  return credentialUsername.reportValidity() && credentialSecret.reportValidity();
+}
+
 async function startScan() {
+  if (!credentialIsValid()) return;
   startScanButton.disabled = true;
   setScopeState("Başlatılıyor", "working");
   previewSummary.textContent = "";
@@ -214,7 +304,10 @@ async function startScan() {
         "Origin": origin,
         "X-CSRF-Token": csrfToken,
       },
-      body: JSON.stringify({targets: targets.value}),
+      body: JSON.stringify({
+        targets: targets.value,
+        credential: credentialPayload(),
+      }),
     });
     const payload = await response.json();
     if (!response.ok || !payload.ok) {
@@ -268,29 +361,33 @@ async function cancelScan() {
 
 function setScanState(state) {
   const status = String(state.status ?? "idle").toLowerCase();
-  scanStatus.textContent = status.toUpperCase();
-  scanStatus.className = "state idle";
-  if (["running", "cancelling"].includes(status)) scanStatus.className = "state working";
-  if (["completed", "cancelled"].includes(status)) scanStatus.className = "state ready";
-  if (status === "failed") scanStatus.className = "state error";
+  const phase = String(state.progress?.phase ?? "").toLowerCase();
+  const terminal = ["completed", "cancelled", "failed"].includes(status);
+  scanPhase.textContent = terminal
+    ? SCAN_STATUS_LABELS[status]
+    : PHASE_LABELS[phase] ?? SCAN_STATUS_LABELS[status] ?? "Bilinmiyor";
 
   if (state.progress) {
-    scanPhase.textContent = state.progress.phase.replaceAll("_", " ");
     const percent = state.progress.phase_percent;
-    document.querySelector("#phase-percent").textContent = percent === null
+    const displayedPercent = status === "completed" ? 100 : percent;
+    document.querySelector("#phase-percent").textContent = displayedPercent === null
       ? "—"
-      : `${Math.round(percent)}%`;
-    document.querySelector("#progress-bar").style.width = `${
-      state.progress.overall_percent ?? percent ?? 0
-    }%`;
-    document.querySelector("#progress-message").textContent = state.progress.message
-      ?? "Tarama çalışıyor.";
-  } else if (status === "idle") {
-    scanPhase.textContent = "Tarama yok";
+      : `${Math.round(displayedPercent)}%`;
+    const overallPercent = status === "completed"
+      ? 100
+      : state.progress.overall_percent ?? percent ?? 0;
+    document.querySelector("#progress-bar").style.width = `${overallPercent}%`;
+  }
+  if (!state.progress) {
     document.querySelector("#phase-percent").textContent = "—";
     document.querySelector("#progress-bar").style.width = "0%";
-    document.querySelector("#progress-message").textContent = "Yeni bir tarama başlatılmadı.";
   }
+  const rawMessage = state.progress?.message;
+  document.querySelector("#progress-message").textContent = terminal
+    ? STATUS_MESSAGES[status]
+    : rawMessage
+      ? MESSAGE_LABELS[rawMessage] ?? rawMessage
+      : STATUS_MESSAGES[status] ?? "Durum bilgisi alınamadı.";
 
   document.querySelector("#inventory-count").textContent = state.inventory_count ?? 0;
   document.querySelector("#finding-count").textContent = state.finding_count ?? 0;
@@ -298,11 +395,9 @@ function setScanState(state) {
   startScanButton.disabled = active;
   cancelScanButton.disabled = !active || status === "cancelling";
   if (!active && status !== "idle") {
-    setScopeState(status === "failed" ? "Hata" : "Tamamlandı", status === "failed" ? "error" : "ready");
+    const kind = status === "failed" ? "error" : "ready";
+    setScopeState(SCAN_STATUS_LABELS[status] ?? "Bitti", kind);
   }
-  targetTableNote.textContent = status === "idle"
-    ? "Yalnız bağlantıya yanıt verdiği doğrulanan hedefler burada görünecek."
-    : "Yanıt vermeyen adresler tabloya eklenmez.";
 }
 
 function targetsFromSnapshot(state) {
@@ -361,6 +456,8 @@ for (const filter of targetFilters) {
 
 startScanButton.addEventListener("click", startScan);
 cancelScanButton.addEventListener("click", cancelScan);
+credentialKind.addEventListener("change", syncCredentialControls);
+syncCredentialControls();
 refreshSnapshot();
 
 const scanEvents = new EventSource("/scan/events");
