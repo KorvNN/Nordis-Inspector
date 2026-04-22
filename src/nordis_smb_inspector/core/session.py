@@ -370,8 +370,17 @@ class ScanSessionManager:
                     f"Cannot complete a scan in {self._state.status.value} state."
                 )
             state, progress = self._finish_locked(status, reason, partial=partial)
+            previous_progress = progress.snapshot
 
-        progress.set_phase(phase)
+        progress.set_phase(phase, total=previous_progress.phase_total)
+        if previous_progress.phase_completed:
+            progress.update_progress(
+                previous_progress.phase_completed,
+                expected_phase=phase,
+                total=previous_progress.phase_total,
+                overall_percent=100.0 if phase is ScanPhase.COMPLETED else None,
+                overall_is_estimate=False if phase is ScanPhase.COMPLETED else None,
+            )
         return self._state_for_token_or(token, state)
 
     def fail(self, token: ScanToken) -> ScanState:

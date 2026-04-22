@@ -65,14 +65,27 @@
           </div>
         </fieldset>
 
+        <fieldset class="search-block">
+          <legend>İçerik arama</legend>
+          <div class="search-settings-grid">
+            <label class="checkbox-field" for="use-default-wordlist">
+              <input id="use-default-wordlist" type="checkbox" checked>
+              <span>Repo varsayılan wordlistini kullan</span>
+            </label>
+            <div class="form-field depth-field">
+              <label for="max-depth">Maksimum derinlik</label>
+              <input id="max-depth" type="number" min="1" max="256" value="32" required>
+            </div>
+          </div>
+          <label for="additional-terms">Ek arama terimleri</label>
+          <textarea id="additional-terms" rows="4" spellcheck="false"></textarea>
+        </fieldset>
+
         <div class="actions">
           <button id="start-scan-button" type="button">Taramayı başlat</button>
           <button id="cancel-scan-button" class="secondary-button" type="button" disabled>
             İptal et
           </button>
-          <span id="preview-summary" class="scope-summary" aria-live="polite">
-            Adresler tarama sırasında doğrulanır.
-          </span>
         </div>
         <div id="preview-errors" class="error-list" hidden></div>
       </article>
@@ -142,6 +155,70 @@
           <tbody id="target-status-body">
             <tr class="table-empty-row">
               <td colspan="5">Henüz tarama başlatılmadı.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel data-panel" aria-labelledby="inventory-heading">
+      <div class="section-heading result-heading">
+        <div>
+          <p class="step">Envanter</p>
+          <h2 id="inventory-heading">Share / Dosya Envanteri</h2>
+        </div>
+        <span id="inventory-visible-count" class="summary">0 kayıt</span>
+      </div>
+      <div class="table-toolbar">
+        <label for="inventory-filter">Filtre</label>
+        <input id="inventory-filter" type="search" autocomplete="off">
+      </div>
+      <div class="result-table-wrap">
+        <table class="result-table inventory-table">
+          <thead>
+            <tr>
+              <th scope="col">Hedef</th>
+              <th scope="col">Share</th>
+              <th scope="col">Path</th>
+              <th scope="col">Tür</th>
+              <th scope="col">Durum</th>
+              <th scope="col">Boyut</th>
+            </tr>
+          </thead>
+          <tbody id="inventory-body">
+            <tr class="table-empty-row">
+              <td colspan="6">Henüz envanter yok.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel data-panel" aria-labelledby="findings-heading">
+      <div class="section-heading result-heading">
+        <div>
+          <p class="step">Eşleşmeler</p>
+          <h2 id="findings-heading">Bulgular</h2>
+        </div>
+        <span id="findings-visible-count" class="summary">0 bulgu</span>
+      </div>
+      <div class="table-toolbar">
+        <label for="findings-filter">Filtre</label>
+        <input id="findings-filter" type="search" autocomplete="off">
+      </div>
+      <div class="result-table-wrap">
+        <table class="result-table findings-table">
+          <thead>
+            <tr>
+              <th scope="col">Dosya</th>
+              <th scope="col">Satır no</th>
+              <th scope="col">Terim</th>
+              <th scope="col">Tam satır</th>
+            </tr>
+          </thead>
+          <tbody id="findings-body">
+            <tr class="table-empty-row">
+              <td colspan="4">Henüz bulgu yok.</td>
             </tr>
           </tbody>
         </table>

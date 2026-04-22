@@ -10,17 +10,27 @@ const credentialKind = document.querySelector("#credential-kind");
 const credentialSecret = document.querySelector("#credential-secret");
 const credentialSecretLabel = document.querySelector("#credential-secret-label");
 const authMode = document.querySelector("#auth-mode");
+const useDefaultWordlist = document.querySelector("#use-default-wordlist");
+const additionalTermsInput = document.querySelector("#additional-terms");
+const maxDepthInput = document.querySelector("#max-depth");
 const startScanButton = document.querySelector("#start-scan-button");
 const cancelScanButton = document.querySelector("#cancel-scan-button");
 const scopeState = document.querySelector("#scope-state");
-const previewSummary = document.querySelector("#preview-summary");
 const previewErrors = document.querySelector("#preview-errors");
 const scanPhase = document.querySelector("#scan-phase");
 const targetStatusBody = document.querySelector("#target-status-body");
 const visibleTargetCount = document.querySelector("#visible-target-count");
 const targetFilters = [...document.querySelectorAll("[data-target-filter]")];
 const targetCountElements = [...document.querySelectorAll("[data-target-count]")];
+const inventoryBody = document.querySelector("#inventory-body");
+const inventoryFilter = document.querySelector("#inventory-filter");
+const inventoryVisibleCount = document.querySelector("#inventory-visible-count");
+const findingsBody = document.querySelector("#findings-body");
+const findingsFilter = document.querySelector("#findings-filter");
+const findingsVisibleCount = document.querySelector("#findings-visible-count");
 const targetStore = new Map();
+const inventoryStore = new Map();
+const findingStore = new Map();
 let selectedTargetFilter = "all";
 let latestGeneration = null;
 
@@ -70,7 +80,6 @@ const PHASE_LABELS = {
 };
 const STATUS_MESSAGES = {
   idle: "Yeni bir tarama başlatılmadı.",
-  running: "İşlem sürüyor.",
   cancelling: "Tarama iptal ediliyor.",
   cancelled: "Tarama iptal edildi.",
   completed: "Tarama tamamlandı.",
@@ -103,6 +112,43 @@ function firstValue(record, names) {
     if (value !== null && value !== undefined && value !== "") return value;
   }
   return null;
+}
+
+function nestedRecord(payload, names) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  for (const name of names) {
+    const candidate = payload[name];
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+  return payload;
+}
+
+function resultArray(payload, names) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return null;
+  for (const name of ["items", ...names]) {
+    if (Array.isArray(payload[name])) return payload[name];
+  }
+  return null;
+}
+
+function normalizedSearch(value) {
+  return displayValue(value).toLocaleLowerCase("tr-TR");
+}
+
+function recordMatchesSearch(record, query, fields) {
+  const needle = query.trim().toLocaleLowerCase("tr-TR");
+  if (!needle) return true;
+  return fields.some((field) => normalizedSearch(record[field]).includes(needle));
+}
+
+function formatSize(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${value.toLocaleString("tr-TR")} B`;
+  }
+  return value;
 }
 
 function normalizedStatus(value) {
@@ -234,6 +280,174 @@ function replaceTargets(records) {
   return true;
 }
 
+function inventoryRecord(payload) {
+  const candidate = nestedRecord(payload, ["inventory", "item", "record"]);
+  if (!candidate) return null;
+  const target = firstValue(candidate, ["target", "ip", "address", "hostname"]);
+  const share = firstValue(candidate, ["share", "share_name"]);
+  const path = firstValue(candidate, [
+    "path",
+    "relative_path",
+    "unc_path",
+    "file_path",
+    "directory_path",
+  ]);
+  if (target === null && share === null && path === null) return null;
+  return {
+    id: firstValue(candidate, ["id", "record_id", "inventory_id"]),
+    target,
+    share,
+    path,
+    type: firstValue(candidate, ["type", "item_type", "kind", "entry_type"]),
+    status: firstValue(candidate, ["status", "read_status", "content_status", "scan_status"]),
+    size: firstValue(candidate, ["size", "size_bytes", "file_size"]),
+  };
+}
+
+function inventoryKey(record) {
+  if (record.id !== null) return `id:${String(record.id)}`;
+  return [record.target, record.share, record.path, record.type]
+    .map((value) => displayValue(value))
+    .join("\u001f");
+}
+
+function findingRecord(payload) {
+  const candidate = nestedRecord(payload, ["finding", "item", "record"]);
+  if (!candidate) return null;
+  const file = firstValue(candidate, ["file", "filename", "file_path", "unc_path", "path"]);
+  const lineNumber = firstValue(candidate, ["line_number", "line_no", "line_index"]);
+  const term = firstValue(candidate, ["term", "matched_term", "search_term", "rule_id"]);
+  let fullLine = firstValue(candidate, [
+    "full_line",
+    "matched_line",
+    "line_text",
+    "context",
+    "text",
+    "value",
+  ]);
+  if (fullLine === null && typeof candidate.line === "string") fullLine = candidate.line;
+  if (file === null && term === null && fullLine === null) return null;
+  return {
+    id: firstValue(candidate, ["id", "finding_id", "record_id"]),
+    target: firstValue(candidate, ["target", "ip", "address", "hostname"]),
+    share: firstValue(candidate, ["share", "share_name"]),
+    file,
+    lineNumber,
+    term,
+    fullLine,
+  };
+}
+
+function findingKey(record) {
+  if (record.id !== null) return `id:${String(record.id)}`;
+  return [record.target, record.share, record.file, record.lineNumber, record.term]
+    .map((value) => displayValue(value))
+    .join("\u001f");
+}
+
+function setResultTableMessage(bodyElement, colspan, message) {
+  const row = document.createElement("tr");
+  row.className = "table-empty-row";
+  const cell = document.createElement("td");
+  cell.colSpan = colspan;
+  cell.textContent = message;
+  row.append(cell);
+  bodyElement.replaceChildren(row);
+}
+
+function renderInventory() {
+  inventoryBody.replaceChildren();
+  let visible = 0;
+  for (const record of inventoryStore.values()) {
+    if (!recordMatchesSearch(
+      record,
+      inventoryFilter.value,
+      ["target", "share", "path", "type", "status", "size"],
+    )) continue;
+    const row = document.createElement("tr");
+    row.append(textCell(record.target));
+    row.append(textCell(record.share));
+    row.append(textCell(record.path, "path-value"));
+    row.append(textCell(record.type));
+    row.append(textCell(record.status, `status-value ${statusTone(record.status)}`));
+    row.append(textCell(formatSize(record.size)));
+    inventoryBody.append(row);
+    visible += 1;
+  }
+  if (inventoryStore.size === 0) {
+    setResultTableMessage(inventoryBody, 6, "Henüz envanter yok.");
+  }
+  inventoryVisibleCount.textContent = `${visible.toLocaleString("tr-TR")} kayıt`;
+}
+
+function renderFindings() {
+  findingsBody.replaceChildren();
+  let visible = 0;
+  for (const record of findingStore.values()) {
+    if (!recordMatchesSearch(
+      record,
+      findingsFilter.value,
+      ["target", "share", "file", "lineNumber", "term", "fullLine"],
+    )) continue;
+    const row = document.createElement("tr");
+    row.append(textCell(record.file, "path-value"));
+    row.append(textCell(record.lineNumber));
+    row.append(textCell(record.term));
+    row.append(textCell(record.fullLine, "finding-line"));
+    findingsBody.append(row);
+    visible += 1;
+  }
+  if (findingStore.size === 0) {
+    setResultTableMessage(findingsBody, 4, "Henüz bulgu yok.");
+  }
+  findingsVisibleCount.textContent = `${visible.toLocaleString("tr-TR")} bulgu`;
+}
+
+function upsertInventory(payload) {
+  const record = inventoryRecord(payload);
+  if (!record) return false;
+  inventoryStore.set(inventoryKey(record), record);
+  renderInventory();
+  return true;
+}
+
+function upsertFinding(payload) {
+  const record = findingRecord(payload);
+  if (!record) return false;
+  findingStore.set(findingKey(record), record);
+  renderFindings();
+  return true;
+}
+
+function replaceInventory(records) {
+  if (!Array.isArray(records)) return false;
+  inventoryStore.clear();
+  for (const item of records) {
+    const record = inventoryRecord(item);
+    if (record) inventoryStore.set(inventoryKey(record), record);
+  }
+  renderInventory();
+  return true;
+}
+
+function replaceFindings(records) {
+  if (!Array.isArray(records)) return false;
+  findingStore.clear();
+  for (const item of records) {
+    const record = findingRecord(item);
+    if (record) findingStore.set(findingKey(record), record);
+  }
+  renderFindings();
+  return true;
+}
+
+function clearResults() {
+  inventoryStore.clear();
+  findingStore.clear();
+  renderInventory();
+  renderFindings();
+}
+
 function setScopeState(label, kind) {
   scopeState.textContent = label;
   scopeState.className = `state ${kind}`;
@@ -287,11 +501,22 @@ function credentialIsValid() {
   return credentialUsername.reportValidity() && credentialSecret.reportValidity();
 }
 
+function additionalSearchTerms() {
+  const terms = additionalTermsInput.value
+    .split(/[\n,]+/u)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  return [...new Set(terms)];
+}
+
+function scanFormIsValid() {
+  return credentialIsValid() && maxDepthInput.reportValidity();
+}
+
 async function startScan() {
-  if (!credentialIsValid()) return;
+  if (!scanFormIsValid()) return;
   startScanButton.disabled = true;
   setScopeState("Başlatılıyor", "working");
-  previewSummary.textContent = "";
   showErrors([]);
 
   try {
@@ -307,6 +532,11 @@ async function startScan() {
       body: JSON.stringify({
         targets: targets.value,
         credential: credentialPayload(),
+        search: {
+          use_default: useDefaultWordlist.checked,
+          additional_terms: additionalSearchTerms(),
+        },
+        max_depth: Number(maxDepthInput.value),
       }),
     });
     const payload = await response.json();
@@ -316,20 +546,18 @@ async function startScan() {
         value: item.value ?? item.code,
         reason: item.reason ?? item.message,
       })));
-      previewSummary.textContent = "Tarama başlatılamadı.";
       setScopeState("Hatalı", "error");
       return;
     }
 
     targetStore.clear();
     renderTargetRows("Hedef sonuçları bekleniyor.");
-    previewSummary.textContent = "Adres aralığı taranıyor; yanıt verenler aşağıda görünecek.";
+    clearResults();
     setScopeState("Çalışıyor", "working");
     cancelScanButton.disabled = false;
     await refreshSnapshot();
   } catch (_error) {
     showErrors([{value: "Bağlantı", reason: "Yerel panel yanıt vermedi."}]);
-    previewSummary.textContent = "Tarama başlatılamadı.";
     setScopeState("Hata", "error");
   } finally {
     if (cancelScanButton.disabled) startScanButton.disabled = false;
@@ -352,7 +580,6 @@ async function cancelScan() {
     });
     if (response.ok) {
       setScopeState("İptal ediliyor", "working");
-      previewSummary.textContent = "Tarama iptal isteği gönderildi.";
     }
   } catch (_error) {
     showErrors([{value: "İptal", reason: "Yerel panel yanıt vermedi."}]);
@@ -387,7 +614,7 @@ function setScanState(state) {
     ? STATUS_MESSAGES[status]
     : rawMessage
       ? MESSAGE_LABELS[rawMessage] ?? rawMessage
-      : STATUS_MESSAGES[status] ?? "Durum bilgisi alınamadı.";
+      : STATUS_MESSAGES[status] ?? "";
 
   document.querySelector("#inventory-count").textContent = state.inventory_count ?? 0;
   document.querySelector("#finding-count").textContent = state.finding_count ?? 0;
@@ -405,6 +632,32 @@ function targetsFromSnapshot(state) {
   if (Array.isArray(records)) replaceTargets(records);
 }
 
+function resultsFromSnapshot(state) {
+  const inventory = resultArray(state, ["inventory", "inventory_items"]);
+  const findings = resultArray(state, ["findings", "finding_items"]);
+  if (inventory) replaceInventory(inventory);
+  if (findings) replaceFindings(findings);
+}
+
+async function fetchResultArray(path, names) {
+  const response = await fetch(path, {cache: "no-store", credentials: "omit"});
+  if (!response.ok) return null;
+  return resultArray(await response.json(), names);
+}
+
+async function refreshResultPanels() {
+  try {
+    const [inventory, findings] = await Promise.all([
+      fetchResultArray("/inventory", ["inventory", "inventory_items"]),
+      fetchResultArray("/findings", ["findings", "finding_items"]),
+    ]);
+    if (inventory) replaceInventory(inventory);
+    if (findings) replaceFindings(findings);
+  } catch (_error) {
+    // Live events and the next snapshot can still update these RAM-only views.
+  }
+}
+
 async function refreshSnapshot() {
   try {
     const response = await fetch("/scan/snapshot", {cache: "no-store", credentials: "omit"});
@@ -412,10 +665,12 @@ async function refreshSnapshot() {
     const state = await response.json();
     if (latestGeneration !== null && state.generation !== latestGeneration) {
       targetStore.clear();
+      clearResults();
     }
     latestGeneration = state.generation;
     setScanState(state);
     targetsFromSnapshot(state);
+    resultsFromSnapshot(state);
     if (targetStore.size === 0) {
       const message = state.status === "idle"
         ? "Henüz tarama başlatılmadı."
@@ -431,9 +686,12 @@ function handleServerEvent(event) {
   try {
     const payload = JSON.parse(event.data);
     if (event.type === "target.changed") upsertTarget(payload);
+    if (event.type === "inventory.added") upsertInventory(payload);
+    if (event.type === "finding.added") upsertFinding(payload);
     if (event.type === "snapshot") {
       setScanState(payload);
       targetsFromSnapshot(payload);
+      resultsFromSnapshot(payload);
     }
   } catch (_error) {
     // Invalid or incomplete live events are ignored; the snapshot remains authoritative.
@@ -457,11 +715,22 @@ for (const filter of targetFilters) {
 startScanButton.addEventListener("click", startScan);
 cancelScanButton.addEventListener("click", cancelScan);
 credentialKind.addEventListener("change", syncCredentialControls);
+inventoryFilter.addEventListener("input", renderInventory);
+findingsFilter.addEventListener("input", renderFindings);
 syncCredentialControls();
 refreshSnapshot();
+refreshResultPanels();
 
 const scanEvents = new EventSource("/scan/events");
-for (const eventName of ["target.changed", "snapshot"]) {
+for (const eventName of [
+  "target.changed",
+  "inventory.added",
+  "finding.added",
+  "snapshot",
+]) {
   scanEvents.addEventListener(eventName, handleServerEvent);
 }
-scanEvents.addEventListener("resync.required", refreshSnapshot);
+scanEvents.addEventListener("resync.required", async () => {
+  await refreshSnapshot();
+  await refreshResultPanels();
+});

@@ -97,14 +97,14 @@ textarea:focus, input:focus, select:focus {
   box-shadow: 0 0 0 3px rgb(84 225 185 / 12%);
 }
 select:disabled { color: var(--muted); opacity: .78; }
-.credential-block {
+.credential-block, .search-block {
   margin: 22px 0 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 8px 16px 16px;
   background: #0a1513;
 }
-.credential-block legend {
+.credential-block legend, .search-block legend {
   padding: 0 7px;
   color: var(--accent);
   font-size: .72rem;
@@ -119,9 +119,25 @@ select:disabled { color: var(--muted); opacity: .78; }
 }
 .credential-auth-field { grid-column: 1 / -1; }
 .form-field label { margin-top: 10px; }
-.hint, .summary, .scope-summary { color: var(--muted); font-size: .8rem; }
+.search-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, .45fr);
+  align-items: end;
+  gap: 14px;
+}
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  margin: 10px 0 0;
+  color: var(--text);
+  cursor: pointer;
+}
+.checkbox-field input { width: auto; margin: 0; accent-color: var(--accent); }
+.depth-field label { margin-top: 10px; }
+.hint, .summary { color: var(--muted); font-size: .8rem; }
 .actions { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
-.scope-summary { font-variant-numeric: tabular-nums; }
 button {
   border: 0;
   border-radius: 10px;
@@ -146,7 +162,7 @@ button:disabled { opacity: .55; cursor: wait; }
 .metric-grid strong { font-size: 1.35rem; }
 .metric-grid span { margin-top: 4px; color: var(--muted); font-size: .7rem; }
 
-.live-target-panel { margin-top: 18px; }
+.live-target-panel, .data-panel { margin-top: 18px; }
 .status-filters {
   display: flex;
   align-items: center;
@@ -189,16 +205,39 @@ button:disabled { opacity: .55; cursor: wait; }
   border-radius: 12px;
   background: #0a1513;
 }
+.result-heading { align-items: center; }
+.table-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(12rem, 24rem);
+  align-items: center;
+  justify-content: end;
+  gap: 10px;
+  margin: 14px 0;
+}
+.table-toolbar label { margin: 0; }
+.table-toolbar input { padding-block: 9px; }
+.result-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0a1513;
+}
 table { width: 100%; border-collapse: collapse; font-size: .82rem; }
 th { color: var(--muted); font-size: .68rem; letter-spacing: .08em; text-align: left; text-transform: uppercase; }
 th, td { padding: 12px 10px; border-bottom: 1px solid var(--line); }
 td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .target-status-table { min-width: 760px; }
+.result-table { min-width: 900px; }
 .target-status-table th:first-child,
-.target-status-table td:first-child { padding-left: 16px; }
+.target-status-table td:first-child,
+.result-table th:first-child,
+.result-table td:first-child { padding-left: 16px; }
 .target-status-table th:last-child,
-.target-status-table td:last-child { padding-right: 16px; }
-.target-status-table tbody tr:last-child td { border-bottom: 0; }
+.target-status-table td:last-child,
+.result-table th:last-child,
+.result-table td:last-child { padding-right: 16px; }
+.target-status-table tbody tr:last-child td,
+.result-table tbody tr:last-child td { border-bottom: 0; }
 .target-status-table tbody tr[hidden] { display: none; }
 .table-empty-row td {
   height: 118px;
@@ -222,6 +261,12 @@ td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .status-value.is-ok { color: var(--accent); background: var(--accent-dark); }
 .status-value.is-working { color: var(--warning); background: #382f1c; }
 .status-value.is-error { color: var(--danger); background: #3a2023; }
+.path-value, .finding-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.finding-line { min-width: 22rem; }
 .ok-text { color: var(--accent); }
 .warning-text { color: var(--warning); }
 .error-text { color: var(--danger); }
@@ -235,4 +280,6 @@ td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
   .actions { align-items: flex-start; flex-direction: column; }
   .credential-grid { grid-template-columns: 1fr; }
   .credential-auth-field { grid-column: auto; }
+  .search-settings-grid { grid-template-columns: 1fr; }
+  .table-toolbar { grid-template-columns: 1fr; }
 }
