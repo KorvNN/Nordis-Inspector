@@ -123,6 +123,37 @@ class ContentScanTests(unittest.TestCase):
         self.assertEqual((), result.matches)
         self.assertIn("without guessing", result.diagnostic.message)
 
+    def test_confident_legacy_encoding_is_detected_from_bounded_sample(self) -> None:
+        line = "Bu dosyada kullanıcı adı ve şifre bilgileri bulunmaktadır."
+        content = ((line + "\n") * 20 + "ŞİFRE=NORDIS_LEGACY_CANARY\n").encode("cp1254")
+
+        result = scan_text(
+            every_byte(content),
+            ["şifre"],
+            legacy_detection_sample_bytes=4096,
+        )
+
+        self.assertTrue(result.complete)
+        self.assertEqual("cp1254", result.encoding)
+        self.assertEqual(21, result.matches[-1].line_number)
+        self.assertEqual("ŞİFRE=NORDIS_LEGACY_CANARY", result.matches[-1].line)
+
+    def test_ambiguous_short_legacy_sample_is_not_guessed(self) -> None:
+        result = scan_text(
+            ["şifre=çok gizli\n".encode("cp1254")],
+            ["şifre"],
+            legacy_detection_sample_bytes=4096,
+        )
+
+        self.assertEqual(ContentScanStatus.ENCODING_UNDETERMINED, result.status)
+        self.assertIsNone(result.encoding)
+
+    def test_legacy_detection_sample_limit_is_validated(self) -> None:
+        with self.assertRaises(TypeError):
+            scan_text([b"text"], ["text"], legacy_detection_sample_bytes=True)
+        with self.assertRaises(ValueError):
+            scan_text([b"text"], ["text"], legacy_detection_sample_bytes=2 * 1024 * 1024)
+
     def test_invalid_bom_declared_stream_is_a_decoding_error(self) -> None:
         result = scan_text([codecs.BOM_UTF16_LE + b"a"], ["a"])
 
@@ -135,6 +166,36 @@ class ContentScanTests(unittest.TestCase):
         rendered = repr(result.matches[0])
         self.assertIn("redacted", rendered)
         self.assertNotIn("super-secret", rendered)
+
+    def test_line_callback_receives_each_decoded_physical_line(self) -> None:
+        observed: list[tuple[int, str]] = []
+
+        result = scan_text(
+            [b"first\r", b"\n\nlast"],
+            ["absent"],
+            on_line=lambda number, line: observed.append((number, line)),
+        )
+
+        self.assertTrue(result.complete)
+        self.assertEqual([(1, "first"), (2, ""), (3, "last")], observed)
+
+    def test_match_callback_can_stream_without_retaining_matches(self) -> None:
+        observed = []
+
+        result = scan_text(
+            [b"password=one\npassword=two"],
+            ["password"],
+            on_match=observed.append,
+            retain_matches=False,
+        )
+
+        self.assertTrue(result.complete)
+        self.assertEqual((), result.matches)
+        self.assertEqual([1, 2], [match.line_number for match in observed])
+
+    def test_retain_matches_must_be_boolean(self) -> None:
+        with self.assertRaises(TypeError):
+            scan_text([b"text"], ["text"], retain_matches=1)  # type: ignore[arg-type]
 
     def test_empty_and_non_string_terms_are_rejected(self) -> None:
         with self.assertRaises(ValueError):

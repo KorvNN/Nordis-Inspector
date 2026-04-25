@@ -50,6 +50,18 @@ class ScanConfigTests(unittest.TestCase):
         self.assertEqual(options.terms, ("Password", "şifre", "API_KEY"))
         self.assertEqual(options.share_names, ("Public", "C$"))
         self.assertEqual(options.max_depth, 64)
+        self.assertTrue(options.detect_patterns)
+
+    def test_pattern_detection_can_be_disabled(self) -> None:
+        options = self.parse(
+            {
+                "use_default": True,
+                "additional_terms": [],
+                "detect_patterns": False,
+            }
+        )
+
+        self.assertFalse(options.detect_patterns)
 
     def test_defaults_can_be_disabled_without_reading_content_file(self) -> None:
         self.content_path.unlink()
@@ -98,6 +110,15 @@ class ScanConfigTests(unittest.TestCase):
                 {"use_default": False, "additional_terms": ["token", 7]},
                 32,
                 "Each additional search term must be text.",
+            ),
+            (
+                {
+                    "use_default": False,
+                    "additional_terms": ["token"],
+                    "detect_patterns": "yes",
+                },
+                32,
+                "Pattern detection selection must be a boolean.",
             ),
             (
                 {"use_default": False, "additional_terms": ["token"]},

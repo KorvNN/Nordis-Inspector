@@ -10,6 +10,14 @@ from .content import (
     scan_text,
 )
 from .credentials import AuthMode, Credential, CredentialKind, CredentialValidationError
+from .detection import (
+    DEFAULT_DETECTION_RULES,
+    DetectionConfidence,
+    DetectionRule,
+    PatternMatch,
+    detect_patterns,
+)
+from .kerberos import resolve_kerberos_hostname
 from .progress import (
     ActiveWork,
     ProgressSnapshot,
@@ -48,6 +56,9 @@ __all__ = [
     "Credential",
     "CredentialKind",
     "CredentialValidationError",
+    "DEFAULT_DETECTION_RULES",
+    "DetectionConfidence",
+    "DetectionRule",
     "CancellationSignal",
     "CapacityReached",
     "ContentDiagnostic",
@@ -57,6 +68,7 @@ __all__ = [
     "LineMatch",
     "MatchOptions",
     "MatchSpan",
+    "PatternMatch",
     "ProgressSnapshot",
     "ProgressTracker",
     "ResultCollection",
@@ -78,5 +90,7 @@ __all__ = [
     "TargetPlan",
     "TerminalReason",
     "parse_targets",
+    "detect_patterns",
+    "resolve_kerberos_hostname",
     "scan_text",
 ]

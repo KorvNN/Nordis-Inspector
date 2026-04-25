@@ -9,12 +9,32 @@ of a stream.
 from __future__ import annotations
 
 import codecs
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import chain
 
 _DECODE_BLOCK_BYTES = 64 * 1024
+_MAX_LEGACY_SAMPLE_BYTES = 1024 * 1024
+_LEGACY_ENCODINGS = frozenset(
+    {
+        "cp1250",
+        "cp1251",
+        "cp1252",
+        "cp1253",
+        "cp1254",
+        "cp1257",
+        "iso8859_1",
+        "iso8859_2",
+        "iso8859_3",
+        "iso8859_4",
+        "iso8859_5",
+        "iso8859_7",
+        "iso8859_9",
+        "iso8859_15",
+        "mac_roman",
+    }
+)
 
 
 class ContentScanStatus(StrEnum):
@@ -100,6 +120,10 @@ def scan_text(
     terms: Iterable[str],
     *,
     options: MatchOptions | None = None,
+    on_line: Callable[[int, str], None] | None = None,
+    on_match: Callable[[LineMatch], None] | None = None,
+    retain_matches: bool = True,
+    legacy_detection_sample_bytes: int = 0,
 ) -> ContentScanResult:
     """Scan byte chunks once and return matches without retaining the file.
 
@@ -109,6 +133,15 @@ def scan_text(
     """
 
     effective_options = options or MatchOptions()
+    if not isinstance(retain_matches, bool):
+        raise TypeError("retain_matches must be a boolean.")
+    if (
+        isinstance(legacy_detection_sample_bytes, bool)
+        or not isinstance(legacy_detection_sample_bytes, int)
+    ):
+        raise TypeError("legacy_detection_sample_bytes must be an integer.")
+    if not 0 <= legacy_detection_sample_bytes <= _MAX_LEGACY_SAMPLE_BYTES:
+        raise ValueError("legacy_detection_sample_bytes is outside the safe range.")
     prepared_terms = _prepare_terms(terms, effective_options.case_sensitive)
     iterator = iter(chunks)
     prefix = bytearray()
@@ -130,9 +163,37 @@ def scan_text(
                 break
 
     encoding, bom_length, bom_declared = _detect_encoding(prefix)
-    initial = memoryview(prefix)[bom_length:]
+    initial: bytes | bytearray | memoryview = memoryview(prefix)[bom_length:]
+    legacy_detected = False
+    if not bom_declared and legacy_detection_sample_bytes:
+        sample = bytearray(initial)
+        while len(sample) < legacy_detection_sample_bytes and not exhausted:
+            try:
+                chunk = next(iterator)
+            except StopIteration:
+                exhausted = True
+                break
+            raw = _as_bytes_view(chunk)
+            needed = legacy_detection_sample_bytes - len(sample)
+            sample.extend(raw[:needed])
+            remainder = raw[needed:]
+            if remainder:
+                iterator = iter(chain((remainder,), iterator))
+                break
+        detected = _detect_legacy_encoding(bytes(sample))
+        if detected is not None:
+            encoding = detected
+            legacy_detected = True
+        initial = sample
     decoder = codecs.getincrementaldecoder(encoding)(errors="strict")
-    state = _LineState(effective_options.max_line_chars, prepared_terms, effective_options)
+    state = _LineState(
+        effective_options.max_line_chars,
+        prepared_terms,
+        effective_options,
+        on_line,
+        on_match,
+        retain_matches,
+    )
     bytes_consumed = bom_length
 
     def consume(raw_chunk: bytes | bytearray | memoryview) -> ContentScanResult | None:
@@ -147,6 +208,7 @@ def scan_text(
                 return _decode_failure(
                     encoding=encoding,
                     bom_declared=bom_declared,
+                    encoding_detected=legacy_detected,
                     state=state,
                     bytes_consumed=bytes_consumed,
                 )
@@ -179,6 +241,7 @@ def scan_text(
         return _decode_failure(
             encoding=encoding,
             bom_declared=bom_declared,
+            encoding_detected=legacy_detected,
             state=state,
             bytes_consumed=bytes_consumed,
         )
@@ -208,10 +271,16 @@ class _LineState:
         max_line_chars: int,
         terms: tuple[_PreparedTerm, ...],
         options: MatchOptions,
+        on_line: Callable[[int, str], None] | None,
+        on_match: Callable[[LineMatch], None] | None,
+        retain_matches: bool,
     ) -> None:
         self.max_line_chars = max_line_chars
         self.terms = terms
         self.options = options
+        self.on_line = on_line
+        self.on_match = on_match
+        self.retain_matches = retain_matches
         self.parts: list[str] = []
         self.current_length = 0
         self.next_line_number = 1
@@ -273,7 +342,14 @@ class _LineState:
 
     def _finish_line(self) -> None:
         line = "".join(self.parts)
-        self.matches.extend(_match_line(line, self.next_line_number, self.terms, self.options))
+        line_matches = _match_line(line, self.next_line_number, self.terms, self.options)
+        if self.on_match is not None:
+            for match in line_matches:
+                self.on_match(match)
+        if self.retain_matches:
+            self.matches.extend(line_matches)
+        if self.on_line is not None:
+            self.on_line(self.next_line_number, line)
         self.parts.clear()
         self.current_length = 0
         self.lines_processed += 1
@@ -288,7 +364,7 @@ def _prepare_terms(terms: Iterable[str], case_sensitive: bool) -> tuple[_Prepare
             raise TypeError("Search terms must be strings.")
         if not term:
             raise ValueError("Search terms cannot be empty.")
-        needle = term if case_sensitive else term.casefold()
+        needle = term if case_sensitive else _comparison_fold(term)
         if needle in seen:
             continue
         seen.add(needle)
@@ -346,10 +422,22 @@ def _casefold_with_index_map(value: str) -> tuple[str, tuple[int, ...]]:
     folded_parts: list[str] = []
     indices: list[int] = []
     for index, character in enumerate(value):
-        folded = character.casefold()
+        folded = _comparison_fold(character)
         folded_parts.append(folded)
         indices.extend((index,) * len(folded))
     return "".join(folded_parts), tuple(indices)
+
+
+def _comparison_fold(value: str) -> str:
+    """Case-fold text while treating the four Turkish I forms alike.
+
+    Unicode's locale-independent casefold maps ``İ`` to ``i`` plus a combining
+    dot and leaves ``ı`` distinct.  Search terms such as ``şifre`` therefore
+    miss common all-caps Turkish labels without this comparison-only
+    canonicalization.  Original text and reported match offsets stay intact.
+    """
+
+    return value.casefold().replace("\u0307", "").replace("ı", "i")
 
 
 def _has_word_boundaries(line: str, start: int, end: int) -> bool:
@@ -385,16 +473,39 @@ def _detect_encoding(prefix: bytearray) -> tuple[str, int, bool]:
     return "utf-8", 0, False
 
 
+def _detect_legacy_encoding(sample: bytes) -> str | None:
+    try:
+        sample.decode("utf-8", errors="strict")
+        return None
+    except UnicodeDecodeError:
+        pass
+    try:
+        from charset_normalizer import from_bytes
+
+        match = from_bytes(sample).best()
+    except Exception:
+        return None
+    if match is None or match.encoding is None:
+        return None
+    encoding = match.encoding.casefold().replace("-", "_")
+    if encoding not in _LEGACY_ENCODINGS:
+        return None
+    if match.chaos > 0.1 or match.coherence < 0.2:
+        return None
+    return encoding
+
+
 def _decode_failure(
     *,
     encoding: str,
     bom_declared: bool,
+    encoding_detected: bool,
     state: _LineState,
     bytes_consumed: int,
 ) -> ContentScanResult:
-    if bom_declared:
+    if bom_declared or encoding_detected:
         status = ContentScanStatus.DECODING_ERROR
-        message = "The byte stream is invalid for its BOM-declared Unicode encoding."
+        message = "The byte stream is invalid for its selected text encoding."
     else:
         status = ContentScanStatus.ENCODING_UNDETERMINED
         message = (
@@ -403,7 +514,7 @@ def _decode_failure(
         )
     return ContentScanResult(
         status=status,
-        encoding=encoding if bom_declared else None,
+        encoding=encoding if bom_declared or encoding_detected else None,
         matches=(),
         lines_processed=state.lines_processed,
         bytes_consumed=bytes_consumed,

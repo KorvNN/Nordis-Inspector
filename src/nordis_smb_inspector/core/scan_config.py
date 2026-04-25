@@ -34,6 +34,7 @@ class ScanOptions:
     terms: tuple[str, ...]
     share_names: tuple[str, ...]
     max_depth: int
+    detect_patterns: bool = True
 
     def __post_init__(self) -> None:
         terms = _normalize_values(self.terms, "Search terms must be text.")
@@ -43,6 +44,8 @@ class ScanOptions:
         if not share_names:
             raise ScanConfigError("The share wordlist must contain at least one entry.")
         _validate_max_depth(self.max_depth)
+        if not isinstance(self.detect_patterns, bool):
+            raise ScanConfigError("Pattern detection selection must be a boolean.")
         object.__setattr__(self, "terms", terms)
         object.__setattr__(self, "share_names", share_names)
 
@@ -50,7 +53,7 @@ class ScanOptions:
         return (
             f"ScanOptions(terms=<redacted {len(self.terms)} entries>, "
             f"share_names=<redacted {len(self.share_names)} entries>, "
-            f"max_depth={self.max_depth!r})"
+            f"max_depth={self.max_depth!r}, detect_patterns={self.detect_patterns!r})"
         )
 
 
@@ -81,6 +84,9 @@ def parse_scan_options(
         raise ScanConfigError("Additional search terms must be an array.")
     if not all(isinstance(term, str) for term in additional_terms):
         raise ScanConfigError("Each additional search term must be text.")
+    detect_patterns = search.get("detect_patterns", True)
+    if not isinstance(detect_patterns, bool):
+        raise ScanConfigError("Pattern detection selection must be a boolean.")
 
     depth = _validate_max_depth(max_depth)
     repository_paths: tuple[Path, Path] | None = None
@@ -107,7 +113,12 @@ def parse_scan_options(
         share_path = defaults()[1]
     share_names = _load_wordlist(share_path, kind="share")
 
-    return ScanOptions(terms=terms, share_names=share_names, max_depth=depth)
+    return ScanOptions(
+        terms=terms,
+        share_names=share_names,
+        max_depth=depth,
+        detect_patterns=detect_patterns,
+    )
 
 
 def repository_wordlist_paths(
