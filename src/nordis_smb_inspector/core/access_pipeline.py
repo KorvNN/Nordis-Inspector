@@ -14,7 +14,7 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from nordis_smb_inspector.core.targets import (
     ExpandedTarget,
@@ -29,7 +29,6 @@ from nordis_smb_inspector.smb.cancellation import (
     CancellationToken,
     ScanCancelled,
 )
-
 
 ResultT = TypeVar("ResultT")
 
@@ -63,7 +62,7 @@ class AccessPipelineSettings:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
-class AccessPipelineEvent(Generic[ResultT]):
+class AccessPipelineEvent[ResultT]:
     """One normalized expansion or inspection outcome.
 
     ``result`` is available to the live caller but intentionally absent from

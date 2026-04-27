@@ -128,6 +128,31 @@ class ScanSessionManagerTests(unittest.TestCase):
         with self.assertRaises(StaleScanUpdate):
             self.manager.inventory_page(first.token)
 
+    def test_inventory_upsert_replaces_one_logical_row_without_count_growth(self) -> None:
+        handle = self.manager.begin_scan()
+
+        first_count = self.manager.upsert_inventory(
+            handle.token,
+            ("target", "share", "file.txt", "file"),
+            {"status": "file_readable"},
+        )
+        replacement_count = self.manager.upsert_inventory(
+            handle.token,
+            ("target", "share", "file.txt", "file"),
+            {"status": "read_error"},
+        )
+        second_count = self.manager.upsert_inventory(
+            handle.token,
+            ("target", "share", "other.txt", "file"),
+            {"status": "file_readable"},
+        )
+
+        page = self.manager.inventory_page(handle.token)
+        self.assertEqual((first_count, replacement_count, second_count), (1, 1, 2))
+        self.assertEqual(page.total_items, 2)
+        self.assertEqual(page.items[0], {"status": "read_error"})
+        self.assertEqual(self.manager.snapshot.inventory_count, 2)
+
     def test_stale_id_or_generation_cannot_mutate_current_scan(self) -> None:
         first = self.manager.begin_scan()
         self.manager.complete(first.token)

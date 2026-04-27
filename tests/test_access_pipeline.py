@@ -13,7 +13,7 @@ from nordis_smb_inspector.core.access_pipeline import (
     AccessPipelineSettings,
 )
 from nordis_smb_inspector.core.targets import ExpandedTarget, TargetKind, parse_targets
-from nordis_smb_inspector.smb import CancellationFlag, NEVER_CANCELLED, ScanCancelled
+from nordis_smb_inspector.smb import NEVER_CANCELLED, CancellationFlag, ScanCancelled
 
 
 class AccessPipelineSettingsTests(unittest.TestCase):
@@ -36,9 +36,8 @@ class AccessPipelineExecutorTests(unittest.TestCase):
         callback_results: list[str] = []
 
         def inspect(target: ExpandedTarget, _cancellation: object) -> str:
-            if str(target.address) == "192.0.2.1":
-                if not release_first.wait(1):
-                    raise AssertionError("second target did not finish")
+            if str(target.address) == "192.0.2.1" and not release_first.wait(1):
+                raise AssertionError("second target did not finish")
             return f"result-{target.address}"
 
         def callback(event: object) -> None:

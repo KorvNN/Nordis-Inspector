@@ -7,6 +7,7 @@ them directly from process memory.
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -227,6 +228,7 @@ class ScanSessionManager:
         self._generation = 0
         self._state = ScanState(status=ScanStatus.IDLE, generation=0)
         self._inventory: list[object] = []
+        self._inventory_keys: dict[Hashable, int] = {}
         self._findings: list[object] = []
         self._progress: ProgressTracker | None = None
         self._cancel_event: Event | None = None
@@ -265,6 +267,7 @@ class ScanSessionManager:
             # This is the only operation that discards a preceding scan's
             # results. Merely completing, failing, or cancelling retains them.
             self._inventory.clear()
+            self._inventory_keys.clear()
             self._findings.clear()
             self._progress = progress
             self._cancel_event = cancel_event
@@ -290,6 +293,48 @@ class ScanSessionManager:
         """Append one inventory record and return the new count."""
 
         return self._append_result(token, ResultCollection.INVENTORY, item)
+
+    def upsert_inventory(self, token: ScanToken, key: Hashable, item: object) -> int:
+        """Insert or replace one logical inventory row without inflating counts."""
+
+        try:
+            hash(key)
+        except TypeError as exc:
+            raise TypeError("Inventory key must be hashable.") from exc
+
+        capacity: tuple[ProgressTracker, int] | None = None
+        with self._lock:
+            self._require_running_locked(token)
+            existing = self._inventory_keys.get(key)
+            if existing is not None:
+                self._inventory[existing] = item
+                return len(self._inventory)
+            limit = self._limits.max_inventory_items
+            if len(self._inventory) >= limit:
+                assert self._cancel_event is not None
+                self._cancel_event.set()
+                _, progress = self._finish_locked(
+                    ScanStatus.FAILED,
+                    TerminalReason.CAPACITY_REACHED,
+                    partial=True,
+                    capacity_collection=ResultCollection.INVENTORY,
+                )
+                capacity = (progress, limit)
+            else:
+                self._inventory_keys[key] = len(self._inventory)
+                self._inventory.append(item)
+                self._state = self._replace_state_locked(
+                    inventory_count=len(self._inventory)
+                )
+                return len(self._inventory)
+
+        assert capacity is not None
+        progress, limit = capacity
+        progress.set_phase(
+            ScanPhase.FAILED,
+            message="inventory in-memory capacity reached.",
+        )
+        raise CapacityReached(ResultCollection.INVENTORY, limit)
 
     def add_finding(self, token: ScanToken, item: object) -> int:
         """Append one finding and return the new count."""

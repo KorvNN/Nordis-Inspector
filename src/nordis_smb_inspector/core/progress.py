@@ -14,6 +14,7 @@ from types import MappingProxyType
 class ScanPhase(StrEnum):
     PREPARING_TARGETS = "preparing_targets"
     CONNECTIVITY = "connectivity"
+    INSPECTION = "inspection"
     AUTHENTICATION = "authentication"
     SHARE_DISCOVERY = "share_discovery"
     FILE_INVENTORY = "file_inventory"
