@@ -194,17 +194,17 @@ dosya ağacına bağlanılmaz.
 
 ### 3.6 İçerik arama
 
-Planlanan biçimler:
+Desteklenen biçimler:
 
 - Düz metin, yapılandırma ve kaynak kodu: TXT, LOG, CSV, TSV, INI, CONF, CFG,
   ENV, PROPERTIES, YAML, JSON, JSONL, XML, TOML, MD, RST, SQL, REG, INF, PS1,
   BAT, CMD, SH ve yaygın programlama dili kaynak dosyaları
 - Microsoft Office Open XML: DOCX, XLSX, PPTX
 - OpenDocument: ODT, ODS, ODP
-- PDF (metin katmanı bulunan dosyalar), RTF ve HTML
-- E-posta: EML; MSG desteği uygun çıkarıcıyla
-- Arşivler: ZIP, TAR ve GZIP; 7z desteği uygun çıkarıcıyla
-- Eski Office biçimleri DOC, XLS ve PPT; güvenilir çıkarıcı mevcutsa
+- PDF (metin katmanı bulunan dosyalar); RTF, HTML ve EML metin akışı olarak
+- MSG içerik çıkarımı desteklenmez; dosya envanterde kalır
+- Arşivler: ZIP/JAR/WAR/EAR, TAR ve GZIP
+- Eski Office biçimleri DOC, XLS ve PPT desteklenmez; dosya envanterde kalır
 
 Metin kodlaması algılama sırası:
 
@@ -213,7 +213,7 @@ Metin kodlaması algılama sırası:
 3. Kodlama algılayıcıyla Windows-1254, Windows-1252, ISO-8859-9 ve diğer adaylar
 4. Algılanamayan içerikte `ENCODING_UNDETERMINED` durumu
 
-Algılanan kodlama ve güven skoru dosya envanterinde gösterilir. Arşivler için
+Algılanamayan veya bozuk kodlama dosya hata ayrıntısında gösterilir. Arşivler için
 ayrı iç içe geçme, toplam açılmış boyut ve dosya sayısı sınırları uygulanır.
 İçerik çıkarıcılarının bellek akışıyla çalışması gerekir; geçici disk dosyası
 zorunlu olan çıkarıcılar kullanılmaz.
@@ -223,15 +223,15 @@ Eşleşme kaydı:
 - Hedef IP veya hostname
 - Paylaşım ve dosyanın UNC yolu
 - Eşleşen terim
-- Algılama yöntemi: `WORDLIST`, `PATTERN` veya `ENTROPY`
+- Algılama yöntemi: `WORDLIST` veya `PATTERN`
 - Kalıp bulgularında kural kimliği, kategori ve güven seviyesi
 - Kerberos/NTLM/hash artifact bulgularında algılanan format ve varsa etype
 - Aynı dosyadaki her eşleşme için ayrı kayıt ve dosya düzeyinde toplam eşleşme sayısı
 - TXT benzeri dosyalarda satır numarası
-- PDF'de sayfa; Office dosyalarında paragraf, slayt veya hücre konumu
+- PDF ve Office dosyalarında extractor metin akışındaki satır numarası
 - Düz metinlerde eşleşmenin bulunduğu tam satır
 - PDF/Office dosyalarında eşleşmenin bulunduğu tam paragraf, hücre veya metin bloğu
-- Dosya boyutu, değiştirilme zamanı ve tarama zamanı
+- Envanterde dosya boyutu ve değiştirilme zamanı
 
 Eşleşen satır/metin web panelinde maskelenmeden, canlı tarama oturumu içinde
 gösterilir. Credential, envanter, durum ve eşleşme verisi loglanmaz veya kalıcı
@@ -250,10 +250,7 @@ Dosya işleme durumları:
 | `FILE_READ_DENIED` | Dosya listede görüldü ancak okuma izni reddedildi |
 | `DIRECTORY_LIST_DENIED` | Klasör görüldü ancak içindeki dosyalar listelenemedi |
 | `SHARING_VIOLATION` | Dosya başka bir işlem nedeniyle okumaya açılamadı |
-| `UNSUPPORTED_TYPE` | Dosya mevcut fakat içerik çıkarıcısı bulunmuyor |
-| `ENCRYPTED_OR_PROTECTED` | Dosya mevcut fakat parola/koruma nedeniyle okunamadı |
-| `EXTRACTOR_LIMIT_REACHED` | Dosya mevcut; seçilen çıkarıcının açık kaynak sınırına ulaşıldı |
-| `READ_ERROR` | Diğer okuma/protokol hatası; özgün status kodu ayrıca gösterilir |
+| `READ_ERROR` | Encoding, belge ayrıştırma, koruma, extractor sınırı veya diğer okuma hatası; güvenli sembolik kod ayrıca gösterilir |
 
 İkili dosyalar, şifreli belgeler ve görüntü tabanlı PDF/OCR ilk sürümde içerik
 aramasına dahil değildir; envanterde yine gösterilebilir.
@@ -412,17 +409,15 @@ Tespit:      2026-08-13T17:30:00+03:00
 - SMB/Kerberos kitaplığı; parola, NT hash, ccache, signing ve encryption
   gereksinimleri için küçük entegrasyon deneyiyle seçilecek.
 - Yerel web çatısı; canlı ilerleme aktarımı, iptal ve paketleme deneyiyle seçilecek.
-- Geniş dosya biçimleri için yalnız bellek akışıyla güvenilir çalışan çıkarıcılar
-  etkinleştirilecek; desteklenmeyen biçimler envanterde açıkça işaretlenecek.
+- Geniş dosya biçimleri için yalnız bellek akışıyla çalışan çıkarıcılar
+  etkinleştirilmiştir; çıkarım hataları envanterde açıkça işaretlenir.
 - Başlangıç wordlist terimleri ve sabit pattern corpus'u pozitif/negatif test
   örnekleriyle küratörlü olarak hazırlanacak.
 - Klasör derinliği için döngü/reparse-point davranışı test edilecek; sabit `32`
   gibi doğrulanmamış bir sayı varsayılan kabul edilmeyecek.
-- Düz metin dosyaları mümkün olduğunda stream edilerek boyutundan bağımsız
-  taranacak. PDF/Office/arşiv gibi seek veya toplu bellek gerektiren biçimlerin
-  sınırları extractor ve bellek testleri sonucunda belirlenecek.
-- Arşiv güvenlik sınırları; iç içe geçme, açılmış toplam byte, üye sayısı ve
-  sıkıştırma oranı testleriyle belirlenecek ve panelden değiştirilebilir olacak.
+- Düz metin dosyaları boyutundan bağımsız stream edilir. PDF ve Office dosyaları
+  remote seek/range-read adaptörüyle, arşivler üye akışıyla taranır.
+- Arşiv güvenlik sınırları 3 katman, 500 MiB açılmış içerik ve 10.000 üyedir.
 
 ## 9. İlk sürüm kabul ölçütleri
 

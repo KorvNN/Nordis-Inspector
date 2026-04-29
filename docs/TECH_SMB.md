@@ -168,19 +168,16 @@ kurmamalı.
 
 ## Neden Impacket ana yığın değil?
 
-Impacket 0.13.1 de Python 3.12, parola/hash/ccache, yerleşik `listShares()` ve
-offset'li `readFile()` sunar; özellikle share RPC tarafı daha hazırdır. Ancak
-Nordis'in ana işi uzun süreli SMB veri okuma ile signing/encryption durumunu
-ayrı ve doğru raporlamaktır. `smbprotocol` bu modern SMB state'ini, AES-CCM/GCM
-şifrelemeyi ve typed NTSTATUS modelini daha doğrudan public API olarak sunar.
-İki ayrı SMB client ile aynı hedefe iki kez login olan hibrit tasarım da
-gereksiz karmaşıklık yaratır. Bu nedenle Impacket runtime bağımlılığı değil,
-yalnız POC karşılaştırma aracı olabilir.
+Impacket 0.13.1 parola/hash/ccache ve yerleşik `listShares()` desteği nedeniyle
+yalnız SRVSVC share keşfinde kullanılır. Kısa ömürlü ikinci oturum listeleme
+sonrası hemen kapanır. Uzun süreli dosya yürüyüşü, range-read ve
+signing/encryption durumu `smbprotocol` oturumunda kalır. SRVSVC başarısızsa
+hata normalize edilir ve bilinen-share listesine fallback yapılır.
 
 ## Bilinen riskler
 
-1. `smbprotocol` içinde hazır `listShares()` yoktur; SRVSVC adapter'ı Windows ve
-   Samba/NAS hedeflerinde test edilmelidir.
+1. Impacket SRVSVC oturumu Windows ve farklı Samba/NAS sürümlerinde ayrıca
+   doğrulanmalıdır; bazı sunucular share enumeration'ı hesap bazında reddeder.
 2. `Session.username` tipi dokümantasyonda string görünse de değer doğrudan
    pyspnego'ya aktarılır; `KerberosCCache`/`NTLMHash` nesnesiyle bu entegrasyon
    sürüm pinleri ve integration test ile korunmalıdır.
