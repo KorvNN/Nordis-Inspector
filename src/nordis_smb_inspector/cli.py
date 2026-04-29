@@ -3,15 +3,33 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from contextlib import suppress
+from types import FrameType
+
+import uvicorn
 
 DEFAULT_PORT = 8765
+
+
+class _NordisServer(uvicorn.Server):
+    """Wake long-lived local event streams before Uvicorn drains requests."""
+
+    def __init__(self, config: uvicorn.Config, before_exit: Callable[[], None]) -> None:
+        super().__init__(config)
+        self._before_exit = before_exit
+
+    def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+        try:
+            self._before_exit()
+        finally:
+            super().handle_exit(sig, frame)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nordis-smb-inspector",
-        description="Start the authorized, local-only SMB inspection panel.",
+        description="Start the local Nordis SMB inspection panel.",
     )
     parser.add_argument(
         "--port",
@@ -25,15 +43,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    import uvicorn
-
     from nordis_smb_inspector.web.app import create_app
 
     url = f"http://127.0.0.1:{args.port}"
     print(f"Nordis SMB Inspector: {url}")
     print("Durdurmak için Ctrl+C.")
-    uvicorn.run(
-        create_app(port=args.port),
+    app = create_app(port=args.port)
+    config = uvicorn.Config(
+        app,
         host="127.0.0.1",
         port=args.port,
         access_log=False,
@@ -42,11 +59,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         log_level="warning",
         server_header=False,
         date_header=False,
-        # Every open panel owns a long-lived SSE response. Without a finite
-        # grace period Uvicorn waits for that response forever on the first
-        # Ctrl+C instead of cancelling it.
-        timeout_graceful_shutdown=1,
+        # The signal hook closes live SSE streams first; this finite bound is a
+        # final guard for a connection that cannot complete cleanly.
+        timeout_graceful_shutdown=2,
     )
+    server = _NordisServer(config, app.state.runtime.events.close)
+    # Uvicorn restores and re-raises the original SIGINT after its graceful
+    # shutdown. The signal has already been handled; keep the CLI clean.
+    with suppress(KeyboardInterrupt):
+        server.run()
+    if not server.started:
+        return 3
     return 0
 
 

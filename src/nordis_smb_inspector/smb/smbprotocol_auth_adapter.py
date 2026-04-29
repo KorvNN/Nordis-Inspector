@@ -1,9 +1,10 @@
-"""Password and NT-hash authentication using smbprotocol/pyspnego.
+"""Password, NT-hash, and RAM-backed ccache authentication.
 
 Authentication attempts are explicit: Kerberos and NTLM are never hidden in a
 single SPNEGO negotiation.  Auto mode closes the failed Kerberos connection and
 requires a caller-supplied reconnect hook before one eligible NTLM fallback.
-CCache materialization is intentionally left to a separate memfd adapter.
+CCache bytes are exposed to GSSAPI only through a Linux ``memfd`` and its procfs
+descriptor path; there is no disk or temporary-file fallback.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import errno
 import logging
 import math
+import os
 import socket
 import time
 from collections.abc import Callable, Iterator
@@ -81,6 +83,8 @@ _SEC_E_SECPKG_NOT_FOUND = 0x80090305
 _SEC_E_NO_AUTHENTICATING_AUTHORITY = 0x80090311
 _SEC_E_TIME_SKEW = 0x80090324
 _STATUS_NO_LOGON_SERVERS = 0xC000005E
+_MEMFD_FLAGS = getattr(os, "MFD_CLOEXEC", 0)
+_CCACHE_MEMFD_NAME = "nordis-smb-ccache"
 
 _NETWORK_ERRNOS = frozenset(
     code
@@ -130,6 +134,30 @@ class _NtHashFactory(Protocol):
     ) -> object: ...
 
 
+class _CcacheFactory(Protocol):
+    def __call__(self, ccache: str, principal: str | None = None) -> object: ...
+
+
+class _MemfdCreate(Protocol):
+    def __call__(self, name: str, flags: int = 0) -> int: ...
+
+
+class _FdWrite(Protocol):
+    def __call__(self, fd: int, data: bytes | memoryview) -> int: ...
+
+
+class _FdSeek(Protocol):
+    def __call__(self, fd: int, offset: int, whence: int) -> int: ...
+
+
+class _FdClose(Protocol):
+    def __call__(self, fd: int) -> None: ...
+
+
+class _ProcFdExists(Protocol):
+    def __call__(self, path: str) -> bool: ...
+
+
 class NtlmReconnect(Protocol):
     """Create a fresh negotiated connection after closing failed Kerberos."""
 
@@ -145,10 +173,42 @@ class AuthenticationFailure:
 
 
 class UnsupportedAuthenticationCredential(ValueError):
-    """Raised for credentials owned by another adapter, currently CCache."""
+    """Safe fail-closed error for an unavailable credential backend."""
 
     def __init__(self) -> None:
-        super().__init__("This authentication adapter supports password and NT hash only.")
+        super().__init__("The selected credential backend is unavailable on this system.")
+
+
+class _ProviderCredentialLease:
+    """Own an optional descriptor until the native session consumes a credential."""
+
+    __slots__ = ("_close_fd", "_fd", "credential")
+
+    def __init__(
+        self,
+        credential: object,
+        *,
+        fd: int | None = None,
+        close_fd: _FdClose | None = None,
+    ) -> None:
+        self.credential = credential
+        self._fd = fd
+        self._close_fd = close_fd
+
+    def close(self) -> None:
+        fd = self._fd
+        close_fd = self._close_fd
+        self._fd = None
+        self._close_fd = None
+        if fd is None or close_fd is None:
+            return
+        try:
+            close_fd(fd)
+        except Exception:
+            raise UnsupportedAuthenticationCredential() from None
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(credential=<redacted>, fd=<redacted>)"
 
 
 class SmbProtocolAuthenticationError(PermissionError):
@@ -264,10 +324,31 @@ class SmbProtocolSessionHandle:
         )
 
 
+def _create_memfd(name: str, flags: int = 0) -> int:
+    create = getattr(os, "memfd_create", None)
+    if create is None:
+        raise UnsupportedAuthenticationCredential()
+    try:
+        return create(name, flags)
+    except Exception:
+        raise UnsupportedAuthenticationCredential() from None
+
+
 class SmbProtocolAuthenticator:
     """Authenticate one explicit mechanism or an auditable password Auto flow."""
 
-    __slots__ = ("_clock", "_nt_hash_factory", "_password_factory", "_session_factory")
+    __slots__ = (
+        "_ccache_factory",
+        "_clock",
+        "_fd_close",
+        "_fd_seek",
+        "_fd_write",
+        "_memfd_create",
+        "_nt_hash_factory",
+        "_password_factory",
+        "_proc_fd_exists",
+        "_session_factory",
+    )
 
     def __init__(
         self,
@@ -275,12 +356,24 @@ class SmbProtocolAuthenticator:
         session_factory: _SessionFactory = Session,
         password_factory: _PasswordFactory = spnego.Password,
         nt_hash_factory: _NtHashFactory = spnego.NTLMHash,
+        ccache_factory: _CcacheFactory = spnego.KerberosCCache,
+        memfd_create: _MemfdCreate = _create_memfd,
+        fd_write: _FdWrite = os.write,
+        fd_seek: _FdSeek = os.lseek,
+        fd_close: _FdClose = os.close,
+        proc_fd_exists: _ProcFdExists = os.path.exists,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         suppress_sensitive_dependency_logging()
         self._session_factory = session_factory
         self._password_factory = password_factory
         self._nt_hash_factory = nt_hash_factory
+        self._ccache_factory = ccache_factory
+        self._memfd_create = memfd_create
+        self._fd_write = fd_write
+        self._fd_seek = fd_seek
+        self._fd_close = fd_close
+        self._proc_fd_exists = proc_fd_exists
         self._clock = clock
 
     def authenticate(
@@ -292,8 +385,6 @@ class SmbProtocolAuthenticator:
     ) -> SmbProtocolSessionHandle:
         """Perform exactly the mechanism in ``request``; never silently fall back."""
 
-        if request.credential.kind is CredentialKind.CCACHE:
-            raise UnsupportedAuthenticationCredential()
         return self._authenticate_one(connection, request, cancellation=cancellation)
 
     def authenticate_credential(
@@ -309,9 +400,6 @@ class SmbProtocolAuthenticator:
 
         if not isinstance(credential, Credential):
             raise TypeError("credential must be a Credential instance.")
-        if credential.kind is CredentialKind.CCACHE:
-            raise UnsupportedAuthenticationCredential()
-
         if credential.auth_mode is AuthMode.AUTO:
             if reconnect_for_ntlm is None:
                 raise ValueError("Auto authentication requires a fresh NTLM reconnect hook.")
@@ -428,28 +516,43 @@ class SmbProtocolAuthenticator:
         cancellation.raise_if_cancelled()
         started = self._clock()
         native_session: _NativeSession | None = None
+        provider_lease: _ProviderCredentialLease | None = None
         try:
             native_connection = connection._native_connection
-            provider_credential = self._provider_credential(request)
-            native_session = self._session_factory(
-                native_connection,
-                username=None,
-                password=None,
-                require_encryption=bool(getattr(connection, "require_encryption", False)),
-                hostname_override=(
-                    request.spn_hostname
-                    if request.mechanism is AuthMechanism.KERBEROS
-                    else None
-                ),
-                auth_protocol=request.mechanism.value,
-            )
-            # Passing None to Session.__init__ prevents smbprotocol's INFO log
-            # from formatting the account identity.  Session.connect consumes
-            # the pyspnego credential assigned immediately afterwards.
-            native_session.username = provider_credential
-            native_session.password = None
-            native_session.connect()
-            cancellation.raise_if_cancelled()
+            provider_lease = self._provider_credential(request)
+            try:
+                native_session = self._session_factory(
+                    native_connection,
+                    username=None,
+                    password=None,
+                    require_encryption=bool(getattr(connection, "require_encryption", False)),
+                    hostname_override=(
+                        request.spn_hostname
+                        if request.mechanism is AuthMechanism.KERBEROS
+                        else None
+                    ),
+                    auth_protocol=request.mechanism.value,
+                )
+                # Passing None to Session.__init__ prevents smbprotocol's INFO log
+                # from formatting the account identity.  Session.connect consumes
+                # the pyspnego credential assigned immediately afterwards.
+                native_session.username = provider_lease.credential
+                native_session.password = None
+                native_session.connect()
+                cancellation.raise_if_cancelled()
+                if request.credential.kind is CredentialKind.CCACHE:
+                    # The GSSAPI context has consumed the provider by this
+                    # point.  Do not retain its procfs path or principal on the
+                    # long-lived SMB session handle.
+                    native_session.username = None
+            finally:
+                lease = provider_lease
+                provider_lease = None
+                lease.close()
+        except UnsupportedAuthenticationCredential:
+            if native_session is not None:
+                _discard_session(native_session)
+            raise
         except ScanCancelled:
             if native_session is not None:
                 _discard_session(native_session)
@@ -473,7 +576,6 @@ class SmbProtocolAuthenticator:
                 detail=failure.detail,
                 fallback_reason=failure.fallback_reason,
             ) from None
-
         attempt = AuthAttempt(
             mechanism=request.mechanism,
             outcome=AuthAttemptOutcome.SUCCEEDED,
@@ -485,18 +587,64 @@ class SmbProtocolAuthenticator:
         )
         return SmbProtocolSessionHandle(native_session, connection, history)
 
-    def _provider_credential(self, request: AuthenticationRequest) -> object:
+    def _provider_credential(
+        self,
+        request: AuthenticationRequest,
+    ) -> _ProviderCredentialLease:
         credential = request.credential
-        identity = _credential_identity(credential)
         if credential.kind is CredentialKind.PASSWORD:
             if credential.password is None:
                 raise ValueError("Password credential data was missing.")
-            return self._password_factory(identity, credential.password)
+            return _ProviderCredentialLease(
+                self._password_factory(
+                    _credential_identity(credential, request.mechanism),
+                    credential.password,
+                )
+            )
         if credential.kind is CredentialKind.NT_HASH:
             if credential.nt_hash is None:
                 raise ValueError("NT hash credential data was missing.")
-            return self._nt_hash_factory(identity, nt_hash=credential.nt_hash)
+            return _ProviderCredentialLease(
+                self._nt_hash_factory(
+                    _credential_identity(credential, request.mechanism),
+                    nt_hash=credential.nt_hash,
+                )
+            )
+        if credential.kind is CredentialKind.CCACHE:
+            return self._ccache_provider_credential(credential)
         raise UnsupportedAuthenticationCredential()
+
+    def _ccache_provider_credential(
+        self,
+        credential: Credential,
+    ) -> _ProviderCredentialLease:
+        data = credential.ccache_data
+        if data is None:
+            raise UnsupportedAuthenticationCredential()
+
+        fd: int | None = None
+        try:
+            fd = self._memfd_create(_CCACHE_MEMFD_NAME, _MEMFD_FLAGS)
+            if isinstance(fd, bool) or not isinstance(fd, int) or fd < 0:
+                raise UnsupportedAuthenticationCredential()
+            _write_all(fd, data, self._fd_write)
+            self._fd_seek(fd, 0, os.SEEK_SET)
+            path = f"/proc/self/fd/{fd}"
+            if not self._proc_fd_exists(path):
+                raise UnsupportedAuthenticationCredential()
+            provider = self._ccache_factory(
+                f"FILE:{path}",
+                principal=_ccache_principal(credential),
+            )
+        except Exception:
+            if fd is not None:
+                _close_fd_safely(fd, self._fd_close)
+            raise UnsupportedAuthenticationCredential() from None
+        return _ProviderCredentialLease(
+            provider,
+            fd=fd,
+            close_fd=self._fd_close,
+        )
 
 
 def suppress_sensitive_dependency_logging() -> None:
@@ -616,12 +764,109 @@ def _hostname_failure_exception(
     )
 
 
-def _credential_identity(credential: Credential) -> str:
+def _credential_identity(
+    credential: Credential,
+    mechanism: AuthMechanism,
+) -> str:
     if not credential.username:
         raise ValueError("A username is required for this authentication adapter.")
-    if not credential.domain or "\\" in credential.username or "@" in credential.username:
-        return credential.username
-    return f"{credential.domain}\\{credential.username}"
+    if mechanism is AuthMechanism.KERBEROS:
+        principal = _kerberos_principal(credential)
+        if principal is None:  # pragma: no cover - guarded by the username check above
+            raise ValueError("A username is required for this authentication adapter.")
+        return principal
+    return _ntlm_identity(credential)
+
+
+def _ntlm_identity(credential: Credential) -> str:
+    username = credential.username
+    if not username:  # pragma: no cover - guarded by _credential_identity
+        raise ValueError("A username is required for this authentication adapter.")
+    if "@" in username:
+        _validate_upn(username)
+        return username
+    if "\\" in username:
+        _split_downlevel_identity(username)
+        return username
+    if credential.domain:
+        return f"{credential.domain}\\{username}"
+    return username
+
+
+def _ccache_principal(credential: Credential) -> str | None:
+    """Return an optional UPN-shaped selector for ``KerberosCCache``."""
+
+    return _kerberos_principal(credential)
+
+
+def _kerberos_principal(credential: Credential) -> str | None:
+    username = credential.username
+    if not username:
+        return None
+    if "@" in username:
+        _validate_upn(username)
+        return username
+
+    account = username
+    downlevel_realm: str | None = None
+    if "\\" in username:
+        downlevel_realm, account = _split_downlevel_identity(username)
+
+    realm = credential.domain or downlevel_realm
+    if realm:
+        return f"{account}@{_normalize_realm(realm)}"
+    return account
+
+
+def _validate_upn(username: str) -> None:
+    if username.count("@") != 1:
+        raise ValueError("A UPN must contain one account and one realm.")
+    account, realm = username.split("@", 1)
+    if not account or not realm or "\\" in account or "\\" in realm:
+        raise ValueError("A UPN must contain one account and one realm.")
+
+
+def _split_downlevel_identity(username: str) -> tuple[str, str]:
+    if username.count("\\") != 1:
+        raise ValueError("A down-level identity must contain one domain and one account.")
+    realm, account = username.split("\\", 1)
+    if not realm or not account or "@" in realm or "@" in account:
+        raise ValueError("A down-level identity must contain one domain and one account.")
+    return realm, account
+
+
+def _normalize_realm(realm: str) -> str:
+    candidate = realm.rstrip(".")
+    if not candidate or "@" in candidate or "\\" in candidate:
+        raise ValueError("A Kerberos realm cannot contain identity separators.")
+    return candidate.upper()
+
+
+def _write_all(fd: int, data: bytes, write: _FdWrite) -> None:
+    view = memoryview(data)
+    offset = 0
+    while offset < len(view):
+        try:
+            written = write(fd, view[offset:])
+        except InterruptedError:
+            continue
+        except Exception:
+            raise UnsupportedAuthenticationCredential() from None
+        if (
+            isinstance(written, bool)
+            or not isinstance(written, int)
+            or written <= 0
+            or written > len(view) - offset
+        ):
+            raise UnsupportedAuthenticationCredential()
+        offset += written
+
+
+def _close_fd_safely(fd: int, close: _FdClose) -> None:
+    try:
+        close(fd)
+    except Exception:
+        return
 
 
 def _exception_chain(exception: BaseException) -> Iterator[BaseException]:

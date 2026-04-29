@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import logging
 import unittest
+from collections.abc import Callable
 
 import spnego
 from spnego.exceptions import (
@@ -72,6 +73,7 @@ class _NativeSession:
         connect_error: Exception | None = None,
         disconnect_error: Exception | None = None,
         cancellation_on_connect: CancellationFlag | None = None,
+        on_connect: Callable[[_NativeSession], None] | None = None,
     ) -> None:
         self.connection = connection
         self.constructor_username = username
@@ -84,6 +86,7 @@ class _NativeSession:
         self.connect_error = connect_error
         self.disconnect_error = disconnect_error
         self.cancellation_on_connect = cancellation_on_connect
+        self.on_connect = on_connect
         self.connect_calls = 0
         self.disconnect_calls = 0
         self.disconnect_username: object = "not-called"
@@ -94,6 +97,8 @@ class _NativeSession:
     def connect(self) -> None:
         self.connect_calls += 1
         self.seen_provider_credential = self.username
+        if self.on_connect is not None:
+            self.on_connect(self)
         if self.cancellation_on_connect is not None:
             self.cancellation_on_connect.cancel()
         if self.connect_error is not None:
@@ -113,10 +118,12 @@ class _SessionFactory:
         *,
         disconnect_errors: tuple[Exception | None, ...] = (),
         cancellation_on_connect: CancellationFlag | None = None,
+        on_connect: Callable[[_NativeSession], None] | None = None,
     ) -> None:
         self.errors = iter(errors)
         self.disconnect_errors = iter(disconnect_errors)
         self.cancellation_on_connect = cancellation_on_connect
+        self.on_connect = on_connect
         self.sessions: list[_NativeSession] = []
 
     def __call__(self, *args, **kwargs) -> _NativeSession:
@@ -126,6 +133,7 @@ class _SessionFactory:
             connect_error=next(self.errors, None),
             disconnect_error=next(self.disconnect_errors, None),
             cancellation_on_connect=self.cancellation_on_connect,
+            on_connect=self.on_connect,
         )
         self.sessions.append(session)
         return session
@@ -150,6 +158,69 @@ class _Reconnect:
         return self.connection
 
 
+class _MemfdBackend:
+    def __init__(
+        self,
+        *,
+        fd: int = 73,
+        max_write: int | None = None,
+        proc_available: bool = True,
+        interrupt_first_write: bool = False,
+    ) -> None:
+        self.fd = fd
+        self.max_write = max_write
+        self.proc_available = proc_available
+        self.interrupt_first_write = interrupt_first_write
+        self.create_calls: list[tuple[str, int]] = []
+        self.write_calls: list[bytes] = []
+        self.seek_calls: list[tuple[int, int, int]] = []
+        self.close_calls: list[int] = []
+        self.exists_calls: list[str] = []
+        self.open_fds: dict[int, bytearray] = {}
+
+    def memfd_create(self, name: str, flags: int = 0) -> int:
+        self.create_calls.append((name, flags))
+        self.open_fds[self.fd] = bytearray()
+        return self.fd
+
+    def write(self, fd: int, data: bytes | memoryview) -> int:
+        if self.interrupt_first_write:
+            self.interrupt_first_write = False
+            raise InterruptedError()
+        raw = bytes(data)
+        self.write_calls.append(raw)
+        written = min(len(raw), self.max_write or len(raw))
+        self.open_fds[fd].extend(raw[:written])
+        return written
+
+    def seek(self, fd: int, offset: int, whence: int) -> int:
+        self.seek_calls.append((fd, offset, whence))
+        return 0
+
+    def close(self, fd: int) -> None:
+        self.close_calls.append(fd)
+        self.open_fds.pop(fd, None)
+
+    def exists(self, path: str) -> bool:
+        self.exists_calls.append(path)
+        fd = int(path.rsplit("/", 1)[-1])
+        return self.proc_available and fd in self.open_fds
+
+
+def _ccache_authenticator(
+    factory: _SessionFactory,
+    backend: _MemfdBackend,
+) -> SmbProtocolAuthenticator:
+    return SmbProtocolAuthenticator(
+        session_factory=factory,
+        memfd_create=backend.memfd_create,
+        fd_write=backend.write,
+        fd_seek=backend.seek,
+        fd_close=backend.close,
+        proc_fd_exists=backend.exists,
+    )
+
+
 def _password(
     *,
     mode: AuthMode = AuthMode.AUTO,
@@ -165,6 +236,20 @@ def _password(
 
 def _nt_hash(value: str = "0123456789abcdef0123456789abcdef") -> Credential:
     return Credential.from_nt_hash(username="alice", nt_hash=value, domain="NORDIS")
+
+
+def _ccache(
+    data: bytes = b"test-ccache-bytes",
+    *,
+    username: str | None = None,
+    domain: str | None = None,
+) -> Credential:
+    return Credential.from_ccache(
+        filename="ticket.ccache",
+        data=data,
+        username=username,
+        domain=domain,
+    )
 
 
 def _request(
@@ -200,7 +285,7 @@ class ExplicitAuthenticationTests(unittest.TestCase):
         self.assertIsNone(session.constructor_username)
         self.assertIsNone(session.constructor_password)
         self.assertIsInstance(session.seen_provider_credential, spnego.Password)
-        self.assertEqual(session.seen_provider_credential.username, "NORDIS\\alice")
+        self.assertEqual(session.seen_provider_credential.username, "alice@NORDIS")
         self.assertEqual(
             session.seen_provider_credential.password,
             "CorrectHorseBatteryStaple!",
@@ -220,6 +305,74 @@ class ExplicitAuthenticationTests(unittest.TestCase):
             "files01.nordis.local",
         ):
             self.assertNotIn(sensitive, rendered)
+
+    def test_password_kerberos_normalizes_dns_domain_to_uppercase_realm(self) -> None:
+        factory = _SessionFactory()
+        credential = Credential.from_password(
+            username="alice",
+            password="secret-value",
+            domain="nordis.local",
+            auth_mode=AuthMode.KERBEROS_ONLY,
+        )
+
+        SmbProtocolAuthenticator(session_factory=factory).authenticate(
+            _Connection(),
+            _request(AuthMechanism.KERBEROS, credential=credential),
+            cancellation=NEVER_CANCELLED,
+        )
+
+        provider = factory.sessions[0].seen_provider_credential
+        self.assertIsInstance(provider, spnego.Password)
+        self.assertEqual(provider.username, "alice@NORDIS.LOCAL")
+
+    def test_password_kerberos_preserves_valid_upn_without_adding_domain(self) -> None:
+        factory = _SessionFactory()
+        credential = Credential.from_password(
+            username="alice@Research.Nordis.Local",
+            password="secret-value",
+            domain="ignored.nordis.local",
+            auth_mode=AuthMode.KERBEROS_ONLY,
+        )
+
+        SmbProtocolAuthenticator(session_factory=factory).authenticate(
+            _Connection(),
+            _request(AuthMechanism.KERBEROS, credential=credential),
+            cancellation=NEVER_CANCELLED,
+        )
+
+        provider = factory.sessions[0].seen_provider_credential
+        self.assertEqual(provider.username, "alice@Research.Nordis.Local")
+
+    def test_password_ntlm_keeps_downlevel_domain_identity(self) -> None:
+        factory = _SessionFactory()
+
+        SmbProtocolAuthenticator(session_factory=factory).authenticate(
+            _Connection(),
+            _request(AuthMechanism.NTLM),
+            cancellation=NEVER_CANCELLED,
+        )
+
+        provider = factory.sessions[0].seen_provider_credential
+        self.assertIsInstance(provider, spnego.Password)
+        self.assertEqual(provider.username, "NORDIS\\alice")
+
+    def test_downlevel_username_uses_supplied_dns_realm_for_kerberos(self) -> None:
+        factory = _SessionFactory()
+        credential = Credential.from_password(
+            username="NORDIS\\alice",
+            password="secret-value",
+            domain="nordis.local",
+            auth_mode=AuthMode.KERBEROS_ONLY,
+        )
+
+        SmbProtocolAuthenticator(session_factory=factory).authenticate(
+            _Connection(),
+            _request(AuthMechanism.KERBEROS, credential=credential),
+            cancellation=NEVER_CANCELLED,
+        )
+
+        provider = factory.sessions[0].seen_provider_credential
+        self.assertEqual(provider.username, "alice@NORDIS.LOCAL")
 
     def test_nt_hash_uses_ntlmhash_and_never_treats_hash_as_password(self) -> None:
         factory = _SessionFactory()
@@ -267,20 +420,90 @@ class ExplicitAuthenticationTests(unittest.TestCase):
             self.assertNotIn("alice", rendered)
         self.assertEqual(factory.sessions[0].disconnect_username, None)
 
-    def test_ccache_is_explicitly_owned_by_a_separate_adapter(self) -> None:
-        credential = Credential.from_ccache(filename="ticket.ccache", data=b"ticket-data")
+    def test_ccache_uses_ram_fd_provider_until_session_connect_finishes(self) -> None:
+        ccache_data = b"ticket-data-that-needs-several-writes"
+        credential = _ccache(
+            ccache_data,
+            username="alice",
+            domain="nordis.local",
+        )
         request = AuthenticationRequest(
             credential=credential,
             mechanism=AuthMechanism.KERBEROS,
             spn_hostname="files01.nordis.local",
         )
+        backend = _MemfdBackend(max_write=4, interrupt_first_write=True)
+        open_during_connect: list[bool] = []
 
-        with self.assertRaises(UnsupportedAuthenticationCredential):
-            SmbProtocolAuthenticator(session_factory=_SessionFactory()).authenticate(
-                _Connection(),
-                request,
-                cancellation=NEVER_CANCELLED,
-            )
+        def inspect_provider(session: _NativeSession) -> None:
+            provider = session.seen_provider_credential
+            self.assertIsInstance(provider, spnego.KerberosCCache)
+            self.assertEqual(provider.ccache, "FILE:/proc/self/fd/73")
+            self.assertEqual(provider.principal, "alice@NORDIS.LOCAL")
+            open_during_connect.append(73 in backend.open_fds)
+            self.assertEqual(bytes(backend.open_fds[73]), ccache_data)
+
+        factory = _SessionFactory(on_connect=inspect_provider)
+        authenticator = _ccache_authenticator(factory, backend)
+
+        handle = authenticator.authenticate(
+            _Connection(),
+            request,
+            cancellation=NEVER_CANCELLED,
+        )
+
+        self.assertEqual(open_during_connect, [True])
+        self.assertGreater(len(backend.write_calls), 1)
+        self.assertEqual(backend.seek_calls, [(73, 0, 0)])
+        self.assertEqual(backend.close_calls, [73])
+        self.assertEqual(backend.open_fds, {})
+        self.assertIsNone(factory.sessions[0].username)
+        self.assertIs(handle.authentication.selected_mechanism, AuthMechanism.KERBEROS)
+        for rendered in (repr(handle), repr(handle.authentication), repr(authenticator)):
+            self.assertNotIn("ticket-data", rendered)
+            self.assertNotIn("/proc/self/fd/73", rendered)
+            self.assertNotIn("alice", rendered)
+            self.assertNotIn("NORDIS", rendered)
+
+    def test_ccache_optional_principal_uses_kerberos_identity_rules(self) -> None:
+        def recorder(storage: list[tuple[str, str | None]]):
+            def create_provider(ccache: str, principal: str | None = None) -> object:
+                storage.append((ccache, principal))
+                return object()
+
+            return create_provider
+
+        cases = (
+            ("alice@Research.Nordis.Local", "ignored.local", "alice@Research.Nordis.Local"),
+            ("NORDIS\\alice", "nordis.local.", "alice@NORDIS.LOCAL"),
+            (None, "nordis.local", None),
+        )
+
+        for username, domain, expected in cases:
+            with self.subTest(username=username, domain=domain):
+                backend = _MemfdBackend()
+                calls: list[tuple[str, str | None]] = []
+
+                authenticator = SmbProtocolAuthenticator(
+                    session_factory=_SessionFactory(),
+                    ccache_factory=recorder(calls),
+                    memfd_create=backend.memfd_create,
+                    fd_write=backend.write,
+                    fd_seek=backend.seek,
+                    fd_close=backend.close,
+                    proc_fd_exists=backend.exists,
+                )
+                authenticator.authenticate(
+                    _Connection(),
+                    _request(
+                        AuthMechanism.KERBEROS,
+                        credential=_ccache(username=username, domain=domain),
+                    ),
+                    cancellation=NEVER_CANCELLED,
+                )
+
+                self.assertEqual(calls, [("FILE:/proc/self/fd/73", expected)])
+                self.assertEqual(backend.close_calls, [73])
 
     def test_pre_cancelled_attempt_does_not_construct_session(self) -> None:
         cancellation = CancellationFlag()
@@ -379,15 +602,151 @@ class CredentialModeTests(unittest.TestCase):
             )
         self.assertEqual(factory.sessions, [])
 
-    def test_ccache_mode_routing_stays_separate(self) -> None:
-        credential = Credential.from_ccache(filename="ticket.ccache", data=b"ticket")
-        with self.assertRaises(UnsupportedAuthenticationCredential):
-            SmbProtocolAuthenticator(session_factory=_SessionFactory()).authenticate_credential(
+    def test_ccache_routes_one_kerberos_attempt_and_never_calls_ntlm_reconnect(self) -> None:
+        backend = _MemfdBackend()
+        factory = _SessionFactory()
+        reconnect = _Reconnect()
+        handle = _ccache_authenticator(factory, backend).authenticate_credential(
+            _Connection(),
+            _ccache(),
+            kerberos_hostname="files01.nordis.local",
+            cancellation=NEVER_CANCELLED,
+            reconnect_for_ntlm=reconnect,
+        )
+
+        self.assertEqual([item.auth_protocol for item in factory.sessions], ["kerberos"])
+        self.assertIs(handle.authentication.selected_mechanism, AuthMechanism.KERBEROS)
+        self.assertEqual(reconnect.calls, 0)
+
+    def test_ccache_without_verified_hostname_fails_before_memfd_creation(self) -> None:
+        backend = _MemfdBackend()
+        with self.assertRaises(SmbProtocolAuthenticationError) as caught:
+            _ccache_authenticator(_SessionFactory(), backend).authenticate_credential(
                 _Connection(),
-                credential,
+                _ccache(),
+                kerberos_hostname=None,
+                cancellation=NEVER_CANCELLED,
+                reconnect_for_ntlm=_Reconnect(),
+            )
+
+        self.assertEqual(
+            caught.exception.detail.symbolic_name,
+            "KERBEROS_HOSTNAME_UNRESOLVED",
+        )
+        self.assertEqual(backend.create_calls, [])
+
+
+class CcacheMemfdLifecycleTests(unittest.TestCase):
+    def test_descriptor_is_closed_after_native_failure_and_cancellation(self) -> None:
+        for outcome in ("failure", "cancel"):
+            with self.subTest(outcome=outcome):
+                backend = _MemfdBackend()
+                cancellation = CancellationFlag()
+                seen_open: list[bool] = []
+
+                def on_connect(
+                    _session: _NativeSession,
+                    observations: list[bool] = seen_open,
+                    open_fds: dict[int, bytearray] = backend.open_fds,
+                ) -> None:
+                    observations.append(73 in open_fds)
+
+                if outcome == "failure":
+                    factory = _SessionFactory(
+                        (InvalidCredentialError(error_code=ErrorCode.invalid_credential),),
+                        on_connect=on_connect,
+                    )
+                    expected_error = SmbProtocolAuthenticationError
+                else:
+                    factory = _SessionFactory(
+                        cancellation_on_connect=cancellation,
+                        on_connect=on_connect,
+                    )
+                    expected_error = ScanCancelled
+
+                with self.assertRaises(expected_error):
+                    _ccache_authenticator(factory, backend).authenticate_credential(
+                        _Connection(),
+                        _ccache(b"sensitive-cache-content"),
+                        kerberos_hostname="files01.nordis.local",
+                        cancellation=cancellation,
+                    )
+
+                self.assertEqual(seen_open, [True])
+                self.assertEqual(backend.close_calls, [73])
+                self.assertEqual(backend.open_fds, {})
+                self.assertEqual(factory.sessions[0].disconnect_calls, 1)
+                self.assertIsNone(factory.sessions[0].disconnect_username)
+
+    def test_unavailable_memfd_proc_write_and_provider_fail_closed_without_leaks(self) -> None:
+        raw_secret = "ccache-secret-identity"
+
+        def unavailable_memfd(_name: str, _flags: int = 0) -> int:
+            raise OSError(errno.ENOSYS, raw_secret)
+
+        unavailable_factory = _SessionFactory()
+        unavailable = SmbProtocolAuthenticator(
+            session_factory=unavailable_factory,
+            memfd_create=unavailable_memfd,
+        )
+        with self.assertRaises(UnsupportedAuthenticationCredential) as caught:
+            unavailable.authenticate_credential(
+                _Connection(),
+                _ccache(raw_secret.encode()),
                 kerberos_hostname="files01.nordis.local",
                 cancellation=NEVER_CANCELLED,
             )
+        self.assertIsNone(caught.exception.__cause__)
+        self.assertNotIn(raw_secret, str(caught.exception))
+        self.assertNotIn(raw_secret, repr(caught.exception))
+        self.assertEqual(unavailable_factory.sessions, [])
+
+        def zero_write(_fd: int, _data: bytes | memoryview) -> int:
+            return 0
+
+        for failure in ("proc", "write", "provider"):
+            with self.subTest(failure=failure):
+                backend = _MemfdBackend(proc_available=failure != "proc")
+                fd_write = backend.write
+                ccache_factory = spnego.KerberosCCache
+                if failure == "write":
+                    fd_write = zero_write
+                elif failure == "provider":
+
+                    def ccache_factory(_path: str, principal: str | None = None):
+                        raise RuntimeError(f"{raw_secret}:{principal}")
+
+                factory = _SessionFactory()
+                authenticator = SmbProtocolAuthenticator(
+                    session_factory=factory,
+                    ccache_factory=ccache_factory,
+                    memfd_create=backend.memfd_create,
+                    fd_write=fd_write,
+                    fd_seek=backend.seek,
+                    fd_close=backend.close,
+                    proc_fd_exists=backend.exists,
+                )
+
+                with self.assertRaises(UnsupportedAuthenticationCredential) as caught:
+                    authenticator.authenticate_credential(
+                        _Connection(),
+                        _ccache(
+                            raw_secret.encode(),
+                            username="alice",
+                            domain="NORDIS",
+                        ),
+                        kerberos_hostname="files01.nordis.local",
+                        cancellation=NEVER_CANCELLED,
+                    )
+
+                self.assertEqual(backend.close_calls, [73])
+                self.assertEqual(backend.open_fds, {})
+                self.assertEqual(factory.sessions, [])
+                for rendered in (str(caught.exception), repr(caught.exception)):
+                    self.assertNotIn(raw_secret, rendered)
+                    self.assertNotIn("/proc/self/fd/73", rendered)
+                    self.assertNotIn("alice", rendered)
+                    self.assertNotIn("NORDIS", rendered)
 
 
 class AutoAuthenticationTests(unittest.TestCase):
