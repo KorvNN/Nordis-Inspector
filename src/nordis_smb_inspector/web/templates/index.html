@@ -9,223 +9,261 @@
 </head>
 <body data-csrf-token="{{ csrf_token }}" data-origin="{{ app_origin }}">
   <header class="topbar">
-    <div>
-      <h1>NordisGlobal SMB Inspector</h1>
-    </div>
+    <h1>NordisGlobal SMB Inspector</h1>
   </header>
 
-  <main>
-    <section class="hero-grid">
-      <article class="panel scope-panel">
-        <div class="section-heading">
-          <div>
-            <p class="step">01 · Kapsam</p>
-            <h2>Hedefleri tanımla</h2>
-          </div>
-          <span id="scope-state" class="state idle">Bekliyor</span>
+  <main class="app-shell">
+    <aside class="panel scan-sidebar" aria-labelledby="scan-form-heading">
+      <div class="section-heading">
+        <div>
+          <p class="step">Tarama</p>
+          <h2 id="scan-form-heading">Yeni tarama</h2>
         </div>
+        <span id="scope-state" class="state idle">Bekliyor</span>
+      </div>
 
-        <label for="targets">IP, CIDR veya hostname</label>
-        <textarea id="targets" rows="6" spellcheck="false"
-          placeholder="10.20.30.15, 10.20.40.0/24&#10;filesrv01.nordis.local"></textarea>
-        <p class="hint">Virgül veya yeni satırla karışık girebilirsin.</p>
+      <label for="targets">IP, CIDR veya hostname</label>
+      <textarea id="targets" rows="5" spellcheck="false"
+        placeholder="10.20.30.15, 10.20.40.0/24&#10;filesrv01.nordis.local"></textarea>
+      <p class="hint">Virgül veya yeni satırla ayır.</p>
 
-        <fieldset class="credential-block">
-          <legend>Kimlik bilgisi</legend>
-          <div class="credential-grid">
-            <div class="form-field">
-              <label for="credential-domain">Domain</label>
-              <input id="credential-domain" type="text" autocomplete="off" spellcheck="false">
-            </div>
-            <div class="form-field">
-              <label for="credential-username">Kullanıcı</label>
-              <input id="credential-username" type="text" autocomplete="off" spellcheck="false"
-                required>
-            </div>
-            <div class="form-field">
-              <label for="credential-kind">Credential türü</label>
-              <select id="credential-kind">
-                <option value="password">Parola</option>
-                <option value="nt_hash">NT hash</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label id="credential-secret-label" for="credential-secret">Parola</label>
-              <input id="credential-secret" type="password" autocomplete="new-password"
-                spellcheck="false" required>
-            </div>
-            <div class="form-field credential-auth-field">
-              <label for="auth-mode">Kimlik doğrulama</label>
-              <select id="auth-mode">
-                <option value="auto">Auto (Kerberos öncelikli)</option>
-                <option value="kerberos_only">Yalnız Kerberos</option>
-                <option value="ntlm_only">Yalnız NTLM</option>
-              </select>
-            </div>
+      <fieldset class="credential-block">
+        <legend>Kimlik bilgisi</legend>
+        <div class="credential-grid">
+          <div class="form-field">
+            <label for="credential-domain">Domain</label>
+            <input id="credential-domain" type="text" autocomplete="off" spellcheck="false">
           </div>
-        </fieldset>
-
-        <fieldset class="search-block">
-          <legend>İçerik arama</legend>
-          <div class="search-settings-grid">
-            <label class="checkbox-field" for="use-default-wordlist">
-              <input id="use-default-wordlist" type="checkbox" checked>
-              <span>Repo varsayılan wordlistini kullan</span>
-            </label>
-            <div class="form-field depth-field">
-              <label for="max-depth">Maksimum derinlik</label>
-              <input id="max-depth" type="number" min="1" max="256" value="32" required>
-            </div>
+          <div class="form-field">
+            <label id="credential-username-label" for="credential-username">Kullanıcı</label>
+            <input id="credential-username" type="text" autocomplete="off" spellcheck="false"
+              required>
           </div>
-          <label for="additional-terms">Ek arama terimleri</label>
-          <textarea id="additional-terms" rows="4" spellcheck="false"></textarea>
-        </fieldset>
-
-        <div class="actions">
-          <button id="start-scan-button" type="button">Taramayı başlat</button>
-          <button id="cancel-scan-button" class="secondary-button" type="button" disabled>
-            İptal et
-          </button>
+          <div class="form-field">
+            <label for="credential-kind">Credential türü</label>
+            <select id="credential-kind">
+              <option value="password">Parola</option>
+              <option value="nt_hash">NT hash</option>
+              <option value="ccache">CCache</option>
+            </select>
+          </div>
+          <div id="credential-secret-field" class="form-field credential-secret-field">
+            <label id="credential-secret-label" for="credential-secret">Parola</label>
+            <input id="credential-secret" type="password" autocomplete="new-password"
+              spellcheck="false" required>
+          </div>
+          <div id="credential-ccache-field" class="form-field credential-file-field" hidden>
+            <label for="credential-ccache">CCache dosyası</label>
+            <input id="credential-ccache" type="file" accept=".ccache" disabled>
+          </div>
+          <div class="form-field credential-auth-field">
+            <label for="auth-mode">Kimlik doğrulama</label>
+            <select id="auth-mode">
+              <option value="auto">Auto (Kerberos öncelikli)</option>
+              <option value="kerberos_only">Yalnız Kerberos</option>
+              <option value="ntlm_only">Yalnız NTLM</option>
+            </select>
+          </div>
         </div>
-        <div id="preview-errors" class="error-list" hidden></div>
-      </article>
+      </fieldset>
 
+      <fieldset class="search-block">
+        <legend class="fieldset-legend">
+          <span>İçerik arama</span>
+          <button id="open-wordlists" class="inline-management-button secondary-button"
+            type="button">Wordlist yönetimi</button>
+        </legend>
+        <label for="additional-terms">Ek arama terimleri</label>
+        <textarea id="additional-terms" rows="3" spellcheck="false"></textarea>
+        <label class="option-control" for="detect-patterns">
+          <input id="detect-patterns" type="checkbox" checked>
+          <span>Yerleşik kalıp algılama</span>
+        </label>
+      </fieldset>
+
+      <div class="actions">
+        <button id="start-scan-button" type="button">Taramayı başlat</button>
+        <button id="cancel-scan-button" class="secondary-button" type="button" disabled>
+          İptal et
+        </button>
+      </div>
+      <div id="preview-errors" class="error-list" hidden></div>
+    </aside>
+
+    <section class="workspace" aria-label="Tarama çalışma alanı">
       <article class="panel status-panel">
-        <div class="section-heading">
+        <div class="status-summary">
           <div>
             <p class="step">Canlı durum</p>
             <h2 id="scan-phase">Tarama yok</h2>
+            <p id="progress-message" class="hint">Yeni bir tarama başlatılmadı.</p>
+          </div>
+          <div class="metric-grid">
+            <div><strong id="inventory-count">0</strong><span>Envanter</span></div>
+            <div><strong id="finding-count">0</strong><span>Bulgu</span></div>
+            <div><strong id="phase-percent">—</strong><span>Faz</span></div>
           </div>
         </div>
         <div class="progress-track" aria-label="Tarama ilerlemesi">
           <div id="progress-bar" class="progress-bar"></div>
         </div>
-        <div class="metric-grid">
-          <div><strong id="inventory-count">0</strong><span>Envanter</span></div>
-          <div><strong id="finding-count">0</strong><span>Bulgu</span></div>
-          <div><strong id="phase-percent">—</strong><span>Faz</span></div>
+      </article>
+
+      <article class="panel results-workspace">
+        <div class="result-tabs" role="tablist" aria-label="Tarama sonuçları">
+          <button id="targets-tab" class="result-tab is-active" type="button" role="tab"
+            aria-selected="true" aria-controls="targets-panel" data-result-tab="targets">
+            Hedefler <strong data-workspace-count="targets">0</strong>
+          </button>
+          <button id="inventory-tab" class="result-tab" type="button" role="tab"
+            aria-selected="false" aria-controls="inventory-panel" data-result-tab="inventory">
+            Envanter <strong id="inventory-tab-count">0</strong>
+          </button>
+          <button id="findings-tab" class="result-tab" type="button" role="tab"
+            aria-selected="false" aria-controls="findings-panel" data-result-tab="findings">
+            Bulgular <strong id="findings-tab-count">0</strong>
+          </button>
         </div>
-        <p id="progress-message" class="hint">Yeni bir tarama başlatılmadı.</p>
+
+        <section id="targets-panel" class="result-tab-panel" role="tabpanel"
+          aria-labelledby="targets-tab" data-result-panel="targets">
+          <div class="panel-toolbar">
+            <div id="target-status-filters" class="status-filters"
+              aria-label="Hedef durumu filtreleri">
+              <button class="status-filter is-active" type="button" data-target-filter="all"
+                aria-pressed="true">
+                <span>Yanıt veren</span><strong data-target-count="all">0</strong>
+              </button>
+              <button class="status-filter" type="button" data-target-filter="tcp_open"
+                aria-pressed="false">
+                <span>TCP açık</span><strong data-target-count="tcp_open">0</strong>
+              </button>
+              <button class="status-filter" type="button" data-target-filter="smb_ready"
+                aria-pressed="false">
+                <span>SMB hazır</span><strong data-target-count="smb_ready">0</strong>
+              </button>
+              <button class="status-filter" type="button" data-target-filter="authenticated"
+                aria-pressed="false">
+                <span>Doğrulandı</span><strong data-target-count="authenticated">0</strong>
+              </button>
+              <button class="status-filter" type="button" data-target-filter="attention"
+                aria-pressed="false">
+                <span>Sorunlu</span><strong data-target-count="attention">0</strong>
+              </button>
+            </div>
+            <span id="visible-target-count" class="summary">0 hedef</span>
+          </div>
+
+          <div class="result-split">
+            <div class="table-frame">
+              <table class="target-status-table">
+                <thead>
+                  <tr>
+                    <th scope="col">IP</th>
+                    <th scope="col">TCP/445</th>
+                    <th scope="col">SMB</th>
+                    <th scope="col">Kimlik doğrulama</th>
+                    <th scope="col">Son durum</th>
+                  </tr>
+                </thead>
+                <tbody id="target-status-body">
+                  <tr class="table-empty-row">
+                    <td colspan="5">Henüz tarama başlatılmadı.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <aside id="target-selection-detail" class="selection-detail"
+              aria-label="Hedef ayrıntısı">
+              <p class="selection-placeholder">Ayrıntı için bir hedef seç.</p>
+            </aside>
+          </div>
+        </section>
+
+        <section id="inventory-panel" class="result-tab-panel" role="tabpanel"
+          aria-labelledby="inventory-tab" data-result-panel="inventory" hidden>
+          <div class="panel-toolbar">
+            <div class="table-toolbar">
+              <label for="inventory-filter">Filtre</label>
+              <input id="inventory-filter" type="search" autocomplete="off">
+            </div>
+            <span id="inventory-visible-count" class="summary">0 kayıt</span>
+          </div>
+          <div class="result-split">
+            <div id="inventory-groups" class="grouped-results">
+              <p class="group-empty-state">Henüz envanter yok.</p>
+            </div>
+            <aside id="inventory-selection-detail" class="selection-detail"
+              aria-label="Envanter ayrıntısı">
+              <p class="selection-placeholder">Ayrıntı için bir kayıt seç.</p>
+            </aside>
+          </div>
+        </section>
+
+        <section id="findings-panel" class="result-tab-panel" role="tabpanel"
+          aria-labelledby="findings-tab" data-result-panel="findings" hidden>
+          <div class="panel-toolbar">
+            <div class="table-toolbar">
+              <label for="findings-filter">Filtre</label>
+              <input id="findings-filter" type="search" autocomplete="off">
+            </div>
+            <span id="findings-visible-count" class="summary">0 bulgu</span>
+          </div>
+          <div class="result-split">
+            <div id="findings-groups" class="grouped-results">
+              <p class="group-empty-state">Henüz bulgu yok.</p>
+            </div>
+            <aside id="finding-selection-detail" class="selection-detail"
+              aria-label="Bulgu ayrıntısı">
+              <p class="selection-placeholder">Tam satır için bir bulgu seç.</p>
+            </aside>
+          </div>
+        </section>
       </article>
     </section>
-
-    <section class="panel live-target-panel" aria-labelledby="live-target-heading">
-      <div class="section-heading">
-        <div>
-          <p class="step">Hedefler</p>
-          <h2 id="live-target-heading">Canlı hedef durumu</h2>
-        </div>
-        <span id="visible-target-count" class="summary">0 hedef</span>
-      </div>
-
-      <div id="target-status-filters" class="status-filters" aria-label="Hedef durumu filtreleri">
-        <button class="status-filter is-active" type="button" data-target-filter="all"
-          aria-pressed="true">
-          <span>Yanıt veren</span><strong data-target-count="all">0</strong>
-        </button>
-        <button class="status-filter" type="button" data-target-filter="tcp_open"
-          aria-pressed="false">
-          <span>TCP açık</span><strong data-target-count="tcp_open">0</strong>
-        </button>
-        <button class="status-filter" type="button" data-target-filter="smb_ready"
-          aria-pressed="false">
-          <span>SMB hazır</span><strong data-target-count="smb_ready">0</strong>
-        </button>
-        <button class="status-filter" type="button" data-target-filter="authenticated"
-          aria-pressed="false">
-          <span>Doğrulandı</span><strong data-target-count="authenticated">0</strong>
-        </button>
-        <button class="status-filter" type="button" data-target-filter="attention"
-          aria-pressed="false">
-          <span>Sorunlu</span><strong data-target-count="attention">0</strong>
-        </button>
-      </div>
-
-      <div class="target-status-table-wrap">
-        <table class="target-status-table">
-          <thead>
-            <tr>
-              <th scope="col">IP</th>
-              <th scope="col">TCP/445</th>
-              <th scope="col">SMB</th>
-              <th scope="col">Kimlik doğrulama</th>
-              <th scope="col">Son durum</th>
-            </tr>
-          </thead>
-          <tbody id="target-status-body">
-            <tr class="table-empty-row">
-              <td colspan="5">Henüz tarama başlatılmadı.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel data-panel" aria-labelledby="inventory-heading">
-      <div class="section-heading result-heading">
-        <div>
-          <p class="step">Envanter</p>
-          <h2 id="inventory-heading">Share / Dosya Envanteri</h2>
-        </div>
-        <span id="inventory-visible-count" class="summary">0 kayıt</span>
-      </div>
-      <div class="table-toolbar">
-        <label for="inventory-filter">Filtre</label>
-        <input id="inventory-filter" type="search" autocomplete="off">
-      </div>
-      <div class="result-table-wrap">
-        <table class="result-table inventory-table">
-          <thead>
-            <tr>
-              <th scope="col">Hedef</th>
-              <th scope="col">Share</th>
-              <th scope="col">Path</th>
-              <th scope="col">Tür</th>
-              <th scope="col">Durum</th>
-              <th scope="col">Boyut</th>
-            </tr>
-          </thead>
-          <tbody id="inventory-body">
-            <tr class="table-empty-row">
-              <td colspan="6">Henüz envanter yok.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel data-panel" aria-labelledby="findings-heading">
-      <div class="section-heading result-heading">
-        <div>
-          <p class="step">Eşleşmeler</p>
-          <h2 id="findings-heading">Bulgular</h2>
-        </div>
-        <span id="findings-visible-count" class="summary">0 bulgu</span>
-      </div>
-      <div class="table-toolbar">
-        <label for="findings-filter">Filtre</label>
-        <input id="findings-filter" type="search" autocomplete="off">
-      </div>
-      <div class="result-table-wrap">
-        <table class="result-table findings-table">
-          <thead>
-            <tr>
-              <th scope="col">Dosya</th>
-              <th scope="col">Satır no</th>
-              <th scope="col">Terim</th>
-              <th scope="col">Tam satır</th>
-            </tr>
-          </thead>
-          <tbody id="findings-body">
-            <tr class="table-empty-row">
-              <td colspan="4">Henüz bulgu yok.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
   </main>
+
+  <dialog id="wordlist-dialog" class="wordlist-dialog" aria-labelledby="wordlist-heading">
+    <div class="dialog-heading">
+      <div>
+        <p class="step">Yapılandırma</p>
+        <h2 id="wordlist-heading">Wordlist yönetimi</h2>
+      </div>
+      <button id="close-wordlists" class="icon-button" type="button" aria-label="Kapat">×</button>
+    </div>
+
+    <div class="wordlist-grid">
+      <article class="wordlist-editor">
+        <div class="wordlist-editor-heading">
+          <label for="content-wordlist">İçerik arama terimleri</label>
+          <span id="content-wordlist-count" class="summary">— kayıt</span>
+        </div>
+        <textarea id="content-wordlist" rows="18" spellcheck="false"></textarea>
+        <div class="wordlist-actions">
+          <label class="file-import-button" for="content-wordlist-file">TXT içe aktar</label>
+          <input id="content-wordlist-file" class="visually-hidden" type="file"
+            accept=".txt,text/plain">
+          <button id="save-content-wordlist" type="button">Kaydet</button>
+          <span id="content-wordlist-status" class="wordlist-status" aria-live="polite"></span>
+        </div>
+      </article>
+
+      <article class="wordlist-editor">
+        <div class="wordlist-editor-heading">
+          <label for="share-wordlist">Share adları</label>
+          <span id="share-wordlist-count" class="summary">— kayıt</span>
+        </div>
+        <textarea id="share-wordlist" rows="18" spellcheck="false"></textarea>
+        <div class="wordlist-actions">
+          <label class="file-import-button" for="share-wordlist-file">TXT içe aktar</label>
+          <input id="share-wordlist-file" class="visually-hidden" type="file"
+            accept=".txt,text/plain">
+          <button id="save-share-wordlist" type="button">Kaydet</button>
+          <span id="share-wordlist-status" class="wordlist-status" aria-live="polite"></span>
+        </div>
+      </article>
+    </div>
+  </dialog>
 
   <script src="/static/app.js" defer></script>
 </body>

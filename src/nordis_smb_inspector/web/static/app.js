@@ -6,13 +6,29 @@ const origin = body.dataset.origin;
 const targets = document.querySelector("#targets");
 const credentialDomain = document.querySelector("#credential-domain");
 const credentialUsername = document.querySelector("#credential-username");
+const credentialUsernameLabel = document.querySelector("#credential-username-label");
 const credentialKind = document.querySelector("#credential-kind");
+const credentialSecretField = document.querySelector("#credential-secret-field");
 const credentialSecret = document.querySelector("#credential-secret");
 const credentialSecretLabel = document.querySelector("#credential-secret-label");
+const credentialCcacheField = document.querySelector("#credential-ccache-field");
+const credentialCcache = document.querySelector("#credential-ccache");
 const authMode = document.querySelector("#auth-mode");
-const useDefaultWordlist = document.querySelector("#use-default-wordlist");
 const additionalTermsInput = document.querySelector("#additional-terms");
-const maxDepthInput = document.querySelector("#max-depth");
+const detectPatternsInput = document.querySelector("#detect-patterns");
+const contentWordlist = document.querySelector("#content-wordlist");
+const contentWordlistFile = document.querySelector("#content-wordlist-file");
+const contentWordlistCount = document.querySelector("#content-wordlist-count");
+const contentWordlistStatus = document.querySelector("#content-wordlist-status");
+const saveContentWordlist = document.querySelector("#save-content-wordlist");
+const shareWordlist = document.querySelector("#share-wordlist");
+const shareWordlistFile = document.querySelector("#share-wordlist-file");
+const shareWordlistCount = document.querySelector("#share-wordlist-count");
+const shareWordlistStatus = document.querySelector("#share-wordlist-status");
+const saveShareWordlist = document.querySelector("#save-share-wordlist");
+const openWordlistsButton = document.querySelector("#open-wordlists");
+const closeWordlistsButton = document.querySelector("#close-wordlists");
+const wordlistDialog = document.querySelector("#wordlist-dialog");
 const startScanButton = document.querySelector("#start-scan-button");
 const cancelScanButton = document.querySelector("#cancel-scan-button");
 const scopeState = document.querySelector("#scope-state");
@@ -22,21 +38,55 @@ const targetStatusBody = document.querySelector("#target-status-body");
 const visibleTargetCount = document.querySelector("#visible-target-count");
 const targetFilters = [...document.querySelectorAll("[data-target-filter]")];
 const targetCountElements = [...document.querySelectorAll("[data-target-count]")];
-const inventoryBody = document.querySelector("#inventory-body");
+const inventoryGroups = document.querySelector("#inventory-groups");
 const inventoryFilter = document.querySelector("#inventory-filter");
 const inventoryVisibleCount = document.querySelector("#inventory-visible-count");
-const findingsBody = document.querySelector("#findings-body");
+const findingsGroups = document.querySelector("#findings-groups");
 const findingsFilter = document.querySelector("#findings-filter");
 const findingsVisibleCount = document.querySelector("#findings-visible-count");
+const resultTabs = [...document.querySelectorAll("[data-result-tab]")];
+const resultPanels = [...document.querySelectorAll("[data-result-panel]")];
+const targetWorkspaceCount = document.querySelector("[data-workspace-count='targets']");
+const inventoryTabCount = document.querySelector("#inventory-tab-count");
+const findingsTabCount = document.querySelector("#findings-tab-count");
+const targetSelectionDetail = document.querySelector("#target-selection-detail");
+const inventorySelectionDetail = document.querySelector("#inventory-selection-detail");
+const findingSelectionDetail = document.querySelector("#finding-selection-detail");
 const targetStore = new Map();
 const inventoryStore = new Map();
 const findingStore = new Map();
+const inventoryGroupOpenState = new Map();
+const findingGroupOpenState = new Map();
 let selectedTargetFilter = "all";
+let selectedTargetKey = null;
+let selectedInventoryKey = null;
+let selectedFindingKey = null;
 let latestGeneration = null;
+
+const CCACHE_MAX_BYTES = 1024 * 1024;
+const WORDLIST_MAX_BYTES = 1024 * 1024;
+const WORDLIST_EDITORS = {
+  content: {
+    count: contentWordlistCount,
+    editor: contentWordlist,
+    file: contentWordlistFile,
+    save: saveContentWordlist,
+    status: contentWordlistStatus,
+  },
+  shares: {
+    count: shareWordlistCount,
+    editor: shareWordlist,
+    file: shareWordlistFile,
+    save: saveShareWordlist,
+    status: shareWordlistStatus,
+  },
+};
+
+class CredentialInputError extends Error {}
 
 const ATTENTION_STATUS = /(?:DENIED|FAILED|ERROR|REFUSED|TIMEOUT|UNREACHABLE|UNAVAILABLE|VIOLATION)/u;
 const WORKING_STATUS = /(?:PENDING|CONNECTING|NEGOTIATING|AUTHENTICATING|SCANNING|RUNNING)/u;
-const OK_STATUS = /(?:OPEN|READY|SUCCESS|AUTHENTICATED|COMPLETED|PARTIAL_ACCESS)/u;
+const OK_STATUS = /(?:OPEN|READY|SUCCESS|AUTHENTICATED|DOĞRULANDI|KERBEROS|NTLM|COMPLETED|PARTIAL_ACCESS)/u;
 const STATUS_LABELS = {
   port_open: "445 açık",
   timeout_no_response: "Yanıt yok / timeout",
@@ -53,10 +103,22 @@ const STATUS_LABELS = {
   auth_failed: "Kimlik doğrulanamadı",
   ntlm_fallback_unavailable: "NTLM fallback kullanılamıyor",
   access_denied: "Erişim reddedildi",
+  share_enum_denied: "Share listesi reddedildi",
+  share_enum_unavailable: "Share listesi alınamıyor",
+  share_enum_failed: "Share keşfi başarısız",
   partial_access: "Kısmi erişim",
+  security_active_required: "Aktif · Zorunlu",
+  security_active: "Aktif",
+  security_required: "Zorunlu",
+  security_supported: "Destekli",
+  security_unsupported: "Desteklenmiyor",
   cancelled: "İptal edildi",
   completed: "Tamamlandı",
   failed: "Başarısız",
+  wordlist: "Wordlist",
+  pattern: "Kalıp",
+  high: "Yüksek",
+  medium: "Orta",
 };
 const SCAN_STATUS_LABELS = {
   idle: "Tarama yok",
@@ -69,6 +131,7 @@ const SCAN_STATUS_LABELS = {
 const PHASE_LABELS = {
   preparing_targets: "Hedefler hazırlanıyor",
   connectivity: "TCP/445 kontrolü",
+  inspection: "SMB ve içerik taraması",
   authentication: "Kimlik doğrulama",
   share_discovery: "Share keşfi",
   file_inventory: "Dosya envanteri",
@@ -90,6 +153,19 @@ const MESSAGE_LABELS = {
   "Scan cancelled.": "Tarama iptal edildi.",
   "Scan worker failed.": "Tarama başarısız.",
 };
+const ERROR_MESSAGE_LABELS = {
+  "The target refused the TCP connection.": "Hedef TCP bağlantısını reddetti.",
+  "The local network stack reported that the target is unreachable.": "Hedef ağa ulaşılamıyor.",
+  "No TCP response was received before the configured timeout.": "Süre dolmadan TCP yanıtı alınamadı.",
+  "SMB authentication failed.": "SMB kimlik doğrulaması başarısız.",
+  "The supplied credential was not accepted.": "Girilen kimlik bilgisi kabul edilmedi.",
+  "The supplied credential has expired.": "Girilen kimlik bilgisinin süresi dolmuş.",
+  "The account cannot connect to this share.": "Hesabın bu share'e erişimi reddedildi.",
+  "The named share was not found.": "Belirtilen share bulunamadı.",
+  "The directory could not be listed.": "Dizin listelenemedi.",
+  "The file is visible but read access was denied.": "Dosya görünüyor fakat okuma erişimi reddedildi.",
+  "The visible file could not be opened for reading.": "Görünen dosya okumak için açılamadı.",
+};
 
 function textCell(value, className = "") {
   const cell = document.createElement("td");
@@ -98,6 +174,56 @@ function textCell(value, className = "") {
   display.textContent = displayValue(value);
   cell.append(display);
   return cell;
+}
+
+function setSelectionPlaceholder(container, message) {
+  const placeholder = document.createElement("p");
+  placeholder.className = "selection-placeholder";
+  placeholder.textContent = message;
+  container.replaceChildren(placeholder);
+}
+
+function renderSelectionDetail(container, title, fields) {
+  const heading = document.createElement("h3");
+  heading.className = "detail-heading";
+  heading.textContent = displayValue(title);
+
+  const list = document.createElement("dl");
+  list.className = "detail-list";
+  for (const [label, value] of fields) {
+    const group = document.createElement("div");
+    const term = document.createElement("dt");
+    const description = document.createElement("dd");
+    term.textContent = label;
+    description.textContent = displayValue(value);
+    group.append(term, description);
+    list.append(group);
+  }
+  container.replaceChildren(heading, list);
+}
+
+function bindSelectableRow(row, {selected, select}) {
+  row.tabIndex = 0;
+  row.classList.toggle("is-selected", selected);
+  row.setAttribute("aria-selected", String(selected));
+  row.addEventListener("click", select);
+  row.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    select();
+  });
+}
+
+function activateResultTab(name) {
+  for (const tab of resultTabs) {
+    const active = tab.dataset.resultTab === name;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+  }
+  for (const panel of resultPanels) {
+    panel.hidden = panel.dataset.resultPanel !== name;
+  }
 }
 
 function displayValue(value) {
@@ -176,14 +302,59 @@ function targetRecord(payload) {
     ip: ip.trim(),
     tcp: firstValue(candidate, ["tcp_status", "tcp_445_status", "connectivity_status"]),
     smb: firstValue(candidate, ["smb_status", "negotiation_status", "smb_dialect"]),
-    authentication: firstValue(candidate, [
-      "authentication_status",
-      "auth_status",
-      "authentication_method",
-      "auth_method",
-    ]),
+    signing: securityFeatureValue(candidate, "signing"),
+    encryption: securityFeatureValue(candidate, "encryption"),
+    authentication: targetAuthenticationValue(candidate),
     lastStatus: firstValue(candidate, ["last_status", "final_status", "status", "last_stage"]),
+    detail: targetErrorDetail(candidate) ?? targetErrorDetail(payload),
+    sharesProbed: firstValue(candidate, ["shares_probed"]),
+    sharesAccessible: firstValue(candidate, ["shares_accessible"]),
+    filesSeen: firstValue(candidate, ["files_seen"]),
+    filesScanned: firstValue(candidate, ["files_scanned"]),
+    unreadableFiles: firstValue(candidate, ["unreadable_files"]),
   };
+}
+
+function renderTargetDetail(record) {
+  renderSelectionDetail(targetSelectionDetail, record.ip, [
+    ["TCP/445", record.tcp],
+    ["SMB dialect", record.smb],
+    ["Signing", record.signing],
+    ["Encryption", record.encryption],
+    ["Kimlik doğrulama", record.authentication],
+    ["Son durum", record.lastStatus],
+    ["Denenen share", record.sharesProbed],
+    ["Erişilen share", record.sharesAccessible],
+    ["Görülen dosya", record.filesSeen],
+    ["Taranan dosya", record.filesScanned],
+    ["Okunamayan dosya", record.unreadableFiles],
+    ["Hata ayrıntısı", record.detail],
+  ]);
+}
+
+function targetAuthenticationValue(record) {
+  const method = firstValue(record, ["authentication_method", "auth_method"]);
+  if (method !== null) return `Doğrulandı · ${displayValue(method)}`;
+  return firstValue(record, ["authentication_status", "auth_status"]);
+}
+
+function targetErrorDetail(record) {
+  const values = [record.error_name, record.raw_error_code, record.error_message]
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .map((value) => ERROR_MESSAGE_LABELS[String(value)] ?? String(value));
+  return [...new Set(values)].join(" · ") || null;
+}
+
+function securityFeatureValue(record, prefix) {
+  const active = record?.[`${prefix}_active`];
+  const required = record?.[`${prefix}_required`];
+  const supported = record?.[`${prefix}_supported`];
+  if (active === true && required === true) return "security_active_required";
+  if (active === true) return "security_active";
+  if (required === true) return "security_required";
+  if (supported === true) return "security_supported";
+  if (supported === false) return "security_unsupported";
+  return null;
 }
 
 function targetMatches(record, filter) {
@@ -207,6 +378,7 @@ function targetMatches(record, filter) {
 
 function updateTargetCounters() {
   const records = [...targetStore.values()];
+  targetWorkspaceCount.textContent = records.length.toLocaleString("tr-TR");
   for (const element of targetCountElements) {
     const filter = element.dataset.targetCount;
     const count = records.filter((record) => targetMatches(record, filter)).length;
@@ -227,13 +399,17 @@ function setTargetTableMessage(message) {
 
 function renderTargetRows(emptyMessage = "Henüz tarama başlatılmadı.") {
   const records = [...targetStore.values()];
+  const visibleRecords = records.filter((record) => targetMatches(record, selectedTargetFilter));
+  if (!visibleRecords.some((record) => record.ip === selectedTargetKey)) {
+    selectedTargetKey = visibleRecords[0]?.ip ?? null;
+    if (visibleRecords[0]) renderTargetDetail(visibleRecords[0]);
+    else setSelectionPlaceholder(targetSelectionDetail, "Ayrıntı için bir hedef seç.");
+  }
   targetStatusBody.replaceChildren();
 
   let visible = 0;
-  for (const record of records) {
-    if (!targetMatches(record, selectedTargetFilter)) continue;
+  for (const record of visibleRecords) {
     const row = document.createElement("tr");
-    row.dataset.targetIp = record.ip;
     row.append(textCell(record.ip));
     row.append(textCell(record.tcp, `status-value ${statusTone(record.tcp)}`));
     row.append(textCell(record.smb, `status-value ${statusTone(record.smb)}`));
@@ -242,6 +418,14 @@ function renderTargetRows(emptyMessage = "Henüz tarama başlatılmadı.") {
       `status-value ${statusTone(record.authentication)}`,
     ));
     row.append(textCell(record.lastStatus, `status-value ${statusTone(record.lastStatus)}`));
+    bindSelectableRow(row, {
+      selected: selectedTargetKey === record.ip,
+      select: () => {
+        selectedTargetKey = record.ip;
+        renderTargetRows(emptyMessage);
+        renderTargetDetail(record);
+      },
+    });
     targetStatusBody.append(row);
     visible += 1;
   }
@@ -265,6 +449,9 @@ function upsertTarget(payload) {
     Object.entries(record).filter(([, value]) => value !== null),
   );
   targetStore.set(record.ip, {...previous, ...changes});
+  if (selectedTargetKey === record.ip) {
+    renderTargetDetail(targetStore.get(record.ip));
+  }
   renderTargetRows("Hedef durumları bekleniyor.");
   return true;
 }
@@ -275,6 +462,10 @@ function replaceTargets(records) {
   for (const item of records) {
     const record = targetRecord(item);
     if (record) targetStore.set(record.ip, record);
+  }
+  if (selectedTargetKey !== null && !targetStore.has(selectedTargetKey)) {
+    selectedTargetKey = null;
+    setSelectionPlaceholder(targetSelectionDetail, "Ayrıntı için bir hedef seç.");
   }
   renderTargetRows("Hedef durumları bekleniyor.");
   return true;
@@ -301,6 +492,8 @@ function inventoryRecord(payload) {
     type: firstValue(candidate, ["type", "item_type", "kind", "entry_type"]),
     status: firstValue(candidate, ["status", "read_status", "content_status", "scan_status"]),
     size: firstValue(candidate, ["size", "size_bytes", "file_size"]),
+    modifiedAt: firstValue(candidate, ["modified_at", "modified", "mtime"]),
+    detail: targetErrorDetail(candidate),
   };
 }
 
@@ -309,6 +502,19 @@ function inventoryKey(record) {
   return [record.target, record.share, record.path, record.type]
     .map((value) => displayValue(value))
     .join("\u001f");
+}
+
+function renderInventoryDetail(record) {
+  renderSelectionDetail(inventorySelectionDetail, record.path, [
+    ["Hedef", record.target],
+    ["Share", record.share],
+    ["Path", record.path],
+    ["Tür", record.type],
+    ["Durum", record.status],
+    ["Boyut", formatSize(record.size)],
+    ["Değiştirilme", record.modifiedAt],
+    ["Hata ayrıntısı", record.detail],
+  ]);
 }
 
 function findingRecord(payload) {
@@ -335,78 +541,226 @@ function findingRecord(payload) {
     lineNumber,
     term,
     fullLine,
+    method: firstValue(candidate, ["method", "detection_method"]),
+    ruleId: firstValue(candidate, ["rule_id", "rule"]),
+    category: firstValue(candidate, ["category", "rule_category"]),
+    confidence: firstValue(candidate, ["confidence", "confidence_level"]),
   };
 }
 
 function findingKey(record) {
   if (record.id !== null) return `id:${String(record.id)}`;
-  return [record.target, record.share, record.file, record.lineNumber, record.term]
+  return [
+    record.target,
+    record.share,
+    record.file,
+    record.lineNumber,
+    record.method,
+    record.ruleId,
+    record.term,
+  ]
     .map((value) => displayValue(value))
     .join("\u001f");
 }
 
-function setResultTableMessage(bodyElement, colspan, message) {
-  const row = document.createElement("tr");
-  row.className = "table-empty-row";
-  const cell = document.createElement("td");
-  cell.colSpan = colspan;
-  cell.textContent = message;
-  row.append(cell);
-  bodyElement.replaceChildren(row);
+function renderFindingDetail(record) {
+  renderSelectionDetail(findingSelectionDetail, record.file, [
+    ["Hedef", record.target],
+    ["Share", record.share],
+    ["Dosya", record.file],
+    ["Satır no", record.lineNumber],
+    ["Yöntem", record.method],
+    ["Terim", record.term],
+    ["Kural", record.ruleId],
+    ["Kategori", record.category],
+    ["Güven", record.confidence],
+    ["Tam satır", record.fullLine],
+  ]);
+}
+
+function recordsByTarget(records) {
+  const groups = new Map();
+  for (const item of records) {
+    const target = item[1].target === null ? "Hedef bilinmiyor" : String(item[1].target);
+    if (!groups.has(target)) groups.set(target, []);
+    groups.get(target).push(item);
+  }
+  return groups;
+}
+
+function setGroupedResultMessage(container, message) {
+  const emptyState = document.createElement("p");
+  emptyState.className = "group-empty-state";
+  emptyState.textContent = message;
+  container.replaceChildren(emptyState);
+}
+
+function groupedResult({
+  target,
+  records,
+  openState,
+  defaultOpen,
+  countLabel,
+  tableClass,
+  headings,
+  rowForRecord,
+}) {
+  const details = document.createElement("details");
+  details.className = "result-group";
+  details.dataset.groupTarget = target;
+  details.open = openState.has(target) ? openState.get(target) : defaultOpen;
+  details.addEventListener("toggle", () => openState.set(target, details.open));
+
+  const summary = document.createElement("summary");
+  const targetLabel = document.createElement("span");
+  targetLabel.className = "result-group-target";
+  targetLabel.textContent = target;
+  const count = document.createElement("span");
+  count.className = "result-group-count";
+  count.textContent = `${records.length.toLocaleString("tr-TR")} ${countLabel}`;
+  summary.append(targetLabel, count);
+
+  const frame = document.createElement("div");
+  frame.className = "group-table-frame";
+  const table = document.createElement("table");
+  table.className = `result-table ${tableClass}`;
+  const head = document.createElement("thead");
+  const headingRow = document.createElement("tr");
+  for (const heading of headings) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = heading;
+    headingRow.append(cell);
+  }
+  head.append(headingRow);
+  const bodyElement = document.createElement("tbody");
+  for (const item of records) bodyElement.append(rowForRecord(item));
+  table.append(head, bodyElement);
+  frame.append(table);
+  details.append(summary, frame);
+  return details;
 }
 
 function renderInventory() {
-  inventoryBody.replaceChildren();
-  let visible = 0;
-  for (const record of inventoryStore.values()) {
-    if (!recordMatchesSearch(
-      record,
-      inventoryFilter.value,
-      ["target", "share", "path", "type", "status", "size"],
-    )) continue;
-    const row = document.createElement("tr");
-    row.append(textCell(record.target));
-    row.append(textCell(record.share));
-    row.append(textCell(record.path, "path-value"));
-    row.append(textCell(record.type));
-    row.append(textCell(record.status, `status-value ${statusTone(record.status)}`));
-    row.append(textCell(formatSize(record.size)));
-    inventoryBody.append(row);
-    visible += 1;
+  const visibleRecords = [...inventoryStore].filter(([, record]) => recordMatchesSearch(
+    record,
+    inventoryFilter.value,
+    ["target", "share", "path", "type", "status", "size", "detail"],
+  ));
+  if (!visibleRecords.some(([key]) => key === selectedInventoryKey)) {
+    selectedInventoryKey = visibleRecords[0]?.[0] ?? null;
+    if (visibleRecords[0]) renderInventoryDetail(visibleRecords[0][1]);
+    else setSelectionPlaceholder(inventorySelectionDetail, "Ayrıntı için bir kayıt seç.");
   }
-  if (inventoryStore.size === 0) {
-    setResultTableMessage(inventoryBody, 6, "Henüz envanter yok.");
+  const groups = recordsByTarget(visibleRecords);
+  inventoryGroups.replaceChildren();
+  let groupIndex = 0;
+  for (const [target, records] of groups) {
+    inventoryGroups.append(groupedResult({
+      target,
+      records,
+      openState: inventoryGroupOpenState,
+      defaultOpen: groupIndex === 0,
+      countLabel: "kayıt",
+      tableClass: "inventory-table",
+      headings: ["Share", "Path", "Durum"],
+      rowForRecord: ([key, record]) => {
+        const row = document.createElement("tr");
+        row.append(textCell(record.share));
+        row.append(textCell(record.path, "path-value"));
+        row.append(textCell(record.status, `status-value ${statusTone(record.status)}`));
+        bindSelectableRow(row, {
+          selected: selectedInventoryKey === key,
+          select: () => {
+            selectedInventoryKey = key;
+            renderInventory();
+            renderInventoryDetail(record);
+          },
+        });
+        return row;
+      },
+    }));
+    groupIndex += 1;
   }
-  inventoryVisibleCount.textContent = `${visible.toLocaleString("tr-TR")} kayıt`;
+  if (visibleRecords.length === 0) {
+    setGroupedResultMessage(
+      inventoryGroups,
+      inventoryStore.size === 0 ? "Henüz envanter yok." : "Filtreyle eşleşen kayıt yok.",
+    );
+  }
+  inventoryVisibleCount.textContent = `${visibleRecords.length.toLocaleString("tr-TR")} kayıt`;
+  inventoryTabCount.textContent = inventoryStore.size.toLocaleString("tr-TR");
 }
 
 function renderFindings() {
-  findingsBody.replaceChildren();
-  let visible = 0;
-  for (const record of findingStore.values()) {
-    if (!recordMatchesSearch(
-      record,
-      findingsFilter.value,
-      ["target", "share", "file", "lineNumber", "term", "fullLine"],
-    )) continue;
-    const row = document.createElement("tr");
-    row.append(textCell(record.file, "path-value"));
-    row.append(textCell(record.lineNumber));
-    row.append(textCell(record.term));
-    row.append(textCell(record.fullLine, "finding-line"));
-    findingsBody.append(row);
-    visible += 1;
+  const visibleRecords = [...findingStore].filter(([, record]) => recordMatchesSearch(
+    record,
+    findingsFilter.value,
+    [
+      "target",
+      "share",
+      "file",
+      "lineNumber",
+      "term",
+      "fullLine",
+      "method",
+      "ruleId",
+      "category",
+      "confidence",
+    ],
+  ));
+  if (!visibleRecords.some(([key]) => key === selectedFindingKey)) {
+    selectedFindingKey = visibleRecords[0]?.[0] ?? null;
+    if (visibleRecords[0]) renderFindingDetail(visibleRecords[0][1]);
+    else setSelectionPlaceholder(findingSelectionDetail, "Tam satır için bir bulgu seç.");
   }
-  if (findingStore.size === 0) {
-    setResultTableMessage(findingsBody, 4, "Henüz bulgu yok.");
+  const groups = recordsByTarget(visibleRecords);
+  findingsGroups.replaceChildren();
+  let groupIndex = 0;
+  for (const [target, records] of groups) {
+    findingsGroups.append(groupedResult({
+      target,
+      records,
+      openState: findingGroupOpenState,
+      defaultOpen: groupIndex === 0,
+      countLabel: "bulgu",
+      tableClass: "findings-table",
+      headings: ["Dosya", "Satır no", "Yöntem", "Eşleşme"],
+      rowForRecord: ([key, record]) => {
+        const row = document.createElement("tr");
+        row.append(textCell(record.file, "path-value"));
+        row.append(textCell(record.lineNumber));
+        row.append(textCell(record.method, `status-value ${statusTone(record.method)}`));
+        row.append(textCell(record.term));
+        bindSelectableRow(row, {
+          selected: selectedFindingKey === key,
+          select: () => {
+            selectedFindingKey = key;
+            renderFindings();
+            renderFindingDetail(record);
+          },
+        });
+        return row;
+      },
+    }));
+    groupIndex += 1;
   }
-  findingsVisibleCount.textContent = `${visible.toLocaleString("tr-TR")} bulgu`;
+  if (visibleRecords.length === 0) {
+    setGroupedResultMessage(
+      findingsGroups,
+      findingStore.size === 0 ? "Henüz bulgu yok." : "Filtreyle eşleşen bulgu yok.",
+    );
+  }
+  findingsVisibleCount.textContent = `${visibleRecords.length.toLocaleString("tr-TR")} bulgu`;
+  findingsTabCount.textContent = findingStore.size.toLocaleString("tr-TR");
 }
 
 function upsertInventory(payload) {
   const record = inventoryRecord(payload);
   if (!record) return false;
-  inventoryStore.set(inventoryKey(record), record);
+  const key = inventoryKey(record);
+  inventoryStore.set(key, record);
+  if (selectedInventoryKey === key) renderInventoryDetail(record);
   renderInventory();
   return true;
 }
@@ -414,7 +768,9 @@ function upsertInventory(payload) {
 function upsertFinding(payload) {
   const record = findingRecord(payload);
   if (!record) return false;
-  findingStore.set(findingKey(record), record);
+  const key = findingKey(record);
+  findingStore.set(key, record);
+  if (selectedFindingKey === key) renderFindingDetail(record);
   renderFindings();
   return true;
 }
@@ -425,6 +781,10 @@ function replaceInventory(records) {
   for (const item of records) {
     const record = inventoryRecord(item);
     if (record) inventoryStore.set(inventoryKey(record), record);
+  }
+  if (selectedInventoryKey !== null && !inventoryStore.has(selectedInventoryKey)) {
+    selectedInventoryKey = null;
+    setSelectionPlaceholder(inventorySelectionDetail, "Ayrıntı için bir kayıt seç.");
   }
   renderInventory();
   return true;
@@ -437,6 +797,10 @@ function replaceFindings(records) {
     const record = findingRecord(item);
     if (record) findingStore.set(findingKey(record), record);
   }
+  if (selectedFindingKey !== null && !findingStore.has(selectedFindingKey)) {
+    selectedFindingKey = null;
+    setSelectionPlaceholder(findingSelectionDetail, "Tam satır için bir bulgu seç.");
+  }
   renderFindings();
   return true;
 }
@@ -444,6 +808,12 @@ function replaceFindings(records) {
 function clearResults() {
   inventoryStore.clear();
   findingStore.clear();
+  inventoryGroupOpenState.clear();
+  findingGroupOpenState.clear();
+  selectedInventoryKey = null;
+  selectedFindingKey = null;
+  setSelectionPlaceholder(inventorySelectionDetail, "Ayrıntı için bir kayıt seç.");
+  setSelectionPlaceholder(findingSelectionDetail, "Tam satır için bir bulgu seç.");
   renderInventory();
   renderFindings();
 }
@@ -463,10 +833,155 @@ function showErrors(errors) {
   previewErrors.hidden = errors.length === 0;
 }
 
+function mutationHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "Origin": origin,
+    "X-CSRF-Token": csrfToken,
+  };
+}
+
+function wordlistEntryCount(text) {
+  const entries = new Set();
+  for (const line of text.split(/\r?\n/u)) {
+    const entry = line.trim();
+    if (entry && !entry.startsWith("#")) entries.add(entry.toLocaleLowerCase("tr-TR"));
+  }
+  return entries.size;
+}
+
+function setWordlistCount(kind, count = null) {
+  const controls = WORDLIST_EDITORS[kind];
+  const resolvedCount = Number.isInteger(count)
+    ? count
+    : wordlistEntryCount(controls.editor.value);
+  controls.count.textContent = `${resolvedCount.toLocaleString("tr-TR")} kayıt`;
+}
+
+function setWordlistStatus(kind, message, tone = "") {
+  const status = WORDLIST_EDITORS[kind].status;
+  status.textContent = message;
+  status.className = `wordlist-status${tone ? ` ${tone}` : ""}`;
+}
+
+function wordlistPayload(payload, kind) {
+  const candidate = payload?.[kind] ?? payload;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
+  if (typeof candidate.text !== "string") return null;
+  return candidate;
+}
+
+async function responsePayload(response) {
+  try {
+    return await response.json();
+  } catch (_error) {
+    return null;
+  }
+}
+
+function responseError(payload, fallback) {
+  if (typeof payload?.error === "string") return payload.error;
+  if (typeof payload?.error?.message === "string") return payload.error.message;
+  if (typeof payload?.message === "string") return payload.message;
+  return fallback;
+}
+
+async function refreshWordlists() {
+  for (const kind of Object.keys(WORDLIST_EDITORS)) setWordlistStatus(kind, "Yükleniyor");
+  try {
+    const response = await fetch("/wordlists", {cache: "no-store", credentials: "omit"});
+    const payload = await responsePayload(response);
+    if (!response.ok) throw new Error("request_failed");
+
+    for (const kind of Object.keys(WORDLIST_EDITORS)) {
+      const item = wordlistPayload(payload, kind);
+      if (!item) throw new Error("invalid_payload");
+      WORDLIST_EDITORS[kind].editor.value = item.text;
+      setWordlistCount(kind, item.entry_count);
+      setWordlistStatus(kind, "");
+    }
+  } catch (_error) {
+    for (const kind of Object.keys(WORDLIST_EDITORS)) {
+      setWordlistStatus(kind, "Liste yüklenemedi", "is-error");
+    }
+  }
+}
+
+async function saveWordlist(kind) {
+  const controls = WORDLIST_EDITORS[kind];
+  controls.save.disabled = true;
+  setWordlistStatus(kind, "Kaydediliyor");
+  try {
+    const response = await fetch(`/wordlists/${kind}`, {
+      method: "PUT",
+      credentials: "omit",
+      cache: "no-store",
+      headers: mutationHeaders(),
+      body: JSON.stringify({text: controls.editor.value}),
+    });
+    const payload = await responsePayload(response);
+    if (!response.ok) {
+      setWordlistStatus(
+        kind,
+        responseError(payload, "Liste kaydedilemedi"),
+        "is-error",
+      );
+      return;
+    }
+
+    const item = wordlistPayload(payload, kind);
+    if (item) controls.editor.value = item.text;
+    setWordlistCount(kind, item?.entry_count);
+    setWordlistStatus(kind, "Kaydedildi", "is-ok");
+  } catch (_error) {
+    setWordlistStatus(kind, "Liste kaydedilemedi", "is-error");
+  } finally {
+    controls.save.disabled = false;
+  }
+}
+
+async function importWordlist(kind) {
+  const controls = WORDLIST_EDITORS[kind];
+  const file = controls.file.files?.[0];
+  if (!file) return;
+
+  try {
+    if (!file.name.toLocaleLowerCase("tr-TR").endsWith(".txt")) {
+      throw new CredentialInputError("Yalnız .txt dosyası seçilebilir");
+    }
+    if (file.size > WORDLIST_MAX_BYTES) {
+      throw new CredentialInputError("TXT dosyası en fazla 1 MiB olabilir");
+    }
+    controls.editor.value = await file.text();
+    setWordlistCount(kind);
+    setWordlistStatus(kind, "İçe aktarıldı · kaydedilmedi", "is-ok");
+  } catch (error) {
+    const message = error instanceof CredentialInputError
+      ? error.message
+      : "TXT dosyası okunamadı";
+    setWordlistStatus(kind, message, "is-error");
+  } finally {
+    controls.file.value = "";
+  }
+}
+
 function syncCredentialControls() {
   const hashSelected = credentialKind.value === "nt_hash";
+  const ccacheSelected = credentialKind.value === "ccache";
   credentialSecretLabel.textContent = hashSelected ? "NT hash" : "Parola";
+  credentialUsernameLabel.textContent = ccacheSelected ? "Kullanıcı (isteğe bağlı)" : "Kullanıcı";
+  credentialUsername.required = !ccacheSelected;
+
   credentialSecret.value = "";
+  credentialSecretField.hidden = ccacheSelected;
+  credentialSecret.disabled = ccacheSelected;
+  credentialSecret.required = !ccacheSelected;
+  credentialCcacheField.hidden = !ccacheSelected;
+  credentialCcache.disabled = !ccacheSelected;
+  credentialCcache.required = ccacheSelected;
+  credentialCcache.setCustomValidity("");
+  if (!ccacheSelected) credentialCcache.value = "";
+
   if (hashSelected) {
     credentialSecret.setAttribute(
       "pattern",
@@ -479,14 +994,67 @@ function syncCredentialControls() {
   }
 
   for (const option of authMode.options) {
-    option.disabled = hashSelected && option.value !== "ntlm_only";
+    option.disabled = (hashSelected && option.value !== "ntlm_only")
+      || (ccacheSelected && option.value !== "kerberos_only");
   }
-  authMode.value = hashSelected ? "ntlm_only" : "auto";
-  authMode.disabled = hashSelected;
+  authMode.value = ccacheSelected ? "kerberos_only" : hashSelected ? "ntlm_only" : "auto";
+  authMode.disabled = hashSelected || ccacheSelected;
 }
 
-function credentialPayload() {
+function ccacheValidationMessage(file) {
+  if (!file) return "CCache dosyası seçilmelidir.";
+  if (!file.name.toLocaleLowerCase("tr-TR").endsWith(".ccache")) {
+    return "Yalnız .ccache uzantılı dosya seçilebilir.";
+  }
+  if (file.size === 0) return "CCache dosyası boş olamaz.";
+  if (file.size > CCACHE_MAX_BYTES) return "CCache dosyası en fazla 1 MiB olabilir.";
+  return "";
+}
+
+function ccacheIsValid({report = false} = {}) {
+  if (credentialKind.value !== "ccache") return true;
+  const message = ccacheValidationMessage(credentialCcache.files?.[0]);
+  credentialCcache.setCustomValidity(message);
+  if (report) credentialCcache.reportValidity();
+  return message === "";
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 16 * 1024;
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function credentialPayload() {
   const kind = credentialKind.value;
+  if (kind === "ccache") {
+    const file = credentialCcache.files?.[0];
+    const validationMessage = ccacheValidationMessage(file);
+    if (validationMessage) throw new CredentialInputError(validationMessage);
+
+    let buffer;
+    try {
+      buffer = await file.arrayBuffer();
+    } catch (_error) {
+      throw new CredentialInputError("CCache dosyası okunamadı.");
+    }
+    if (buffer.byteLength > CCACHE_MAX_BYTES) {
+      throw new CredentialInputError("CCache dosyası en fazla 1 MiB olabilir.");
+    }
+    return {
+      kind: "ccache",
+      auth_mode: "kerberos_only",
+      domain: credentialDomain.value.trim() || null,
+      username: credentialUsername.value.trim() || null,
+      ccache_name: file.name,
+      ccache_base64: arrayBufferToBase64(buffer),
+    };
+  }
+
   const secretField = kind === "nt_hash" ? "nt_hash" : "password";
   return {
     kind,
@@ -498,6 +1066,7 @@ function credentialPayload() {
 }
 
 function credentialIsValid() {
+  if (credentialKind.value === "ccache") return ccacheIsValid({report: true});
   return credentialUsername.reportValidity() && credentialSecret.reportValidity();
 }
 
@@ -510,7 +1079,7 @@ function additionalSearchTerms() {
 }
 
 function scanFormIsValid() {
-  return credentialIsValid() && maxDepthInput.reportValidity();
+  return credentialIsValid();
 }
 
 async function startScan() {
@@ -520,23 +1089,20 @@ async function startScan() {
   showErrors([]);
 
   try {
+    const credential = await credentialPayload();
     const response = await fetch("/scan", {
       method: "POST",
       credentials: "omit",
       cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        "Origin": origin,
-        "X-CSRF-Token": csrfToken,
-      },
+      headers: mutationHeaders(),
       body: JSON.stringify({
         targets: targets.value,
-        credential: credentialPayload(),
+        credential,
         search: {
-          use_default: useDefaultWordlist.checked,
+          use_default: true,
           additional_terms: additionalSearchTerms(),
+          detect_patterns: detectPatternsInput.checked,
         },
-        max_depth: Number(maxDepthInput.value),
       }),
     });
     const payload = await response.json();
@@ -551,14 +1117,22 @@ async function startScan() {
     }
 
     targetStore.clear();
+    selectedTargetKey = null;
+    setSelectionPlaceholder(targetSelectionDetail, "Ayrıntı için bir hedef seç.");
     renderTargetRows("Hedef sonuçları bekleniyor.");
     clearResults();
+    activateResultTab("targets");
     setScopeState("Çalışıyor", "working");
     cancelScanButton.disabled = false;
     await refreshSnapshot();
-  } catch (_error) {
-    showErrors([{value: "Bağlantı", reason: "Yerel panel yanıt vermedi."}]);
-    setScopeState("Hata", "error");
+  } catch (error) {
+    if (error instanceof CredentialInputError) {
+      showErrors([{value: "CCache", reason: error.message}]);
+      setScopeState("Hatalı", "error");
+    } else {
+      showErrors([{value: "Bağlantı", reason: "Yerel panel yanıt vermedi."}]);
+      setScopeState("Hata", "error");
+    }
   } finally {
     if (cancelScanButton.disabled) startScanButton.disabled = false;
   }
@@ -571,11 +1145,7 @@ async function cancelScan() {
       method: "POST",
       credentials: "omit",
       cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        "Origin": origin,
-        "X-CSRF-Token": csrfToken,
-      },
+      headers: mutationHeaders(),
       body: "{}",
     });
     if (response.ok) {
@@ -610,11 +1180,19 @@ function setScanState(state) {
     document.querySelector("#progress-bar").style.width = "0%";
   }
   const rawMessage = state.progress?.message;
-  document.querySelector("#progress-message").textContent = terminal
-    ? STATUS_MESSAGES[status]
-    : rawMessage
+  let progressMessage;
+  if (status === "failed") {
+    progressMessage = terminalFailureMessage(state)
+      ?? (rawMessage ? MESSAGE_LABELS[rawMessage] ?? rawMessage : null)
+      ?? STATUS_MESSAGES.failed;
+  } else if (terminal) {
+    progressMessage = STATUS_MESSAGES[status];
+  } else {
+    progressMessage = rawMessage
       ? MESSAGE_LABELS[rawMessage] ?? rawMessage
       : STATUS_MESSAGES[status] ?? "";
+  }
+  document.querySelector("#progress-message").textContent = progressMessage;
 
   document.querySelector("#inventory-count").textContent = state.inventory_count ?? 0;
   document.querySelector("#finding-count").textContent = state.finding_count ?? 0;
@@ -625,6 +1203,18 @@ function setScanState(state) {
     const kind = status === "failed" ? "error" : "ready";
     setScopeState(SCAN_STATUS_LABELS[status] ?? "Bitti", kind);
   }
+}
+
+function terminalFailureMessage(state) {
+  const error = state.terminal_error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return null;
+
+  const phaseKey = typeof error.phase === "string" ? error.phase.toLowerCase() : "";
+  const phase = PHASE_LABELS[phaseKey] ?? error.phase;
+  const parts = [phase, error.code, error.message]
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .map((value) => String(value));
+  return [...new Set(parts)].join(" · ") || null;
 }
 
 function targetsFromSnapshot(state) {
@@ -654,7 +1244,7 @@ async function refreshResultPanels() {
     if (inventory) replaceInventory(inventory);
     if (findings) replaceFindings(findings);
   } catch (_error) {
-    // Live events and the next snapshot can still update these RAM-only views.
+    // Live events and the next snapshot can still update these views.
   }
 }
 
@@ -665,6 +1255,8 @@ async function refreshSnapshot() {
     const state = await response.json();
     if (latestGeneration !== null && state.generation !== latestGeneration) {
       targetStore.clear();
+      selectedTargetKey = null;
+      setSelectionPlaceholder(targetSelectionDetail, "Ayrıntı için bir hedef seç.");
       clearResults();
     }
     latestGeneration = state.generation;
@@ -712,14 +1304,47 @@ for (const filter of targetFilters) {
   });
 }
 
+for (const tab of resultTabs) {
+  tab.addEventListener("click", () => activateResultTab(tab.dataset.resultTab));
+  tab.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const current = resultTabs.indexOf(tab);
+    const offset = event.key === "ArrowRight" ? 1 : -1;
+    const next = resultTabs[(current + offset + resultTabs.length) % resultTabs.length];
+    activateResultTab(next.dataset.resultTab);
+    next.focus();
+  });
+}
+
+openWordlistsButton.addEventListener("click", async () => {
+  await refreshWordlists();
+  wordlistDialog.showModal();
+});
+closeWordlistsButton.addEventListener("click", () => wordlistDialog.close());
+wordlistDialog.addEventListener("click", (event) => {
+  if (event.target === wordlistDialog) wordlistDialog.close();
+});
+
 startScanButton.addEventListener("click", startScan);
 cancelScanButton.addEventListener("click", cancelScan);
 credentialKind.addEventListener("change", syncCredentialControls);
+credentialCcache.addEventListener("change", () => ccacheIsValid());
 inventoryFilter.addEventListener("input", renderInventory);
 findingsFilter.addEventListener("input", renderFindings);
+for (const [kind, controls] of Object.entries(WORDLIST_EDITORS)) {
+  controls.editor.addEventListener("input", () => {
+    setWordlistCount(kind);
+    setWordlistStatus(kind, "");
+  });
+  controls.file.addEventListener("change", () => importWordlist(kind));
+  controls.save.addEventListener("click", () => saveWordlist(kind));
+}
 syncCredentialControls();
+activateResultTab("targets");
 refreshSnapshot();
 refreshResultPanels();
+refreshWordlists();
 
 const scanEvents = new EventSource("/scan/events");
 for (const eventName of [

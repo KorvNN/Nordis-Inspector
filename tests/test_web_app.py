@@ -1,18 +1,31 @@
 from __future__ import annotations
 
+import base64
 import errno
 import json
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 
 import httpx
 
 from nordis_smb_inspector.core.credentials import AuthMode, Credential, CredentialKind
+from nordis_smb_inspector.core.wordlist_store import WordlistStore
+from nordis_smb_inspector.smb.inspection import (
+    ContentFinding,
+    InspectionEventKind,
+    InspectionResult,
+    InspectionTargetEvent,
+)
 from nordis_smb_inspector.smb.models import (
     AuthAttempt,
     AuthAttemptOutcome,
     AuthenticationHistory,
     AuthMechanism,
+    InventoryEntry,
+    InventoryEntryKind,
+    InventoryStatus,
     NegotiationInfo,
     SecurityFeatureState,
     SmbDialect,
@@ -22,16 +35,11 @@ from nordis_smb_inspector.smb.models import (
     TargetStatus,
     TransportSecurity,
 )
-from nordis_smb_inspector.smb.workflow import (
-    AccessEvent,
-    AccessEventKind,
-    AccessWorkflowStatus,
-    TargetAccessResult,
-)
 from nordis_smb_inspector.web.app import create_app
 
 _PASSWORD = "CorrectHorseBatteryStaple!"
 _NT_HASH = "0123456789ABCDEF0123456789ABCDEF"
+_CCACHE = b"\x05\x04nordis-test-ccache"
 
 
 def _credential_payload(
@@ -57,6 +65,7 @@ def _scan_payload(
     return {
         "targets": targets,
         "credential": credential or _credential_payload(),
+        "search": {"use_default": True, "additional_terms": []},
     }
 
 
@@ -79,41 +88,39 @@ def _negotiation() -> NegotiationInfo:
     )
 
 
-def _authenticated_result(target: str) -> TargetAccessResult:
+def _completed_result(
+    target: str,
+    mechanism: AuthMechanism = AuthMechanism.NTLM,
+) -> InspectionResult:
     negotiation = _negotiation()
     authentication = AuthenticationHistory(
         attempts=(
             AuthAttempt(
-                mechanism=AuthMechanism.NTLM,
+                mechanism=mechanism,
                 outcome=AuthAttemptOutcome.SUCCEEDED,
             ),
         ),
-        selected_mechanism=AuthMechanism.NTLM,
+        selected_mechanism=mechanism,
     )
-    events = (
-        AccessEvent(
-            kind=AccessEventKind.NEGOTIATION_SUCCEEDED,
-            stage=TargetStage.NEGOTIATION,
-            target=target,
-            negotiation=negotiation,
-        ),
-        AccessEvent(
-            kind=AccessEventKind.AUTHENTICATION_SUCCEEDED,
-            stage=TargetStage.AUTHENTICATION,
-            target=target,
-            authentication=authentication,
-        ),
-    )
-    return TargetAccessResult(
+    return InspectionResult(
         target=target,
-        status=AccessWorkflowStatus.AUTHENTICATED,
-        events=events,
+        outcome=TargetOutcome(
+            target=target,
+            stage=TargetStage.COMPLETE,
+            status=TargetStatus.COMPLETED,
+        ),
         negotiation=negotiation,
         authentication=authentication,
+        shares_probed=1,
+        shares_accessible=1,
+        inventory_items=1,
+        files_seen=1,
+        files_scanned=1,
+        findings=1,
     )
 
 
-def _connect_failure_result(target: str, status: TargetStatus) -> TargetAccessResult:
+def _connect_failure_result(target: str, status: TargetStatus) -> InspectionResult:
     raw_code = {
         TargetStatus.CONNECTION_REFUSED: errno.ECONNREFUSED,
         TargetStatus.TIMEOUT_NO_RESPONSE: errno.ETIMEDOUT,
@@ -134,17 +141,8 @@ def _connect_failure_result(target: str, status: TargetStatus) -> TargetAccessRe
         status=status,
         error=error,
     )
-    event = AccessEvent(
-        kind=AccessEventKind.NEGOTIATION_FAILED,
-        stage=TargetStage.NETWORK,
+    return InspectionResult(
         target=target,
-        outcome=outcome,
-        error=error,
-    )
-    return TargetAccessResult(
-        target=target,
-        status=AccessWorkflowStatus.CONNECT_FAILED,
-        events=(event,),
         outcome=outcome,
     )
 
@@ -156,25 +154,29 @@ class _FakeAccessInspector:
         self._lock = threading.Lock()
         self.observations: list[dict[str, object]] = []
 
-    def __call__(self, **kwargs: object) -> TargetAccessResult:
+    def __call__(self, **kwargs: object) -> InspectionResult:
         target = kwargs["target"]
         credential = kwargs["credential"]
-        on_event = kwargs.get("on_event")
+        on_target = kwargs.get("on_target")
+        on_inventory = kwargs.get("on_inventory")
+        on_finding = kwargs.get("on_finding")
         if not isinstance(target, str):
             raise TypeError("fake target must be text")
         if not isinstance(credential, Credential):
             raise TypeError("fake credential must be validated")
+        if target.endswith(".9"):
+            raise RuntimeError("DoNotLeakWorkerException")
 
-        expected_secret = (
-            _PASSWORD
-            if credential.kind is CredentialKind.PASSWORD
-            else _NT_HASH.casefold()
-        )
-        supplied_secret = (
-            credential.password
-            if credential.kind is CredentialKind.PASSWORD
-            else credential.nt_hash
-        )
+        expected_secret: str | bytes = {
+            CredentialKind.PASSWORD: _PASSWORD,
+            CredentialKind.NT_HASH: _NT_HASH.casefold(),
+            CredentialKind.CCACHE: _CCACHE,
+        }[credential.kind]
+        supplied_secret: str | bytes | None = {
+            CredentialKind.PASSWORD: credential.password,
+            CredentialKind.NT_HASH: credential.nt_hash,
+            CredentialKind.CCACHE: credential.ccache_data,
+        }[credential.kind]
         with self._lock:
             self.observations.append(
                 {
@@ -184,19 +186,79 @@ class _FakeAccessInspector:
                     "domain": credential.domain,
                     "username": credential.username,
                     "secret_was_correct": supplied_secret == expected_secret,
+                    "max_depth": kwargs["max_depth"],
+                    "detect_patterns": kwargs["detect_patterns"],
+                    "has_search_terms": bool(kwargs["search_terms"]),
+                    "has_share_names": bool(kwargs["share_names"]),
                 }
             )
 
         if target.endswith(".1"):
-            result = _authenticated_result(target)
+            mechanism = (
+                AuthMechanism.KERBEROS
+                if credential.kind is CredentialKind.CCACHE
+                else AuthMechanism.NTLM
+            )
+            result = _completed_result(target, mechanism)
+            if callable(on_inventory):
+                on_inventory(
+                    InventoryEntry(
+                        target=target,
+                        share_name="Shared",
+                        relative_path="config.txt",
+                        kind=InventoryEntryKind.FILE,
+                        status=InventoryStatus.FILE_READABLE,
+                        size=19,
+                    )
+                )
+            if callable(on_finding):
+                on_finding(
+                    ContentFinding(
+                        target=target,
+                        share="Shared",
+                        path="config.txt",
+                        line_number=2,
+                        term="password",
+                        full_line="password=lab-value",
+                    )
+                )
         elif target.endswith(".2"):
             result = _connect_failure_result(target, TargetStatus.CONNECTION_REFUSED)
         else:
             result = _connect_failure_result(target, TargetStatus.TIMEOUT_NO_RESPONSE)
 
-        if callable(on_event):
-            for event in result.events:
-                on_event(event)
+        if callable(on_target):
+            if result.negotiation is not None:
+                on_target(
+                    InspectionTargetEvent(
+                        kind=InspectionEventKind.NEGOTIATED,
+                        target=target,
+                        stage=TargetStage.NEGOTIATION,
+                        negotiation=result.negotiation,
+                    )
+                )
+                on_target(
+                    InspectionTargetEvent(
+                        kind=InspectionEventKind.AUTHENTICATED,
+                        target=target,
+                        stage=TargetStage.AUTHENTICATION,
+                        status=TargetStatus.AUTHENTICATED,
+                        negotiation=result.negotiation,
+                        authentication=result.authentication,
+                    )
+                )
+            on_target(
+                InspectionTargetEvent(
+                    kind=InspectionEventKind.TERMINAL,
+                    target=target,
+                    stage=result.stage,
+                    status=result.status,
+                    terminal=True,
+                    negotiation=result.negotiation,
+                    authentication=result.authentication,
+                    error=result.outcome.error,
+                )
+            )
         return result
 
 
@@ -204,7 +266,29 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.port = 8765
         self.inspector = _FakeAccessInspector()
-        self.app = create_app(port=self.port, access_inspector=self.inspector)
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addAsyncCleanup(self._cleanup_temporary_directory)
+        temporary_root = Path(self.temporary_directory.name)
+        self.content_wordlist_path = temporary_root / "content.txt"
+        self.share_wordlist_path = temporary_root / "shares.txt"
+        self.content_wordlist_path.write_text(
+            "# content\npassword\napi_key\n",
+            encoding="utf-8",
+        )
+        self.share_wordlist_path.write_text(
+            "# shares\nPublic\nFinance\n",
+            encoding="utf-8",
+        )
+        self.wordlists = WordlistStore(
+            content_path=self.content_wordlist_path,
+            share_path=self.share_wordlist_path,
+        )
+        self.app = create_app(
+            port=self.port,
+            access_inspector=self.inspector,
+            wordlist_store=self.wordlists,
+            kerberos_hostname_resolver=lambda target: target.source_hostname,
+        )
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=self.app),
             base_url=f"http://127.0.0.1:{self.port}",
@@ -214,6 +298,9 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         await self.client.aclose()
 
+    async def _cleanup_temporary_directory(self) -> None:
+        self.temporary_directory.cleanup()
+
     async def post(self, path: str, **kwargs: object) -> httpx.Response:
         headers = {
             "Origin": f"http://127.0.0.1:{self.port}",
@@ -221,6 +308,14 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         }
         headers.update(kwargs.pop("headers", {}))
         return await self.client.post(path, headers=headers, **kwargs)
+
+    async def put(self, path: str, **kwargs: object) -> httpx.Response:
+        headers = {
+            "Origin": f"http://127.0.0.1:{self.port}",
+            "X-CSRF-Token": self.csrf,
+        }
+        headers.update(kwargs.pop("headers", {}))
+        return await self.client.put(path, headers=headers, **kwargs)
 
     async def _start_and_wait(
         self,
@@ -247,11 +342,58 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("NordisGlobal SMB Inspector", response.text)
         self.assertIn("Taramayı başlat", response.text)
-        self.assertIn("Canlı hedef durumu", response.text)
+        self.assertIn("Tarama çalışma alanı", response.text)
+        self.assertIn("Wordlist yönetimi", response.text)
+        self.assertIn('role="tablist"', response.text)
+        self.assertIn('data-result-tab="targets"', response.text)
+        self.assertIn('data-result-tab="inventory"', response.text)
+        self.assertIn('data-result-tab="findings"', response.text)
+        self.assertIn("CCache", response.text)
+        self.assertIn('id="target-selection-detail"', response.text)
+        self.assertIn('id="inventory-selection-detail"', response.text)
+        self.assertIn('id="finding-selection-detail"', response.text)
+        self.assertIn('id="inventory-groups"', response.text)
+        self.assertIn('id="findings-groups"', response.text)
+        self.assertIn('id="detect-patterns"', response.text)
         self.assertIn(self.csrf, response.text)
         self.assertNotIn("https://", response.text)
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
         self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+
+    async def test_wordlists_are_loaded_and_saved_through_the_panel_api(self) -> None:
+        initial = await self.client.get("/wordlists")
+
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(initial.json()["content"]["entry_count"], 2)
+        self.assertEqual(initial.json()["shares"]["entry_count"], 2)
+
+        saved = await self.put(
+            "/wordlists/content",
+            json={"text": "# edited\npassword\nclient_secret"},
+        )
+
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertTrue(saved.json()["ok"])
+        self.assertEqual(saved.json()["content"]["entry_count"], 2)
+        self.assertEqual(
+            self.content_wordlist_path.read_text(encoding="utf-8"),
+            "# edited\npassword\nclient_secret\n",
+        )
+
+    async def test_invalid_wordlist_edit_is_rejected_without_replacing_the_file(self) -> None:
+        original = self.share_wordlist_path.read_bytes()
+
+        response = await self.put(
+            "/wordlists/shares",
+            json={"text": "../Finance\n"},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.json()["error"],
+            "Share wordlist entries must be share names.",
+        )
+        self.assertEqual(self.share_wordlist_path.read_bytes(), original)
 
     async def test_foreign_host_is_rejected_and_still_gets_security_headers(self) -> None:
         async with httpx.AsyncClient(
@@ -285,6 +427,49 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["errors"][0]["value"], "Kimlik bilgisi")
         self.assertIsNone(self.app.state.runtime.worker)
 
+    async def test_ccache_payload_is_decoded_in_memory_and_forces_kerberos(self) -> None:
+        ccache = {
+            "kind": "ccache",
+            "domain": "NORDIS.TEST",
+            "username": None,
+            "auth_mode": "kerberos_only",
+            "ccache_name": "nordis-lab.ccache",
+            "ccache_base64": base64.b64encode(_CCACHE).decode("ascii"),
+        }
+
+        response, snapshot = await self._start_and_wait(
+            targets="192.0.2.1",
+            credential=ccache,
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(snapshot["targets"][0]["authentication_method"], "kerberos")
+        latest = self.inspector.observations[-1]
+        self.assertIs(latest["kind"], CredentialKind.CCACHE)
+        self.assertIs(latest["auth_mode"], AuthMode.KERBEROS_ONLY)
+        self.assertTrue(latest["secret_was_correct"])
+        public = response.text + json.dumps(snapshot, sort_keys=True)
+        self.assertNotIn(base64.b64encode(_CCACHE).decode("ascii"), public)
+
+    async def test_invalid_ccache_base64_is_rejected_before_worker(self) -> None:
+        ccache = {
+            "kind": "ccache",
+            "domain": "NORDIS.TEST",
+            "username": None,
+            "auth_mode": "kerberos_only",
+            "ccache_name": "ticket.ccache",
+            "ccache_base64": "%%%not-base64%%%",
+        }
+
+        response = await self.post(
+            "/scan",
+            json=_scan_payload("192.0.2.1", credential=ccache),
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["errors"][0]["value"], "Kimlik bilgisi")
+        self.assertIsNone(self.app.state.runtime.worker)
+
     async def test_post_requires_exact_origin_and_csrf(self) -> None:
         payload = _scan_payload("192.0.2.1")
         wrong_origin = await self.client.post(
@@ -306,7 +491,7 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
     async def test_json_body_limit_is_applied_during_stream_read(self) -> None:
         response = await self.post(
             "/scan",
-            content=b'{"targets":"' + (b"a" * (65 * 1024)) + b'"}',
+            content=b'{"targets":"' + (b"a" * (2 * 1024 * 1024)) + b'"}',
             headers={"Content-Type": "application/json"},
         )
 
@@ -340,13 +525,16 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(authenticated["smb_status"], "3.1.1")
         self.assertEqual(authenticated["authentication_status"], "authenticated")
         self.assertEqual(authenticated["authentication_method"], "ntlm")
-        self.assertEqual(authenticated["last_status"], "authenticated")
+        self.assertEqual(authenticated["last_status"], "completed")
         refused = by_address["192.0.2.2"]
         self.assertEqual(refused["tcp_status"], "connection_refused")
         self.assertIsNone(refused["smb_status"])
         self.assertIsNone(refused["authentication_status"])
         self.assertEqual(refused["last_status"], "connection_refused")
-        self.assertEqual(snapshot["progress"]["counters"]["authenticated"], 1)
+        self.assertEqual(refused["raw_error_code"], errno.ECONNREFUSED)
+        self.assertEqual(refused["error_name"], "ECONNREFUSED")
+        self.assertEqual(refused["error_message"], "Normalized network failure.")
+        self.assertEqual(snapshot["progress"]["counters"]["completed"], 1)
         self.assertEqual(snapshot["progress"]["counters"]["connection_refused"], 1)
         self.assertEqual(snapshot["progress"]["counters"]["timeout_no_response"], 1)
 
@@ -359,6 +547,41 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             all(item["auth_mode"] is AuthMode.AUTO for item in observations.values())
         )
+        self.assertTrue(all(item["has_search_terms"] for item in observations.values()))
+        self.assertTrue(all(item["has_share_names"] for item in observations.values()))
+        self.assertTrue(all(item["max_depth"] == 32 for item in observations.values()))
+        self.assertTrue(all(item["detect_patterns"] is True for item in observations.values()))
+
+        self.assertEqual(snapshot["inventory_count"], 1)
+        self.assertEqual(snapshot["finding_count"], 1)
+        inventory = (await self.client.get("/inventory")).json()
+        findings = (await self.client.get("/findings")).json()
+        self.assertEqual(inventory["total_items"], 1)
+        self.assertEqual(inventory["items"][0]["path"], "config.txt")
+        self.assertEqual(findings["total_items"], 1)
+        self.assertEqual(findings["items"][0]["line_number"], 2)
+        self.assertEqual(findings["items"][0]["full_line"], "password=lab-value")
+        self.assertEqual(findings["items"][0]["method"], "wordlist")
+        self.assertIsNone(findings["items"][0]["rule_id"])
+
+    async def test_unexpected_target_worker_failure_has_a_safe_terminal_outcome(self) -> None:
+        _response, snapshot = await self._start_and_wait(targets="192.0.2.9")
+
+        self.assertEqual(snapshot["status"], "failed")
+        self.assertEqual(snapshot["terminal_reason"], "worker_failed")
+        self.assertEqual(
+            snapshot["terminal_error"],
+            {
+                "phase": "inspection",
+                "code": "INSPECTOR_ERROR",
+                "message": (
+                    "192.0.2.9 hedefinin denetim iş akışı beklenmeyen "
+                    "bir uygulama hatasıyla durdu."
+                ),
+            },
+        )
+        public = json.dumps(snapshot, sort_keys=True)
+        self.assertNotIn("DoNotLeakWorkerException", public)
 
     async def test_password_and_hash_never_leak_to_responses_snapshots_or_events(self) -> None:
         secrets = (_PASSWORD, _NT_HASH, _NT_HASH.casefold())
