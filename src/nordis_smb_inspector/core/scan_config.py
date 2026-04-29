@@ -1,7 +1,7 @@
 """Validated, immutable scan options built from the web request.
 
-The repository wordlists are configuration inputs.  They are read only when a
-scan starts and are never modified by this module.
+The repository wordlist is a configuration input.  It is read only when a scan
+starts and is never modified by this module.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ MIN_MAX_DEPTH = 1
 MAX_MAX_DEPTH = 256
 
 _CONTENT_WORDLIST = Path("wordlists/content/default-sensitive.txt")
-_SHARE_WORDLIST = Path("wordlists/shares/default-shares.txt")
 
 
 class ScanConfigError(ValueError):
@@ -32,27 +31,21 @@ class ScanOptions:
     """
 
     terms: tuple[str, ...]
-    share_names: tuple[str, ...]
     max_depth: int
     detect_patterns: bool = True
 
     def __post_init__(self) -> None:
         terms = _normalize_values(self.terms, "Search terms must be text.")
-        share_names = _normalize_values(self.share_names, "Share names must be text.")
         if not terms:
             raise ScanConfigError("At least one search term is required.")
-        if not share_names:
-            raise ScanConfigError("The share wordlist must contain at least one entry.")
         _validate_max_depth(self.max_depth)
         if not isinstance(self.detect_patterns, bool):
             raise ScanConfigError("Pattern detection selection must be a boolean.")
         object.__setattr__(self, "terms", terms)
-        object.__setattr__(self, "share_names", share_names)
 
     def __repr__(self) -> str:
         return (
             f"ScanOptions(terms=<redacted {len(self.terms)} entries>, "
-            f"share_names=<redacted {len(self.share_names)} entries>, "
             f"max_depth={self.max_depth!r}, detect_patterns={self.detect_patterns!r})"
         )
 
@@ -62,11 +55,10 @@ def parse_scan_options(
     max_depth: object,
     *,
     content_wordlist_path: str | PathLike[str] | None = None,
-    share_wordlist_path: str | PathLike[str] | None = None,
 ) -> ScanOptions:
-    """Parse web request values and load the selected repository defaults.
+    """Parse web request values and load the selected repository default.
 
-    Paths are injectable so callers and tests do not need to change the
+    The path is injectable so callers and tests do not need to change the
     process working directory.  When omitted, the source checkout containing
     this module is located by walking upward to its ``wordlists`` directory;
     this also works with an editable installation.
@@ -89,42 +81,29 @@ def parse_scan_options(
         raise ScanConfigError("Pattern detection selection must be a boolean.")
 
     depth = _validate_max_depth(max_depth)
-    repository_paths: tuple[Path, Path] | None = None
-
-    def defaults() -> tuple[Path, Path]:
-        nonlocal repository_paths
-        if repository_paths is None:
-            repository_paths = repository_wordlist_paths()
-        return repository_paths
 
     terms: tuple[str, ...] = ()
     if use_default:
         content_path = _coerce_path(content_wordlist_path, "Content wordlist path is invalid.")
         if content_path is None:
-            content_path = defaults()[0]
-        terms = _load_wordlist(content_path, kind="content")
+            content_path = repository_wordlist_path()
+        terms = _load_wordlist(content_path)
 
     terms = _normalize_values((*terms, *additional_terms), "Search terms must be text.")
     if not terms:
         raise ScanConfigError("At least one search term is required.")
 
-    share_path = _coerce_path(share_wordlist_path, "Share wordlist path is invalid.")
-    if share_path is None:
-        share_path = defaults()[1]
-    share_names = _load_wordlist(share_path, kind="share")
-
     return ScanOptions(
         terms=terms,
-        share_names=share_names,
         max_depth=depth,
         detect_patterns=detect_patterns,
     )
 
 
-def repository_wordlist_paths(
+def repository_wordlist_path(
     start: str | PathLike[str] | None = None,
-) -> tuple[Path, Path]:
-    """Return the two wordlists in the checkout containing ``start``.
+) -> Path:
+    """Return the content wordlist in the checkout containing ``start``.
 
     ``start`` is primarily useful to embedders and tests.  Failure messages do
     not include filesystem paths.
@@ -136,28 +115,19 @@ def repository_wordlist_paths(
     try:
         resolved = anchor.resolve()
     except OSError as exc:
-        raise ScanConfigError("Repository wordlists are unavailable.") from exc
+        raise ScanConfigError("Repository wordlist is unavailable.") from exc
 
     directory = resolved if resolved.is_dir() else resolved.parent
     for candidate in (directory, *directory.parents):
         content_path = candidate / _CONTENT_WORDLIST
-        share_path = candidate / _SHARE_WORDLIST
-        if content_path.is_file() and share_path.is_file():
-            return content_path, share_path
-    raise ScanConfigError("Repository wordlists are unavailable.")
+        if content_path.is_file():
+            return content_path
+    raise ScanConfigError("Repository wordlist is unavailable.")
 
 
-def _load_wordlist(path: Path, *, kind: str) -> tuple[str, ...]:
-    unavailable = (
-        "Content wordlist is unavailable."
-        if kind == "content"
-        else "Share wordlist is unavailable."
-    )
-    invalid_text = (
-        "Content wordlist must be UTF-8 text."
-        if kind == "content"
-        else "Share wordlist must be UTF-8 text."
-    )
+def _load_wordlist(path: Path) -> tuple[str, ...]:
+    unavailable = "Content wordlist is unavailable."
+    invalid_text = "Content wordlist must be UTF-8 text."
     try:
         raw = path.read_text(encoding="utf-8-sig")
     except UnicodeError as exc:

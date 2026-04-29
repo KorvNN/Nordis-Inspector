@@ -147,6 +147,30 @@ def _connect_failure_result(target: str, status: TargetStatus) -> InspectionResu
     )
 
 
+def _share_enum_failure_result(target: str) -> InspectionResult:
+    authenticated = _completed_result(target)
+    error = SmbErrorDetail(
+        stage=TargetStage.SHARE_ENUMERATION,
+        status=TargetStatus.SHARE_ENUM_DENIED,
+        operation="srvsvc_netr_share_enum",
+        raw_code=0xC0000022,
+        symbolic_name="SHARE_ENUM_ACCESS_DENIED",
+        safe_message="Share listesi alınamadı.",
+        target=target,
+    )
+    return InspectionResult(
+        target=target,
+        outcome=TargetOutcome(
+            target=target,
+            stage=TargetStage.SHARE_ENUMERATION,
+            status=TargetStatus.SHARE_ENUM_DENIED,
+            error=error,
+        ),
+        negotiation=authenticated.negotiation,
+        authentication=authenticated.authentication,
+    )
+
+
 class _FakeAccessInspector:
     """No-network target workflow with sanitized observations for assertions."""
 
@@ -189,7 +213,6 @@ class _FakeAccessInspector:
                     "max_depth": kwargs["max_depth"],
                     "detect_patterns": kwargs["detect_patterns"],
                     "has_search_terms": bool(kwargs["search_terms"]),
-                    "has_share_names": bool(kwargs["share_names"]),
                 }
             )
 
@@ -224,6 +247,8 @@ class _FakeAccessInspector:
                 )
         elif target.endswith(".2"):
             result = _connect_failure_result(target, TargetStatus.CONNECTION_REFUSED)
+        elif target.endswith(".4"):
+            result = _share_enum_failure_result(target)
         else:
             result = _connect_failure_result(target, TargetStatus.TIMEOUT_NO_RESPONSE)
 
@@ -270,19 +295,11 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self._cleanup_temporary_directory)
         temporary_root = Path(self.temporary_directory.name)
         self.content_wordlist_path = temporary_root / "content.txt"
-        self.share_wordlist_path = temporary_root / "shares.txt"
         self.content_wordlist_path.write_text(
             "# content\npassword\napi_key\n",
             encoding="utf-8",
         )
-        self.share_wordlist_path.write_text(
-            "# shares\nPublic\nFinance\n",
-            encoding="utf-8",
-        )
-        self.wordlists = WordlistStore(
-            content_path=self.content_wordlist_path,
-            share_path=self.share_wordlist_path,
-        )
+        self.wordlists = WordlistStore(content_path=self.content_wordlist_path)
         self.app = create_app(
             port=self.port,
             access_inspector=self.inspector,
@@ -365,7 +382,7 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(initial.status_code, 200)
         self.assertEqual(initial.json()["content"]["entry_count"], 2)
-        self.assertEqual(initial.json()["shares"]["entry_count"], 2)
+        self.assertNotIn("shares", initial.json())
 
         saved = await self.put(
             "/wordlists/content",
@@ -381,19 +398,27 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_invalid_wordlist_edit_is_rejected_without_replacing_the_file(self) -> None:
-        original = self.share_wordlist_path.read_bytes()
+        original = self.content_wordlist_path.read_bytes()
 
         response = await self.put(
-            "/wordlists/shares",
-            json={"text": "../Finance\n"},
+            "/wordlists/content",
+            json={"text": "# only a comment\n\n"},
         )
 
         self.assertEqual(response.status_code, 422)
         self.assertEqual(
             response.json()["error"],
-            "Share wordlist entries must be share names.",
+            "Wordlist must contain at least one entry.",
         )
-        self.assertEqual(self.share_wordlist_path.read_bytes(), original)
+        self.assertEqual(self.content_wordlist_path.read_bytes(), original)
+
+    async def test_the_removed_share_wordlist_is_no_longer_addressable(self) -> None:
+        response = await self.put(
+            "/wordlists/shares",
+            json={"text": "Public\n"},
+        )
+
+        self.assertEqual(response.status_code, 404)
 
     async def test_foreign_host_is_rejected_and_still_gets_security_headers(self) -> None:
         async with httpx.AsyncClient(
@@ -548,7 +573,6 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
             all(item["auth_mode"] is AuthMode.AUTO for item in observations.values())
         )
         self.assertTrue(all(item["has_search_terms"] for item in observations.values()))
-        self.assertTrue(all(item["has_share_names"] for item in observations.values()))
         self.assertTrue(all(item["max_depth"] == 32 for item in observations.values()))
         self.assertTrue(all(item["detect_patterns"] is True for item in observations.values()))
 
@@ -563,6 +587,19 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(findings["items"][0]["full_line"], "password=lab-value")
         self.assertEqual(findings["items"][0]["method"], "wordlist")
         self.assertIsNone(findings["items"][0]["rule_id"])
+
+    async def test_share_enumeration_failure_remains_visible_in_target_snapshot(self) -> None:
+        _response, snapshot = await self._start_and_wait(targets="192.0.2.4")
+
+        self.assertEqual(snapshot["status"], "completed")
+        self.assertEqual(snapshot["progress"]["counters"]["share_enum_denied"], 1)
+        self.assertEqual(len(snapshot["targets"]), 1)
+        target = snapshot["targets"][0]
+        self.assertEqual(target["last_status"], "share_enum_denied")
+        self.assertEqual(target["authentication_status"], "authenticated")
+        self.assertEqual(target["shares_probed"], 0)
+        self.assertEqual(target["error_name"], "SHARE_ENUM_ACCESS_DENIED")
+        self.assertEqual(target["raw_error_code"], 0xC0000022)
 
     async def test_unexpected_target_worker_failure_has_a_safe_terminal_outcome(self) -> None:
         _response, snapshot = await self._start_and_wait(targets="192.0.2.9")

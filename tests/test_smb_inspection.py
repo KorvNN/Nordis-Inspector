@@ -399,7 +399,7 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname="filesrv.nordis.local",
-            share_names=("Data", "data", "# comment"),
+            share_discoverer=_ShareDiscoverer(names=("Data", "data")),
             search_terms=("password", "PASSWORD"),
             max_depth=8,
             connector=connector,
@@ -453,7 +453,7 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname=None,
-            share_names=("Data",),
+            share_discoverer=_ShareDiscoverer(names=("Data",)),
             search_terms=("literal-that-is-not-present",),
             max_depth=8,
             connector=_Connector((connection,)),
@@ -496,7 +496,7 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname=None,
-            share_names=("Data",),
+            share_discoverer=_ShareDiscoverer(names=("Data",)),
             search_terms=("password",),
             max_depth=8,
             connector=_Connector((connection,)),
@@ -531,7 +531,7 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname=None,
-            share_names=("Data",),
+            share_discoverer=_ShareDiscoverer(names=("Data",)),
             search_terms=("password",),
             max_depth=8,
             connector=_Connector((connection,)),
@@ -576,7 +576,7 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname=None,
-            share_names=("Data",),
+            share_discoverer=_ShareDiscoverer(names=("Data",)),
             search_terms=("client_secret",),
             max_depth=8,
             connector=_Connector((connection,)),
@@ -651,7 +651,7 @@ class InspectionTests(unittest.TestCase):
                     connect_request=_request(),
                     credential=_credential(),
                     kerberos_hostname=None,
-                    share_names=("Data",),
+                    share_discoverer=_ShareDiscoverer(names=("Data",)),
                     search_terms=("password",),
                     max_depth=8,
                     connector=_Connector((connection,)),
@@ -671,18 +671,17 @@ class InspectionTests(unittest.TestCase):
                     {item.relative_path for item in inventory},
                 )
 
-    def test_share_discovery_replaces_known_name_fallback_before_probing(self) -> None:
+    def test_discovered_share_names_are_normalized_before_probing(self) -> None:
         connection = _Connection()
-        share, share_inventory = _connected_share("UnexpectedShare")
+        share, share_inventory = _connected_share("#Archive")
         adapter = _FileAdapter(probes=(_Probe(share, share_inventory),))
-        discoverer = _ShareDiscoverer(names=("UnexpectedShare", "unexpectedshare"))
+        discoverer = _ShareDiscoverer(names=("#Archive", "#archive"))
 
         result = inspect_target(
             target="192.0.2.10",
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname=None,
-            share_names=("KnownOnly",),
             search_terms=("password",),
             max_depth=8,
             connector=_Connector((connection,)),
@@ -693,13 +692,13 @@ class InspectionTests(unittest.TestCase):
         )
 
         self.assertEqual(TargetStatus.COMPLETED, result.status)
-        self.assertEqual(("UnexpectedShare",), adapter.share_names)
+        self.assertEqual(("#Archive",), adapter.share_names)
         self.assertEqual(AuthMechanism.NTLM, discoverer.calls[0]["mechanism"])
         self.assertEqual(5.0, discoverer.calls[0]["timeout_seconds"])
 
-    def test_share_discovery_failure_is_visible_and_uses_known_name_fallback(self) -> None:
+    def test_share_discovery_failure_is_terminal_and_probes_nothing(self) -> None:
         connection = _Connection()
-        share, share_inventory = _connected_share("KnownOnly")
+        share, share_inventory = _connected_share("NeverProbed")
         adapter = _FileAdapter(probes=(_Probe(share, share_inventory),))
         detail = SmbErrorDetail(
             stage=TargetStage.SHARE_ENUMERATION,
@@ -717,7 +716,6 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname=None,
-            share_names=("KnownOnly",),
             search_terms=("password",),
             max_depth=8,
             connector=_Connector((connection,)),
@@ -728,16 +726,52 @@ class InspectionTests(unittest.TestCase):
             on_target=events.append,
         )
 
-        self.assertEqual(TargetStatus.PARTIAL_ACCESS, result.status)
-        self.assertEqual(("KnownOnly",), adapter.share_names)
+        self.assertEqual(TargetStatus.SHARE_ENUM_DENIED, result.status)
+        self.assertEqual(TargetStage.SHARE_ENUMERATION, result.stage)
+        self.assertFalse(result.completed)
+        self.assertIs(result.outcome.error, detail)
+        self.assertEqual((), adapter.share_names)
+        self.assertEqual(0, result.shares_probed)
         discovery_errors = [
             event
             for event in events
-            if event.stage is TargetStage.SHARE_ENUMERATION and event.error is not None
+            if event.kind is InspectionEventKind.STAGE_ERROR
+            and event.stage is TargetStage.SHARE_ENUMERATION
+            and event.error is not None
         ]
         self.assertEqual(1, len(discovery_errors))
         self.assertEqual(TargetStatus.SHARE_ENUM_DENIED, discovery_errors[0].status)
         self.assertEqual(0xC0000022, discovery_errors[0].error.raw_code)
+        self.assertEqual(InspectionEventKind.TERMINAL, events[-1].kind)
+        self.assertEqual(TargetStatus.SHARE_ENUM_DENIED, events[-1].status)
+        self.assertIs(events[-1].error, detail)
+
+    def test_empty_enumeration_is_not_reported_as_an_error(self) -> None:
+        connection = _Connection()
+        adapter = _FileAdapter()
+        events: list[InspectionTargetEvent] = []
+
+        result = inspect_target(
+            target="192.0.2.10",
+            connect_request=_request(),
+            credential=_credential(),
+            kerberos_hostname=None,
+            search_terms=("password",),
+            max_depth=8,
+            connector=_Connector((connection,)),
+            authenticator=_Authenticator(session=_Session(connection)),
+            file_adapter=adapter,
+            share_discoverer=_ShareDiscoverer(names=()),
+            cancellation=NEVER_CANCELLED,
+            on_target=events.append,
+        )
+
+        # "This server exposes no shares" must stay distinguishable from
+        # "the share list could not be read".
+        self.assertEqual(TargetStatus.COMPLETED, result.status)
+        self.assertEqual((), adapter.share_names)
+        self.assertEqual(0, result.shares_probed)
+        self.assertEqual([], [event for event in events if event.error is not None])
 
     def test_refused_and_timeout_preserve_normalized_terminal_outcome(self) -> None:
         for status, raw_code in (
@@ -765,7 +799,7 @@ class InspectionTests(unittest.TestCase):
                     connect_request=_request(),
                     credential=_credential(),
                     kerberos_hostname=None,
-                    share_names=("Data",),
+                    share_discoverer=_ShareDiscoverer(names=("Data",)),
                     search_terms=("password",),
                     max_depth=1,
                     connector=_Connector(error=error),
@@ -809,7 +843,7 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname="filesrv.nordis.local",
-            share_names=("Data",),
+            share_discoverer=_ShareDiscoverer(names=("Data",)),
             search_terms=("password",),
             max_depth=1,
             connector=_Connector((connection,)),
@@ -885,7 +919,7 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname="filesrv.nordis.local",
-            share_names=("Finance", "Data"),
+            share_discoverer=_ShareDiscoverer(names=("Finance", "Data")),
             search_terms=("password",),
             max_depth=3,
             connector=_Connector((connection,)),
@@ -923,7 +957,7 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname="filesrv.nordis.local",
-            share_names=("Data",),
+            share_discoverer=_ShareDiscoverer(names=("Data",)),
             search_terms=("password",),
             max_depth=2,
             connector=_Connector((connection,)),
@@ -947,7 +981,7 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname="filesrv.nordis.local",
-            share_names=(),
+            share_discoverer=_ShareDiscoverer(names=()),
             search_terms=("password",),
             max_depth=0,
             connector=_Connector((connection,)),
@@ -968,7 +1002,7 @@ class InspectionTests(unittest.TestCase):
             connect_request=_request(),
             credential=_credential(),
             kerberos_hostname=None,
-            share_names=(),
+            share_discoverer=_ShareDiscoverer(names=()),
             search_terms=("password",),
             max_depth=0,
             connector=_Connector(error=RuntimeError(raw_secret)),

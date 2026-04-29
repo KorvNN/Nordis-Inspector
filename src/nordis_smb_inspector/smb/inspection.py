@@ -347,14 +347,13 @@ def inspect_target(
     connect_request: ConnectRequest,
     credential: Credential,
     kerberos_hostname: str | None,
-    share_names: Iterable[str],
     search_terms: Iterable[str],
     max_depth: int,
     connector: Connector,
     authenticator: CredentialAuthenticator,
     file_adapter: ReadOnlyFileAdapter,
     cancellation: CancellationToken,
-    share_discoverer: ShareDiscoverer | None = None,
+    share_discoverer: ShareDiscoverer,
     detect_patterns: bool = True,
     on_target: TargetCallback | None = None,
     on_inventory: InventoryCallback | None = None,
@@ -362,15 +361,15 @@ def inspect_target(
 ) -> InspectionResult:
     """Inspect one target through content scanning with one live session.
 
-    Results retain counters and normalized protocol metadata only.  Inventory
-    entries and content findings are delivered as they are encountered and are
-    not accumulated by the orchestrator.
+    Shares come solely from SRVSVC enumeration; there is no known-share
+    fallback list.  Results retain counters and normalized protocol metadata
+    only.  Inventory entries and content findings are delivered as they are
+    encountered and are not accumulated by the orchestrator.
     """
 
     _validate_inputs(target, connect_request, credential, max_depth)
     if not isinstance(detect_patterns, bool):
         raise TypeError("detect_patterns must be a boolean.")
-    normalized_shares = _normalize_share_names(share_names)
     normalized_terms = _normalize_search_terms(search_terms)
 
     connections: list[ConnectionHandle] = []
@@ -441,127 +440,140 @@ def inspect_target(
             )
         )
 
-        shares_to_probe = normalized_shares
-        if share_discoverer is not None:
-            last_stage = TargetStage.SHARE_ENUMERATION
+        last_stage = TargetStage.SHARE_ENUMERATION
+        publish_target(
+            InspectionTargetEvent(
+                kind=InspectionEventKind.DISCOVERING_SHARES,
+                target=target,
+                stage=TargetStage.SHARE_ENUMERATION,
+                negotiation=negotiation,
+                authentication=authentication,
+            )
+        )
+        shares_to_probe: tuple[str, ...] = ()
+        enumeration_error: SmbErrorDetail | None = None
+        try:
+            discovered = share_discoverer.discover(
+                target=target,
+                credential=credential,
+                kerberos_hostname=kerberos_hostname,
+                mechanism=authentication.selected_mechanism,
+                timeout_seconds=connect_request.timeout_seconds,
+                cancellation=cancellation,
+            )
+        except ScanCancelled:
+            raise
+        except Exception as exception:
+            # Without a known-share fallback, a failed enumeration must stay
+            # visible: an empty share list means "this server exposes none",
+            # which is not the same answer as "the list could not be read".
+            detail = _share_discovery_error_detail(exception, target=target)
+            enumeration_error = detail
+            publish_target(
+                _stage_error(
+                    target,
+                    TargetStage.SHARE_ENUMERATION,
+                    status=detail.status,
+                    error=detail,
+                )
+            )
+        else:
+            shares_to_probe = _normalize_share_names(discovered.names)
+
+        if enumeration_error is not None:
+            result = _result_from_outcome(
+                target,
+                TargetOutcome(
+                    target=target,
+                    stage=enumeration_error.stage,
+                    status=enumeration_error.status,
+                    error=enumeration_error,
+                ),
+                negotiation,
+                authentication,
+                counts,
+            )
+        else:
+            last_stage = TargetStage.AUTHORIZATION
             publish_target(
                 InspectionTargetEvent(
-                    kind=InspectionEventKind.DISCOVERING_SHARES,
+                    kind=InspectionEventKind.PROBING_SHARES,
                     target=target,
-                    stage=TargetStage.SHARE_ENUMERATION,
+                    stage=TargetStage.AUTHORIZATION,
                     negotiation=negotiation,
                     authentication=authentication,
                 )
             )
             try:
-                discovered = share_discoverer.discover(
+                probes = file_adapter.probe_known_shares(
+                    session,
                     target=target,
-                    credential=credential,
-                    kerberos_hostname=kerberos_hostname,
-                    mechanism=authentication.selected_mechanism,
-                    timeout_seconds=connect_request.timeout_seconds,
+                    share_names=shares_to_probe,
                     cancellation=cancellation,
                 )
-                discovered_names = _normalize_share_names(discovered.names)
-                if not discovered_names:
-                    raise ValueError("Share discovery returned no usable names.")
-                shares_to_probe = discovered_names
+                for probe in probes:
+                    cancellation.raise_if_cancelled()
+                    counts.shares_probed += 1
+                    share = probe.share
+                    if share.target != target:
+                        partial = True
+                        publish_target(_stage_error(target, TargetStage.AUTHORIZATION))
+                        continue
+                    if share.access_status is ShareAccessStatus.CONNECTED:
+                        counts.shares_accessible += 1
+                    elif share.access_status is not ShareAccessStatus.NOT_FOUND:
+                        partial = True
+                    if probe.inventory is not None:
+                        publish_inventory(probe.inventory)
+                    if not share.content_walkable:
+                        continue
+                    if _walk_share(
+                        target=target,
+                        session=session,
+                        share=share,
+                        search_terms=normalized_terms,
+                        detect_patterns=detect_patterns,
+                        max_depth=max_depth,
+                        file_adapter=file_adapter,
+                        cancellation=cancellation,
+                        counts=counts,
+                        on_target=on_target,
+                        on_inventory=on_inventory,
+                        on_finding=on_finding,
+                        negotiation=negotiation,
+                        authentication=authentication,
+                    ):
+                        partial = True
+                    last_stage = TargetStage.FILE_READ
             except ScanCancelled:
                 raise
             except Exception as exception:
                 partial = True
-                detail = _share_discovery_error_detail(exception, target=target)
+                detail = _operation_error_detail(
+                    exception,
+                    stage=TargetStage.AUTHORIZATION,
+                    status=TargetStatus.SHARE_CONNECT_ERROR,
+                    operation="discovered_share_probe",
+                    symbolic_name="SHARE_PROBE_FAILED",
+                    message="Share probing could not complete.",
+                )
                 publish_target(
                     _stage_error(
                         target,
-                        TargetStage.SHARE_ENUMERATION,
+                        detail.stage,
                         status=detail.status,
                         error=detail,
                     )
                 )
 
-        last_stage = TargetStage.AUTHORIZATION
-        publish_target(
-            InspectionTargetEvent(
-                kind=InspectionEventKind.PROBING_SHARES,
-                target=target,
-                stage=TargetStage.AUTHORIZATION,
-                negotiation=negotiation,
-                authentication=authentication,
+            terminal_status = TargetStatus.PARTIAL_ACCESS if partial else TargetStatus.COMPLETED
+            result = _result(
+                target,
+                terminal_status,
+                negotiation,
+                authentication,
+                counts,
             )
-        )
-        try:
-            probes = file_adapter.probe_known_shares(
-                session,
-                target=target,
-                share_names=shares_to_probe,
-                cancellation=cancellation,
-            )
-            for probe in probes:
-                cancellation.raise_if_cancelled()
-                counts.shares_probed += 1
-                share = probe.share
-                if share.target != target:
-                    partial = True
-                    publish_target(_stage_error(target, TargetStage.AUTHORIZATION))
-                    continue
-                if share.access_status is ShareAccessStatus.CONNECTED:
-                    counts.shares_accessible += 1
-                elif share.access_status is not ShareAccessStatus.NOT_FOUND:
-                    partial = True
-                if probe.inventory is not None:
-                    publish_inventory(probe.inventory)
-                if not share.content_walkable:
-                    continue
-                if _walk_share(
-                    target=target,
-                    session=session,
-                    share=share,
-                    search_terms=normalized_terms,
-                    detect_patterns=detect_patterns,
-                    max_depth=max_depth,
-                    file_adapter=file_adapter,
-                    cancellation=cancellation,
-                    counts=counts,
-                    on_target=on_target,
-                    on_inventory=on_inventory,
-                    on_finding=on_finding,
-                    negotiation=negotiation,
-                    authentication=authentication,
-                ):
-                    partial = True
-                last_stage = TargetStage.FILE_READ
-        except ScanCancelled:
-            raise
-        except Exception as exception:
-            partial = True
-            detail = _operation_error_detail(
-                exception,
-                stage=TargetStage.AUTHORIZATION,
-                status=TargetStatus.SHARE_CONNECT_ERROR,
-                operation="known_share_probe",
-                symbolic_name="SHARE_PROBE_FAILED",
-                message="Known-share probing could not complete.",
-            )
-            publish_target(
-                _stage_error(
-                    target,
-                    detail.stage,
-                    status=detail.status,
-                    error=detail,
-                )
-            )
-
-        terminal_status = (
-            TargetStatus.PARTIAL_ACCESS if partial else TargetStatus.COMPLETED
-        )
-        result = _result(
-            target,
-            terminal_status,
-            negotiation,
-            authentication,
-            counts,
-        )
     except SmbProtocolConnectError as exception:
         result = _result_from_outcome(
             target,
@@ -1388,7 +1400,7 @@ def _normalize_share_names(values: Iterable[str]) -> tuple[str, ...]:
         if not isinstance(value, str):
             raise TypeError("Share names must be strings.")
         candidate = value.strip()
-        if not candidate or candidate.startswith("#"):
+        if not candidate:
             continue
         if any(character in candidate for character in ("/", "\\", "\x00", "\r", "\n")):
             raise ValueError("Share names cannot contain path separators or control bytes.")

@@ -273,13 +273,13 @@ class KnownShareTests(unittest.TestCase):
             _SessionHandle(),
             target=target,
             share_names=(
-                "# comment",
                 " Finance ",
                 "finance",
                 "IPC$",
                 "Denied",
                 "Missing",
                 "Broken",
+                "#Archive",
                 "",
             ),
             cancellation=NEVER_CANCELLED,
@@ -287,7 +287,7 @@ class KnownShareTests(unittest.TestCase):
 
         self.assertEqual(
             [result.share.name for result in results],
-            ["Finance", "IPC$", "Denied", "Missing", "Broken"],
+            ["Finance", "IPC$", "Denied", "Missing", "Broken", "#Archive"],
         )
         self.assertIs(results[0].share.kind, ShareKind.DISK)
         self.assertIs(results[0].inventory.status, InventoryStatus.SHARE_CONNECTED)
@@ -299,7 +299,7 @@ class KnownShareTests(unittest.TestCase):
         self.assertIsNone(results[3].inventory)
         self.assertIs(results[4].share.access_status, ShareAccessStatus.ERROR)
         self.assertIsNone(results[4].inventory)
-        self.assertEqual([tree.disconnect_calls for tree in trees.trees], [1] * 5)
+        self.assertEqual([tree.disconnect_calls for tree in trees.trees], [1] * 6)
         self.assertTrue(all(tree.connect_calls == [True] for tree in trees.trees))
         for result in results:
             self.assertNotIn(target, repr(result.share))

@@ -1,4 +1,4 @@
-"""Thread-safe editing of the repository-backed scan wordlists.
+"""Thread-safe editing of the repository-backed content wordlist.
 
 The store exposes the source text so a local web editor can round-trip comments
 and formatting.  Effective entry counts use the same basic rules as scan
@@ -21,7 +21,7 @@ from threading import RLock
 
 from nordis_smb_inspector.core.scan_config import (
     ScanConfigError,
-    repository_wordlist_paths,
+    repository_wordlist_path,
 )
 
 MAX_WORDLIST_BYTES = 1024 * 1024
@@ -32,10 +32,9 @@ class WordlistStoreError(ValueError):
 
 
 class WordlistKind(StrEnum):
-    """The repository wordlists that may be viewed or edited."""
+    """The repository wordlist that may be viewed or edited."""
 
     CONTENT = "content"
-    SHARE = "share"
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -66,45 +65,35 @@ class WordlistDocument:
 
 
 class WordlistStore:
-    """Read and atomically replace the two repository wordlists."""
+    """Read and atomically replace the repository content wordlist."""
 
     def __init__(
         self,
         *,
         content_path: str | PathLike[str] | None = None,
-        share_path: str | PathLike[str] | None = None,
     ) -> None:
-        if content_path is None and share_path is None:
+        if content_path is None:
             try:
-                content, share = repository_wordlist_paths()
+                content = repository_wordlist_path()
             except ScanConfigError:
-                raise WordlistStoreError("Repository wordlists are unavailable.") from None
-        elif content_path is None or share_path is None:
-            raise WordlistStoreError("Both wordlist paths are required.")
+                raise WordlistStoreError("Repository wordlist is unavailable.") from None
         else:
             try:
                 content = Path(content_path)
-                share = Path(share_path)
             except (TypeError, ValueError):
-                raise WordlistStoreError("Wordlist paths are invalid.") from None
+                raise WordlistStoreError("Wordlist path is invalid.") from None
 
-        self._paths = {
-            WordlistKind.CONTENT: content,
-            WordlistKind.SHARE: share,
-        }
+        self._paths = {WordlistKind.CONTENT: content}
         self._lock = RLock()
 
     def __repr__(self) -> str:
-        return "WordlistStore(content_path=<redacted>, share_path=<redacted>)"
+        return "WordlistStore(content_path=<redacted>)"
 
     def snapshot(self) -> dict[WordlistKind, WordlistDocument]:
-        """Return a coherent in-process view of both wordlists."""
+        """Return a coherent in-process view of the wordlist."""
 
         with self._lock:
-            return {
-                kind: self._read_unlocked(kind)
-                for kind in (WordlistKind.CONTENT, WordlistKind.SHARE)
-            }
+            return {WordlistKind.CONTENT: self._read_unlocked(WordlistKind.CONTENT)}
 
     def read(self, kind: WordlistKind | str) -> WordlistDocument:
         """Read one wordlist without normalizing its source text."""
@@ -121,7 +110,7 @@ class WordlistStore:
         """
 
         normalized_kind = _coerce_kind(kind)
-        normalized_text, encoded, entry_count = _prepare_text(normalized_kind, text)
+        normalized_text, encoded, entry_count = _prepare_text(text)
 
         with self._lock:
             self._replace_unlocked(self._paths[normalized_kind], encoded)
@@ -144,7 +133,7 @@ class WordlistStore:
         except UnicodeError:
             raise WordlistStoreError("Wordlist must be UTF-8 text.") from None
 
-        _, _, entry_count = _prepare_text(kind, text, add_final_newline=False)
+        _, _, entry_count = _prepare_text(text, add_final_newline=False)
         return WordlistDocument(kind=kind, text=text, entry_count=entry_count)
 
     @staticmethod
@@ -190,7 +179,6 @@ def _coerce_kind(kind: WordlistKind | str) -> WordlistKind:
 
 
 def _prepare_text(
-    kind: WordlistKind,
     text: str,
     *,
     add_final_newline: bool = True,
@@ -216,10 +204,6 @@ def _prepare_text(
     entries = _effective_entries(normalized_text)
     if not entries:
         raise WordlistStoreError("Wordlist must contain at least one entry.")
-    if kind is WordlistKind.SHARE and any(
-        entry in {".", ".."} or "/" in entry or "\\" in entry for entry in entries
-    ):
-        raise WordlistStoreError("Share wordlist entries must be share names.")
     return normalized_text, encoded, len(entries)
 
 

@@ -740,7 +740,7 @@ def _normalize_share_names(values: Iterable[str]) -> tuple[str, ...]:
         if not isinstance(value, str):
             raise TypeError("Share names must be strings.")
         candidate = value.strip()
-        if not candidate or candidate.startswith("#"):
+        if not candidate:
             continue
         if any(character in candidate for character in ("/", "\\", "\x00", "\r", "\n")):
             raise ValueError("Share names cannot contain path separators or control bytes.")

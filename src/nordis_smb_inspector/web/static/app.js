@@ -21,11 +21,6 @@ const contentWordlistFile = document.querySelector("#content-wordlist-file");
 const contentWordlistCount = document.querySelector("#content-wordlist-count");
 const contentWordlistStatus = document.querySelector("#content-wordlist-status");
 const saveContentWordlist = document.querySelector("#save-content-wordlist");
-const shareWordlist = document.querySelector("#share-wordlist");
-const shareWordlistFile = document.querySelector("#share-wordlist-file");
-const shareWordlistCount = document.querySelector("#share-wordlist-count");
-const shareWordlistStatus = document.querySelector("#share-wordlist-status");
-const saveShareWordlist = document.querySelector("#save-share-wordlist");
 const openWordlistsButton = document.querySelector("#open-wordlists");
 const closeWordlistsButton = document.querySelector("#close-wordlists");
 const wordlistDialog = document.querySelector("#wordlist-dialog");
@@ -72,13 +67,6 @@ const WORDLIST_EDITORS = {
     file: contentWordlistFile,
     save: saveContentWordlist,
     status: contentWordlistStatus,
-  },
-  shares: {
-    count: shareWordlistCount,
-    editor: shareWordlist,
-    file: shareWordlistFile,
-    save: saveShareWordlist,
-    status: shareWordlistStatus,
   },
 };
 

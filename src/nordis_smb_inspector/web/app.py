@@ -455,8 +455,6 @@ def _snapshot_payload(runtime: WebRuntime) -> dict[str, object]:
 def _wordlist_kind(value: object) -> tuple[WordlistKind, str]:
     if value == "content":
         return WordlistKind.CONTENT, "content"
-    if value == "shares":
-        return WordlistKind.SHARE, "shares"
     raise SafeHttpError(HttpErrorCode.NOT_FOUND)
 
 
@@ -472,7 +470,6 @@ def _wordlist_snapshot_payload(
 ) -> dict[str, object]:
     return {
         "content": _wordlist_document_payload(documents[WordlistKind.CONTENT]),
-        "shares": _wordlist_document_payload(documents[WordlistKind.SHARE]),
     }
 
 
@@ -550,7 +547,6 @@ def _run_access_scan(
             connect_request=ConnectRequest(target=address),
             credential=credential,
             kerberos_hostname=kerberos_hostname,
-            share_names=options.share_names,
             search_terms=options.terms,
             max_depth=options.max_depth,
             connector=runtime.connector,
