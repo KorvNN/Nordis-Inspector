@@ -80,11 +80,9 @@ kullanıldı. Alınabiliyorsa özgün Kerberos hata kodu da canlı ekranda göst
 
 ### 3.2 Liste yönetimi
 
-İki farklı liste türü birbirinden ayrı yönetilir:
-
-1. **İçerik arama listesi:** Dosyaların içinde aranacak kelime ve ifadeler.
-2. **Bilinen share adları listesi:** Share listeleme engellendiğinde veya kullanıcı
-   özellikle istediğinde doğrudan bağlanılması denenecek share adları.
+Tek bir liste türü yönetilir: dosyaların içinde aranacak kelime ve ifadeler.
+Share adları için liste tutulmaz; paylaşımlar yalnız SRVSVC enumeration ile
+bulunur.
 
 İçerik arama listesi:
 
@@ -98,24 +96,16 @@ kullanıldı. Alınabiliyorsa özgün Kerberos hata kodu da canlı ekranda göst
 - Aynı terimleri tekilleştirme ve boş/geçersiz satırları reddetme
 - Kullanılacak birleşik listenin taramadan önce önizlenmesi
 - Kategori bazlı kural paketlerini açma/kapatma
-- Wordlist aramasından bağımsız regex/token, private-key, yapılandırma-ataması
-  ve entropy algılayıcılarını açma/kapatma
+- Wordlist aramasından bağımsız regex/token, private-key ve
+  yapılandırma-ataması algılayıcılarını açma/kapatma
 
-Bilinen share adları listesi:
+Hazır liste proje yapılandırmasıdır; tarama sonucu değildir. Varsayılan içerik
+listesi repo içinde tutulur. Web panelinde kaydedilen düzenlemeler bu
+yapılandırma dosyasına yazılır. Credential, hedef, envanter ve bulgu verileri
+bu mekanizmaya hiçbir zaman yazılmaz.
 
-- Repo içinde sürüm kontrollü olarak sağlanan düzenlenebilir başlangıç listesi
-- Satır başına bir share adı içeren `.txt` dosyası yükleme
-- Web panelinden ad ekleme, çıkarma ve düzenleme
-- Listeyi yalnız share enumeration başarısız olduğunda veya her hedefte kullanma seçeneği
-- Denenen her ad için `NOT_FOUND`, `ACCESS_DENIED` veya `CONNECTED` sonucunu gösterme
-
-Hazır listeler proje yapılandırmasıdır; tarama sonucu değildir. Varsayılan
-içerik ve share listeleri repo içinde tutulur. Web panelinde kaydedilen
-düzenlemeler bu yapılandırma dosyalarına yazılır. Credential, hedef, envanter ve
-bulgu verileri bu mekanizmaya hiçbir zaman yazılmaz.
-
-İçerik wordlist'leri kategori bazında normal `.txt` dosyalarıdır; web panelinde
-ayrı ayrı seçilir ve düzenlenir. Kalıp algılama bunları üretmez veya değiştirmez;
+İçerik wordlist'i kategori bazında düzenlenmiş normal bir `.txt` dosyasıdır ve
+web panelinde düzenlenir. Kalıp algılama bu dosyayı üretmez veya değiştirmez;
 wordlist'ten bağımsız ikinci bir tarama yöntemidir. Ayrıntılı tasarım
 [DETECTION.md](DETECTION.md) belgesindedir.
 
@@ -135,6 +125,7 @@ ve alınan düşük seviye sonuç ayrı tutulur:
 | Ağ/TCP | `PORT_OPEN` | TCP/445 bağlantısı kuruldu |
 | SMB | `NEGOTIATION_FAILED` | Port açık fakat SMB protokol görüşmesi tamamlanamadı |
 | Kimlik doğrulama | `AUTH_FAILED` | SMB çalışıyor fakat sağlanan hesap kabul edilmedi |
+| Share keşfi | `SHARE_ENUM_DENIED` | Kimlik doğrulandı fakat SRVSVC paylaşım listesini vermedi; hedefte paylaşım denenmez |
 | Yetkilendirme | `ACCESS_DENIED` | Kimlik doğrulandı fakat paylaşım veya yol için okuma yetkisi yok |
 | Tarama | `PARTIAL_ACCESS` | Bazı paylaşım/yollar okunabildi, bazıları reddedildi |
 | Tarama | `COMPLETED` | Erişilebilen içeriklerin taraması tamamlandı |
@@ -160,6 +151,12 @@ Web panelindeki hedef tablosunda şu alanlar bulunur:
 - Arama terimi eşleşmeyen dosyalar dahil görülebilen bütün dosyaları gösterme
 - Her dosyada içerik tarama durumu ve eşleşme sayısı
 - Ayarlanan maksimum derinliğe ulaşılan klasörleri `DEPTH_LIMIT_REACHED` olarak gösterme
+
+Paylaşımlar yalnız SRVSVC enumeration ile bulunur; denenecek bilinen share adı
+listesi yoktur. Enumeration reddedilir veya başarısız olursa hedef satırında
+ilgili `SHARE_ENUM_*` durumu gösterilir ve o hedefte paylaşım denenmez. Boş
+enumeration sonucu hata değildir: "sunucuda paylaşım yok" ile "paylaşım listesi
+okunamadı" ayrı gösterilir.
 
 Varsayılan davranış, erişilebilen bütün disk/file share'lerini maksimum derinliğe
 kadar taramaktır. Arama terimi bulunmayan dosyalar da envanterde kalır. `IPC$`
@@ -268,7 +265,7 @@ aramasına dahil değildir; envanterde yine gösterilebilir.
   yanıtsız/ulaşılamayan adresler satır olarak değil yalnız faz sayacı olarak tutulur
 - Okunabilen ve okunamayan öğeleri nedenleriyle içeren dosya envanteri görünümü
 - Maskesiz eşleşen satırı gösteren filtrelenebilir canlı bulgular tablosu
-- Wordlist, pattern ve entropy bulgularını ayrı ayrı filtreleme
+- Wordlist ve pattern bulgularını ayrı ayrı filtreleme
 
 Canlı tarama fazları:
 
@@ -322,7 +319,7 @@ seçilsin, dosya atlanmaz; yalnız çalışma paralelliği değişir.
 - Varsayılan auth modu `Auto`dur: Kerberos önce denenir, başarısız olursa NTLM
   fallback uygulanır ve bu geçiş hedef satırında açıkça gösterilir.
 - Wordlist araması varsayılan olarak case-insensitive alt metin modundadır.
-- Pattern taraması varsayılan açıktır; genel entropy taraması varsayılan kapalıdır.
+- Pattern taraması varsayılan açıktır. Entropy tabanlı tahmin kullanılmaz.
 - Varsayılan içerik wordlist kategorileri: genel credential terimleri, Türkçe,
   Windows/AD, veritabanı, cloud/API/SaaS, DevOps/otomasyon ve network/VPN.
 

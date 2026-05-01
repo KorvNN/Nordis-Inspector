@@ -16,12 +16,11 @@ değiştirmez. Entropy tabanlı tahmin kullanılmaz.
 
 ## 2. Wordlist yönetimi
 
-Repo iki normal UTF-8 metin dosyası sağlar:
+Repo tek bir normal UTF-8 metin dosyası sağlar:
 
 - `wordlists/content/default-sensitive.txt`
-- `wordlists/shares/default-shares.txt`
 
-Panelde listeler görüntülenebilir, düzenlenebilir, `.txt` dosyasından içe
+Panelde liste görüntülenebilir, düzenlenebilir, `.txt` dosyasından içe
 aktarılabilir ve repo dosyasına kalıcı kaydedilebilir. Tarama formundaki ek
 terimler yalnız o tarama için kullanılır. Yorum ve boş satırlar çalıştırma
 sırasında atlanır; aynı terimler casefold karşılaştırmasıyla tekilleştirilir.

@@ -273,8 +273,8 @@ tutar:
 ```
 
 `Public` ve `Finance`, Impacket'in kısa ömürlü ikinci SMB oturumundan yaptığı
-SRVSVC enumeration ile keşfedilir. Enumeration reddedildiğinde aynı adların
-repo listesinden denenmesi fallback yolunu doğrular. Parametrelerin güncel anlamları için
+SRVSVC enumeration ile keşfedilir. Enumeration reddedildiğinde hedef satırında
+`SHARE_ENUM_DENIED` görünür ve paylaşım denenmez. Parametrelerin güncel anlamları için
 [`smb.conf(5)`](https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html)
 kullanılmalıdır. Samba, SMB2 için signing desteği bulunduğunu ve `mandatory`
 girdisinin istemciyi imzaya zorladığını belgeler.
@@ -553,10 +553,10 @@ kdestroy -c "$KRB5CCNAME"
 
 ## 5. Panel test akışları
 
-Tarama öncesinde “Varsayılan listeler” bölümünde içerik ve share listelerinin
-metni ile kayıt sayıları görünmelidir. Editörde yapılan değişiklik veya UTF-8
-`.txt` içe aktarma, ancak ilgili `Kaydet` düğmesine basıldığında repo
-wordlist'ine kalıcı yazılır. “Ek arama terimleri” alanı ise yalnız o taramaya
+Tarama öncesinde “Wordlist yönetimi” bölümünde içerik listesinin metni ile kayıt
+sayısı görünmelidir. Editörde yapılan değişiklik veya UTF-8 `.txt` içe aktarma,
+ancak `Kaydet` düğmesine basıldığında repo wordlist'ine kalıcı yazılır. “Ek
+arama terimleri” alanı ise yalnız o taramaya
 eklenir. Panel bir maksimum derinlik alanı sunmaz; recursive yürüyüş kod içindeki
 sabit 32 seviye sınırını kullanır.
 

@@ -87,9 +87,9 @@ bir yüksek seviye fonksiyon olarak sunmadığı için bu, yığının en öneml
 adapter işidir. Resume handle/pagination desteklenmeli.
 
 RPC erişimi reddedilir veya NAS bu metodu sunmazsa sonuç
-`SHARE_ENUM_DENIED/UNAVAILABLE` olarak korunur ve repo içindeki bilinen share
-listesi doğrudan `TreeConnect` ile denenir. Böylece enumeration başarısızlığı
-“share yok” olarak yorumlanmaz.
+`SHARE_ENUM_DENIED/UNAVAILABLE` olarak korunur ve o hedefte paylaşım denenmez;
+bilinen share adı listesi yoktur. Durum hedef satırında açıkça göründüğü için
+enumeration başarısızlığı “share yok” olarak yorumlanmaz.
 
 Dosya ağacı için:
 
@@ -172,7 +172,7 @@ Impacket 0.13.1 parola/hash/ccache ve yerleşik `listShares()` desteği nedeniyl
 yalnız SRVSVC share keşfinde kullanılır. Kısa ömürlü ikinci oturum listeleme
 sonrası hemen kapanır. Uzun süreli dosya yürüyüşü, range-read ve
 signing/encryption durumu `smbprotocol` oturumunda kalır. SRVSVC başarısızsa
-hata normalize edilir ve bilinen-share listesine fallback yapılır.
+hata normalize edilir ve hedef satırında görünür kalır; fallback yapılmaz.
 
 ## Bilinen riskler
 
@@ -195,8 +195,8 @@ hata normalize edilir ve bilinen-share listesine fallback yapılır.
 2. Kerberos için başarılı akış, bozuk DNS, erişilemeyen KDC, bilinmeyen SPN,
    clock-skew ve hatalı parola senaryolarını çalıştır; yalnız izin verilen
    durumların görünür NTLM fallback yaptığını doğrula.
-3. SRVSVC enumeration, pagination, enumeration-denied ve bilinen-share fallback
-   senaryolarını test et.
+3. SRVSVC enumeration, pagination ve enumeration-denied senaryolarını test et;
+   denied durumunun boş enumeration sonucundan ayırt edildiğini doğrula.
 4. Okunabilir, file-read-denied, directory-list-denied ve sharing-violation
    örneklerinde envanter durumlarını ve ham NTSTATUS'u doğrula.
 5. Büyük bir dosyada baş/orta/son range-read ve ardışık chunk taraması yap;

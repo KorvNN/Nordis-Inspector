@@ -144,8 +144,8 @@ katmanımızda test edilecektir. Bu seçim, multipart parser'ın olası
 spool/temp-file davranışına bağımlı kalmamamızı sağlar.
 
 > Buradaki “kalıcılık yok” tarama çalışma verisi içindir. Repo ile gelen default
-> wordlist/share listeleri normal paket asset'leridir. Panelde yapılan liste
-> düzenlemelerinin restart sonrasında korunması istenirse bu, ayrı ve açık bir
+> içerik wordlist'i normal bir yapılandırma asset'idir. Panelde yapılan liste
+> düzenlemesinin restart sonrasında korunması istenirse bu, ayrı ve açık bir
 > **yapılandırma yazımıdır**; scan session veya web state persistence'ı değildir
 > ve credential/bulgu kod yoluyla paylaşılmaz.
 
