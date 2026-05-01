@@ -1,16 +1,13 @@
-# Wordlists
+# Content Wordlist
 
-Nordis SMB Inspector iki ayrı liste türü kullanır:
+`content/default-sensitive.txt` contains the terms used for case-insensitive
+content matching.
 
-- `content/`: Dosya içeriklerinde aranacak kelime ve ifadeler
-- `shares/`: Doğrudan bağlantısı denenecek bilinen SMB share adları
+Each non-empty line is one term. Lines beginning with `#` are comments, and
+duplicate terms are matched once. The web interface can edit and atomically
+replace this file.
 
-Her satır tek bir girdidir. Boş satırlar ve `#` ile başlayan açıklama satırları
-yok sayılır. Karşılaştırma varsayılan olarak büyük/küçük harf duyarsızdır.
+Share names are not stored in a wordlist. They are discovered from each target
+through SRVSVC.
 
-Bu dosyalar uygulama yapılandırmasıdır. Credential, hedef, dosya envanteri veya
-tarama bulguları bu dizine yazılmaz.
-
-Varsayılan dosyalar kategori bazında düzenlenen normal `.txt` listeleridir.
-Kalıp tabanlı algılama bunlardan bağımsızdır. Ayrıntılar için
-[DETECTION.md](../docs/DETECTION.md) belgesine bakın.
+See [Detection](../docs/DETECTION.md) for matching and pattern-detection details.
