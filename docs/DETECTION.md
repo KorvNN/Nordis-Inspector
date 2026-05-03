@@ -1,84 +1,90 @@
-# Nordis SMB Inspector — Wordlist ve Kalıp Algılama
+# Detection Model
 
-Durum: **Uygulanan başlangıç kapsamı**
+Nordis SMB Inspector combines an editable content wordlist with built-in credential
+patterns. Detection is intentionally explainable: every finding identifies the
+method, matched term or rule, source line, and confidence.
 
-## 1. İki bağımsız arama yöntemi
+## Wordlist matching
 
-Araç aynı decoded satırı iki yöntemle tarar:
+The source-checkout wordlist is
+[`wordlists/content/default-sensitive.txt`](../wordlists/content/default-sensitive.txt).
+The web editor reads and saves this file atomically.
 
-1. **Wordlist:** Repo listesindeki ve tarama formundaki ek terimleri
-   büyük/küçük harf duyarsız alt metin olarak arar.
-2. **Kalıp:** Biçimi tanımlanabilen secret, token, anahtar ve credential
-   artifact'lerini yerleşik Nordis kurallarıyla arar.
+- One literal term per line
+- Blank lines and lines beginning with `#` are ignored
+- Matching is Unicode case-insensitive
+- Duplicate terms are removed after case folding
+- All occurrences on a physical line are retained
+- Terms are literal text, not regular expressions
 
-Kalıp algılama panelde tek seçenekle açılıp kapatılır. Wordlist'i üretmez veya
-değiştirmez. Entropy tabanlı tahmin kullanılmaz.
+Additional terms entered for a scan are combined with the saved wordlist for that
+scan only. Editing the saved wordlist while a scan is running does not change the
+active scan's immutable configuration.
 
-## 2. Wordlist yönetimi
+The default file is currently available only from a source checkout or editable
+install. It is not yet bundled in wheels; see the packaging limitation in
+[SCOPE.md](SCOPE.md).
 
-Repo tek bir normal UTF-8 metin dosyası sağlar:
+## Built-in patterns
 
-- `wordlists/content/default-sensitive.txt`
+Patterns target recognizable credential material rather than arbitrary high-entropy
+text. Current rule families include:
 
-Panelde liste görüntülenebilir, düzenlenebilir, `.txt` dosyasından içe
-aktarılabilir ve repo dosyasına kalıcı kaydedilebilir. Tarama formundaki ek
-terimler yalnız o tarama için kullanılır. Yorum ve boş satırlar çalıştırma
-sırasında atlanır; aynı terimler casefold karşılaştırmasıyla tekilleştirilir.
+- Cloud access keys
+- JSON Web Tokens
+- PEM private-key headers
+- Basic and Bearer authorization values
+- Credentials embedded in URLs
+- Database and service connection strings
+- Secret assignments such as passwords, tokens, API keys, and client secrets
+- Group Policy Preferences `cpassword` values
+- Kerberos ticket and credential-cache artifacts
+- LM/NT hash pairs and common hash-dump forms
+- NetNTLMv2 and DCC2 material
+- Unix password hashes and modern application password hashes
 
-Bir dosyada ilk sonuçta durulmaz. Aynı terimin satırdaki bütün konumları içerik
-motorunda bulunur; panel her terim/satır eşleşmesini kaynak dosya ve tam satırla
-gösterir.
+Each rule has a stable identifier and confidence level. Common examples and obvious
+placeholders are filtered where the rule can identify them reliably. The detector
+does not use a general entropy threshold, so a finding is evidence for review rather
+than proof that a live secret exists.
 
-## 3. Yerleşik kalıp kapsamı
+## File processing
 
-`core/detection.py` içindeki sabit Nordis kural seti şu grupları kapsar:
+Plain text is decoded as BOM-declared UTF-16/UTF-32, strict UTF-8, or a supported
+legacy encoding selected from a bounded sample. Lines are processed incrementally.
+An undecidable encoding, decoding error, or over-limit line produces an explicit
+incomplete-content status; partially decoded lines are not exposed as findings.
 
-- Cloud access key biçimleri
-- JWT, Bearer ve Basic authentication değerleri
-- Private key başlangıç blokları
-- URL içindeki credential ve connection-string parolaları
-- `.env`, JSON, YAML, XML, INI ve benzeri hassas alan/değer atamaları
-- Group Policy Preferences `cpassword`
-- Kerberos `$krb5tgs$`, `$krb5asrep$` ve `$krb5pa$` artifact'leri
-- `LMHASH:NTHASH`, hesap/RID/hash ve NetNTLMv2 satırları
-- DCC2, Unix crypt, bcrypt ve Argon2 hash biçimleri
+Supported structured formats include:
 
-Tek başına 32 hexadecimal karakter NT hash olarak raporlanmaz; MD5 veya başka
-bir tanımlayıcı olabileceği için yapılandırılmış bağlam aranır. `changeme`,
-`placeholder`, `example` ve benzeri yaygın örnek değerler hassas atama
-kurallarında elenir.
+- PDF
+- DOCX, XLSX, and PPTX
+- ODT and related OpenDocument containers
+- ZIP, TAR, and GZIP archives
 
-Her kural benzersiz ID, başlık, kategori, regex ve `High`/`Medium` güven bilgisi
-taşır. Regex'ler uygulama kodu yüklenirken derlenir; bozuk veya eksik metadata
-başlangıçta açık hata üretir. Bir kuralın aynı satırda üretebileceği eşleşme
-sayısı sınırlıdır.
+Documents and archive members are read through bounded range adapters. Archive
+recursion is not performed. Unsupported, encrypted, malformed, or over-limit
+members are represented as inventory diagnostics rather than silently treated as a
+clean scan.
 
-## 4. Bulgu modeli
+## Finding fields
 
-Her bulgu RAM içinde şu alanlarla tutulur:
+A finding contains:
 
-- hedef, share ve dosya/arşiv üyesi yolu
-- extracted fiziksel satır numarası ve tam satır
-- `WORDLIST` veya `PATTERN` yöntemi
-- wordlist terimi ya da kalıp başlığı
-- kalıp bulgusunda kural ID, kategori ve güven seviyesi
+- Target, share, and remote path
+- Physical or extracted line number
+- Full decoded line
+- Match term and spans
+- Detection method (`wordlist` or `pattern`)
+- Pattern rule identifier and confidence when applicable
 
-Arşiv üyesi yolları `archive.zip!/folder/file` biçimindedir. PDF ve Office
-belgelerinde satır numarası, extractor'ın ürettiği metin akışındaki fiziksel
-satırı ifade eder; sayfa/hücre koordinatı olduğu iddia edilmez.
+The full line is shown because it gives the operator review context. It can also
+contain sensitive material. Do not paste findings into tickets, chat, or logs without
+redaction.
 
-## 5. Güvenlik ve doğruluk
+## Interpretation
 
-- Secret doğrulamak için üçüncü taraf API çağrısı yapılmaz.
-- Harici secret-scanner binary'si veya çalışma zamanı internet bağlantısı yoktur.
-- Kaynak satırları model `repr` değerlerinde redacted tutulur.
-- Pattern pozitif/negatif örnekleri otomatik test edilir.
-- Legacy encoding yalnız detector güven eşiğini geçtiğinde seçilir; belirsiz
-  içerik tahmin edilmez ve `ENCODING_UNDETERMINED` olarak görünür.
-- PDF/Office/arşiv çıkarıcıları disk dosyası oluşturmaz; remote range reader ve
-  bellek akışlarıyla çalışır.
-- Parolalı, bozuk veya sınırı aşan belgeler sessizce atlanmaz; dosya
-  envanterinde güvenli hata kodu ve açıklaması gösterilir.
-
-Entropy algılama, kullanıcı regex'i, allowlist editörü ve kategori bazlı kalıp
-açma/kapatma mevcut ürün kapsamına dahil değildir.
+A finding means that readable content matched a configured term or built-in rule. A
+missing finding does not prove that a file is safe: access controls, unsupported
+formats, encoding failures, scan limits, and cancellation can all prevent complete
+inspection. Review the target and inventory statuses together with findings.

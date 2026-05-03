@@ -1,209 +1,118 @@
-# SMB/Kerberos teknik kararı
+# SMB Architecture
 
-Durum: **Öneri — laboratuvar POC'u ile doğrulanacak**  
-Tarih: **2026-08-13**
+The SMB subsystem is organized around framework-neutral contracts. The web layer
+supplies targets, credentials, immutable scan options, cancellation, and event
+callbacks; adapters return normalized models rather than third-party SMB objects.
 
-## Karar
+## Runtime components
 
-Ana veri yolu için şu sürümleri sabitleyelim:
+- `smbprotocol` handles SMB 2/3 connection, negotiation, authentication, tree
+  connections, directory enumeration, and bounded file reads.
+- Impacket opens a separate authenticated connection for SRVSVC share enumeration.
+- The inspection orchestrator combines discovery, access probing, tree walking,
+  document extraction, detection, and status normalization.
+- The access pipeline runs independent targets with bounded thread concurrency.
 
-```text
-Python                  3.12+
-smbprotocol[kerberos]   1.17.0
-pyspnego                0.12.1
-```
+The separate SRVSVC connection is intentional. Share names come only from the
+server's authenticated enumeration result; the scanner does not inject a list of
+common names when enumeration fails.
 
-Linux'ta Kerberos extra'sı `python-gssapi` ve `krb5` bağlarını kullanır; Kali,
-Ubuntu ve Debian tabanında ayrıca `gcc`, `python3-dev` ve `libkrb5-dev` gerekir.
-`smbprotocol` 1.17.0, Python 3.12'yi destekler ve SMB 2.0.2–3.1.1, signing,
-encryption, dosya/dizin açma ve okuma işlemlerini yerleşik olarak sağlar.
+## Target sequence
 
-Uygulama, global connection pool kullanan yüksek seviyeli `smbclient` arayüzüne
-doğrudan bağlanmamalı. Küçük bir Nordis adapter'ı şu düşük seviyeli nesneleri
-kullanmalı:
+For each expanded address, the scanner performs:
 
-```text
-Connection -> Session -> TreeConnect -> Open
-```
+1. TCP connection and SMB 2/3 negotiation on port 445
+2. Authentication
+3. SRVSVC share enumeration
+4. Read-only probe of each discovered disk share
+5. Bounded directory walk
+6. Streaming inspection of supported, readable files
+7. Handle cleanup and one terminal target outcome
 
-Bunun nedeni; aynı TCP hedefi IP iken Kerberos SPN hostname'ini ayrı vermek,
-kimlik doğrulama denemelerini görünür kılmak, ham NTSTATUS değerlerini korumak
-ve byte-offset okumalarını doğrudan kontrol etmektir.
+DNS failures and connection errors are reported before authentication. Later stages
+do not overwrite the reason an earlier stage failed.
 
-Kaynaklar: [smbprotocol 1.17.0](https://pypi.org/project/smbprotocol/),
-[smbprotocol kaynak kodu](https://github.com/jborean93/smbprotocol/tree/v1.17.0),
-[pyspnego 0.12.1](https://pypi.org/project/pyspnego/),
-[pyspnego credential türleri](https://github.com/jborean93/pyspnego/blob/v0.12.1/src/spnego/_credential.py).
+## Authentication
 
-## Kimlik doğrulama modeli
+Supported credentials are passwords, NT hashes, and uploaded Kerberos ccache data.
+Authentication modes are:
 
-`Auto` modu tek bir görünmez SPNEGO fallback'i kullanmayacak. Önce yalnız
-Kerberos oturumu denenecek; uygun bir altyapı/protokol hatası oluşursa ve
-kullanıcı fallback'e izin verdiyse bağlantı kapatılıp yeni bağlantıda yalnız
-NTLM denenecek. Böylece iki denemenin sonucu ve kullanılan son yöntem kesin
-olarak gösterilebilir.
+- `auto`: try Kerberos first and use one fresh NTLM connection for an eligible
+  fallback when a password is available
+- `kerberos_only`: do not attempt NTLM
+- `ntlm_only`: do not attempt Kerberos
 
-| Girdi | Kerberos denemesi | NTLM denemesi |
-|---|---|---|
-| Kullanıcı + parola | `spnego.Password`, `auth_protocol="kerberos"` | Fallback açıksa aynı credential ile `auth_protocol="ntlm"` |
-| NT hash / `LM:NT` | Uygulanmaz | `spnego.NTLMHash` ile pass-the-hash |
-| CCache | `spnego.KerberosCCache("FILE:...")` | Tek başına mümkün değil |
+The result retains the mechanism attempts and a normalized fallback reason. NT hashes
+are NTLM-only. Ccache credentials are Kerberos-only.
 
-Önemli sonuç: ham NT hash bu yığında **NTLM pass-the-hash** credential'ıdır;
-pyspnego'nun `NTLMHash` türü Kerberos'u desteklemez. Kapsam belgesindeki “NT
-hash ile KDC RC4 Kerberos denemesi” cümlesi bu kararla uyumlu değildir. Bu özel
-ve modern domainlerde çoğu zaman kapalı olan yolu desteklemek zorunluysa ayrıca
-başka bir Kerberos uygulaması gerekir; öneri, o cümleyi kaldırıp NT hash'i NTLM
-ile sınırlamaktır.
+Uploaded ccache bytes remain in memory. For the `smbprotocol` GSSAPI path on Linux,
+the bytes are exposed through `memfd_create` and `/proc/self/fd`; there is no
+temporary-file fallback. Impacket parses the same in-memory bytes for SRVSVC.
 
-Fallback yalnız DNS/SPN/KDC erişimi, clock-skew veya desteklenmeyen mekanizma
-gibi Kerberos önkoşul hatalarında yapılmalı. Hatalı credential, kilitli/devre
-dışı hesap, süresi dolmuş parola gibi hesap hatalarında ikinci bir logon
-denemesi yapılmamalı. Bu hem sonucu daha doğru tutar hem gereksiz başarısız
-logon olayını önler.
+Kerberos requires a hostname that can form a valid `cifs/<hostname>` service
+principal. Scanning an IP address without resolvable hostname context can therefore
+succeed with NTLM but fail or fall back from Kerberos.
 
-IP hedeflerinde soket IP'ye açılır; doğrulanmış FQDN, `Session` içindeki
-`hostname_override` ile `cifs/<fqdn>` SPN'i için kullanılır. FQDN bulunamazsa
-Kerberos sonucu açıkça `KERBEROS_HOSTNAME_UNRESOLVED` olur; sessizce IP-SPN
-denenmez.
+## Negotiation policy
 
-CCache web upload'ı özel bir POC maddesidir. pyspnego açık bir cache adı/path'i
-ister. Linux'ta upload baytlarını diske yazmadan `memfd_create` ile RAM-backed
-bir fd'ye koyup `FILE:/proc/self/fd/<n>` olarak verme yöntemi denenmeli ve fd
-auth tamamlanana kadar açık tutulmalıdır. MIT/Heimdal uyumluluğu doğrulanmazsa
-fail-closed davranılmalı; gizli bir temp dosya fallback'i yapılmamalıdır.
+The default connection request permits SMB 2/3 only, requires signing and secure
+negotiate, and does not require encryption. Negotiated dialect, signing state,
+encryption state, and DFS capability are reported when available.
 
-Pyspnego, bir credential listesiyle CCache'ten Kerberos ve NT hash'ten NTLM
-fallback yapabilse de Nordis görünür deneme geçmişi istediği için ayrı oturum
-denemeleri tercih edilmiştir. İlgili resmi örnek
-[auth kaynak kodunda](https://github.com/jborean93/pyspnego/blob/v0.12.1/src/spnego/auth.py#L120-L137)
-bulunur.
+`smb1_only_unsupported` exists in the status model for a positively classified
+legacy target, but the current connector does not issue a separate SMB1 probe after
+SMB 2/3 negotiation fails. Do not treat every negotiation failure as proof of SMB1.
 
-## Share ve dosya işlemleri
+## Share discovery
 
-Share enumeration, `IPC$\\srvsvc` üzerinden [MS-SRVS `NetrShareEnum`](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/c4a98e7b-d416-439c-97bd-4d9f52f8ba52)
-ile aynı authenticated session üzerinde uygulanmalı. `smbprotocol` bunu hazır
-bir yüksek seviye fonksiyon olarak sunmadığı için bu, yığının en önemli ek
-adapter işidir. Resume handle/pagination desteklenmeli.
+SRVSVC is the only source of share names. The outcomes are distinct:
 
-RPC erişimi reddedilir veya NAS bu metodu sunmazsa sonuç
-`SHARE_ENUM_DENIED/UNAVAILABLE` olarak korunur ve o hedefte paylaşım denenmez;
-bilinen share adı listesi yoktur. Durum hedef satırında açıkça göründüğü için
-enumeration başarısızlığı “share yok” olarak yorumlanmaz.
+- Enumeration completed, including a valid empty list
+- Enumeration was denied
+- The SRVSVC service or transport was unavailable
+- Enumeration failed for another normalized reason
 
-Dosya ağacı için:
+An empty successful list means the server reported no shares. A discovery error
+means the scanner does not know which shares exist. No guessed fallback is attempted
+in either case.
 
-- `QueryDirectory`/create cevabından ad, tür, boyut, attribute ve zamanlar alınır.
-- Dizin ve dosya handle'ları yalnız okuma/read-attributes haklarıyla açılır.
-- `Open.read(offset, length)` ile parça veya istenen range okunur; yerel kopya
-  ya da temp dosya oluşturulmaz.
-- Extractor'lar için `io.RawIOBase` uyumlu `read/seek/tell/readinto` adapter'ı
-  yazılır; seek yeni bir SMB range-read'e dönüşür.
-- Parça boyutu, yapılandırma ile sunucunun negotiated `max_read_size` değerinin
-  küçüğü olur.
+## Read-only access
 
-`Open.read` offset ve length'i doğrudan kabul eder; kaynak:
-[smbprotocol Open.read](https://github.com/jborean93/smbprotocol/blob/v1.17.0/src/smbprotocol/open.py#L1218-L1241).
+The adapter contracts expose connect, enumerate, open-for-read, and bounded-range
+operations only. There are no create, write, rename, delete, permission-change, or
+remote-materialization methods.
 
-## Dialect, signing ve encryption raporu
+Directory walks do not follow reparse points or symbolic links. File content is
+read in 64 KiB ranges through a validated random-access wrapper. Documents and
+archives may seek within that wrapper, but the remote object is not copied to disk.
 
-Adapter aşağıdaki public state'i normalize eder:
+Read-only access does not guarantee zero operational impact. Authentication,
+enumeration, metadata queries, and reads still consume server resources.
 
-| Panel alanı | Kaynak |
-|---|---|
-| Dialect | `Connection.dialect` |
-| Signing destekli/zorunlu | `Connection.server_security_mode` bitleri |
-| Signing mevcut oturumda aktif | `Session.signing_required`; encryption aktifse `COVERED_BY_ENCRYPTION` |
-| Encryption destekli | `Connection.supports_encryption` |
-| Encryption oturumda aktif | `Session.encrypt_data` |
-| Encryption share tarafından zorunlu | `TreeConnect.encrypt_data` |
-| Share için etkin koruma | `Session.encrypt_data or TreeConnect.encrypt_data` |
-| Seçilen algoritmalar | SMB 3.1.1'de `signing_algorithm_id` ve `cipher_id` |
+## Status and partial access
 
-SMB 3.0/3.0.2'de algoritma dialect'ten çıkarılıyorsa alan “negotiated” değil
-“dialect gereği çıkarıldı” olarak etiketlenmeli. `SUPPORTED`, `REQUIRED` ve
-`ACTIVE` birbirine karıştırılmamalıdır. Microsoft da bu değerleri ayrı bağlantı
-state'i olarak tanımlar: [MS-SMB2 per-server state](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb2/f388d7e0-9bc3-4d9c-98e5-71f8e36b3c4f).
+The model separates network, negotiation, authentication, authorization, share
+enumeration, tree walk, and file-read stages. Common terminal outcomes include
+timeouts, connection refusal, authentication failure, share-enumeration errors,
+access denial, partial access, completion, and cancellation.
 
-Varsayılan bağlantı politikası:
+`partial_access` means the target produced useful results but at least one attempted
+object could not be fully inspected. For example, the scanner may enumerate a file
+name and size but receive access denied when opening it. The inventory entry remains
+visible with `file_read_denied`; content is neither read nor shown.
 
-```text
-require_signing=True
-require_encryption=False
-require_secure_negotiate=True
-```
+## Cancellation and cleanup
 
-`Session` düşük seviye API'sinde encryption varsayılanı `True` olduğundan ikinci
-satır mutlaka açıkça verilmelidir; aksi halde SMB 2.x hedefleri gereksiz yere
-başarısız olur. Sunucu veya share encryption zorunlu tutarsa kütüphane yine
-encryption'ı etkinleştirir. SMB 3 encryption'ın daha sıkı veri koruması sağladığı
-[MS-SMB2 güvenlik notunda](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb2/14b32996-29ca-4d5a-b888-a159af29e705)
-belirtilir.
+Cancellation is cooperative and checked between network, enumeration, walk, read,
+and extraction operations. Every opened reader, tree connection, session, and SMB
+connection is closed on success, failure, and cancellation. Cleanup errors do not
+replace the primary target outcome.
 
-## Hata sadakati ve çalışma modeli
+## Current limitations
 
-Tek bir `AUTH_FAILED` exception'ı üretmek yerine her hata şu alanlarla RAM'deki
-event modeline çevrilmeli:
-
-```text
-stage, operation, target, raw_code, symbolic_name, safe_message, retryable
-```
-
-- TCP katmanında `socket`/`OSError.errno` korunur: timeout, refused, network veya
-  host unreachable ayrı kalır.
-- SMB katmanında `SMBResponseException.status` ham NTSTATUS olarak korunur;
-  kütüphane `ACCESS_DENIED`, `LOGON_FAILURE`, `SHARING_VIOLATION` gibi typed
-  exception'lar da sağlar.
-- Kerberos katmanında `SpnegoError` ile native GSSAPI/Kerberos cause zinciri
-  korunur; hata sınıflandırması string eşleştirmesine dayandırılmaz.
-
-Kaynak: [smbprotocol exception modeli](https://github.com/jborean93/smbprotocol/blob/v1.17.0/src/smbprotocol/exceptions.py#L175-L244).
-
-API blocking olduğundan hedef paralelliği bounded thread pool ile yapılmalı.
-Bir hedefte tek `Connection/Session`, share ve dosya handle'ları kontrollü
-şekilde kullanılmalı; iptal sırasında açık handle, tree, session ve socket'ler
-sırayla kapatılmalıdır. Debug packet logging açılmamalı; resmi README debug
-çıktısının SMB paketlerini ayrıntılı yazdığını belirtir. Uygulama file handler
-kurmamalı.
-
-## Neden Impacket ana yığın değil?
-
-Impacket 0.13.1 parola/hash/ccache ve yerleşik `listShares()` desteği nedeniyle
-yalnız SRVSVC share keşfinde kullanılır. Kısa ömürlü ikinci oturum listeleme
-sonrası hemen kapanır. Uzun süreli dosya yürüyüşü, range-read ve
-signing/encryption durumu `smbprotocol` oturumunda kalır. SRVSVC başarısızsa
-hata normalize edilir ve hedef satırında görünür kalır; fallback yapılmaz.
-
-## Bilinen riskler
-
-1. Impacket SRVSVC oturumu Windows ve farklı Samba/NAS sürümlerinde ayrıca
-   doğrulanmalıdır; bazı sunucular share enumeration'ı hesap bazında reddeder.
-2. `Session.username` tipi dokümantasyonda string görünse de değer doğrudan
-   pyspnego'ya aktarılır; `KerberosCCache`/`NTLMHash` nesnesiyle bu entegrasyon
-   sürüm pinleri ve integration test ile korunmalıdır.
-3. CCache upload'ının `memfd` köprüsü MIT ve Heimdal Kerberos ile doğrulanmalıdır.
-4. Kerberos DNS, doğru FQDN/SPN, KDC erişimi ve saat uyumuna bağlıdır.
-5. `smbclient` DFS desteğini “experimental” olarak tanımlar; referral yalnız
-   yetkili hedef kapsamındaysa takip edilmeli ve ayrıca test edilmelidir.
-6. Yığın SMB1'i taramaz. TCP/445 açık fakat yalnız SMB1 sunan hedef ayrı bir
-   read-only negotiate probe ile `SMB1_ONLY_UNSUPPORTED` olarak gösterilebilir.
-
-## Küçük POC planı ve kabul ölçütleri
-
-1. Windows Server domain member/DC ve Samba hedefinde parola, NT hash ve CCache
-   ile FQDN/IP testleri yap; kullanılan yöntem ve ham hata kodunu doğrula.
-2. Kerberos için başarılı akış, bozuk DNS, erişilemeyen KDC, bilinmeyen SPN,
-   clock-skew ve hatalı parola senaryolarını çalıştır; yalnız izin verilen
-   durumların görünür NTLM fallback yaptığını doğrula.
-3. SRVSVC enumeration, pagination ve enumeration-denied senaryolarını test et;
-   denied durumunun boş enumeration sonucundan ayırt edildiğini doğrula.
-4. Okunabilir, file-read-denied, directory-list-denied ve sharing-violation
-   örneklerinde envanter durumlarını ve ham NTSTATUS'u doğrula.
-5. Büyük bir dosyada baş/orta/son range-read ve ardışık chunk taraması yap;
-   RSS'nin dosya boyutuyla büyümediğini ve çalışma dizini ile temp dizininde yeni
-   dosya oluşmadığını doğrula.
-6. SMB 2.1, 3.0.2 ve 3.1.1 hedeflerinde panel metadata'sını sunucu ayarıyla
-   karşılaştır; signed/encrypted trafiğin raporlanan `ACTIVE` durumuyla uyuşması
-   zorunlu olsun.
-
-Bu altı madde geçmeden SMB adapter'ı diğer tarama katmanlarına bağlanmamalıdır.
+- DFS capability is recorded, but referrals are not followed.
+- There is no SMB1 data path or active SMB1-only probe.
+- SRVSVC discovery is not supplemented with common-share guesses.
+- The automated suite validates adapters with fakes; real Windows/Samba behavior
+  still requires the isolated lab in [TEST_LAB.md](TEST_LAB.md).
+- Server-specific throttling and selectable load profiles are not implemented.
