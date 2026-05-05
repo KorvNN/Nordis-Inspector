@@ -6,6 +6,9 @@ config_path="/etc/samba/smb.conf"
 lab_root="/srv/nordis-smb-lab"
 lab_user="nordislab"
 lab_password="Password123!"
+lab_interfaces=${NORDIS_LAB_INTERFACES:-lo}
+lab_hosts_allow=${NORDIS_LAB_HOSTS_ALLOW:-127.0.0.1 ::1}
+lab_target=${NORDIS_LAB_TARGET:-127.0.0.1}
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_python="$script_dir/../.venv/bin/python"
 
@@ -65,9 +68,9 @@ printf '%s\n' \
     "    server role = standalone server" \
     "    security = user" \
     "    passdb backend = tdbsam" \
-    "    interfaces = lo" \
+    "    interfaces = $lab_interfaces" \
     "    bind interfaces only = yes" \
-    "    hosts allow = 127.0.0.1 ::1" \
+    "    hosts allow = $lab_hosts_allow" \
     "    smb ports = 445" \
     "    server min protocol = SMB2_02" \
     "    server signing = mandatory" \
@@ -145,7 +148,7 @@ systemctl restart smb.service
 
 echo
 echo "Nordis yerel Samba laboratuvarı hazır."
-echo "Hedef: 127.0.0.1"
+echo "Hedef: $lab_target"
 echo "Domain: WORKGROUP"
 echo "Kullanıcı: $lab_user"
 echo "Parola: $lab_password"
