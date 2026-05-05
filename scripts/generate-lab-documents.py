@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import io
 import gzip
+import io
 import sys
 import tarfile
 from pathlib import Path
