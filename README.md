@@ -58,3 +58,7 @@ directory on first use.
 - [SMB architecture](docs/TECH_SMB.md)
 - [Web architecture](docs/TECH_WEB.md)
 - [Isolated integration lab](docs/TEST_LAB.md)
+
+## License
+
+Licensed under the [MIT License](LICENSE).

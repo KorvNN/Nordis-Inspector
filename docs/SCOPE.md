@@ -84,7 +84,6 @@ targets first and obtain authorization before scanning.
 - DFS capability is recorded, but referrals are not followed.
 - SMB1-only classification exists in the result model, but there is no separate SMB1
   dialect probe.
-- No project license has been selected yet.
 
 Detection details are documented in [DETECTION.md](DETECTION.md). SMB and web
 implementation notes are in [TECH_SMB.md](TECH_SMB.md) and
