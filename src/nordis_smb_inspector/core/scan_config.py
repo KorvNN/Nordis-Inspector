@@ -1,13 +1,19 @@
 """Validated, immutable scan options built from the web request.
 
-The repository wordlist is a configuration input.  It is read only when a scan
-starts and is never modified by this module.
+Source checkouts use the repository wordlist. Installed wheels initialize an
+editable user copy from the packaged default on first use. The selected file is
+read only when a scan starts and is never modified by this module.
 """
 
 from __future__ import annotations
 
+import os
+import stat
+import tempfile
 from collections.abc import Iterable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
+from importlib.resources import files
 from os import PathLike
 from pathlib import Path
 from typing import Any
@@ -16,6 +22,9 @@ MIN_MAX_DEPTH = 1
 MAX_MAX_DEPTH = 256
 
 _CONTENT_WORDLIST = Path("wordlists/content/default-sensitive.txt")
+_PACKAGED_WORDLIST_MODULE = "nordis_smb_inspector.wordlists"
+_PACKAGED_WORDLIST_NAME = "default-sensitive.txt"
+_USER_WORDLIST = Path("nordis-smb-inspector/wordlists/default-sensitive.txt")
 
 
 class ScanConfigError(ValueError):
@@ -59,9 +68,8 @@ def parse_scan_options(
     """Parse web request values and load the selected repository default.
 
     The path is injectable so callers and tests do not need to change the
-    process working directory.  When omitted, the source checkout containing
-    this module is located by walking upward to its ``wordlists`` directory;
-    this also works with an editable installation.
+    process working directory. When omitted, editable installs use the source
+    checkout and wheel installs use the initialized per-user copy.
     """
 
     if not isinstance(search, Mapping):
@@ -86,7 +94,7 @@ def parse_scan_options(
     if use_default:
         content_path = _coerce_path(content_wordlist_path, "Content wordlist path is invalid.")
         if content_path is None:
-            content_path = repository_wordlist_path()
+            content_path = editable_wordlist_path()
         terms = _load_wordlist(content_path)
 
     terms = _normalize_values((*terms, *additional_terms), "Search terms must be text.")
@@ -98,6 +106,25 @@ def parse_scan_options(
         max_depth=depth,
         detect_patterns=detect_patterns,
     )
+
+
+def editable_wordlist_path(
+    *,
+    repository_start: str | PathLike[str] | None = None,
+    config_home: str | PathLike[str] | None = None,
+) -> Path:
+    """Return the editable content wordlist for this installation.
+
+    Editable source checkouts keep using the tracked repository file. A wheel
+    installation has no such parent tree, so its packaged default is copied once
+    to the user's XDG configuration directory. Existing user content is never
+    overwritten during initialization.
+    """
+
+    try:
+        return repository_wordlist_path(repository_start)
+    except ScanConfigError:
+        return _initialize_user_wordlist(config_home)
 
 
 def repository_wordlist_path(
@@ -123,6 +150,76 @@ def repository_wordlist_path(
         if content_path.is_file():
             return content_path
     raise ScanConfigError("Repository wordlist is unavailable.")
+
+
+def _initialize_user_wordlist(
+    config_home: str | PathLike[str] | None,
+) -> Path:
+    base = _config_home(config_home)
+    destination = base / _USER_WORDLIST
+    if destination.is_file():
+        return destination
+
+    unavailable = "Content wordlist is unavailable."
+    try:
+        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        default_bytes = (
+            files(_PACKAGED_WORDLIST_MODULE)
+            .joinpath(_PACKAGED_WORDLIST_NAME)
+            .read_bytes()
+        )
+    except (ModuleNotFoundError, OSError, TypeError):
+        raise ScanConfigError(unavailable) from None
+
+    temporary_path: Path | None = None
+    descriptor: int | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            dir=destination.parent,
+        )
+        temporary_path = Path(temporary_name)
+        os.fchmod(descriptor, stat.S_IRUSR | stat.S_IWUSR)
+        with os.fdopen(descriptor, "wb") as temporary_file:
+            descriptor = None
+            temporary_file.write(default_bytes)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        try:
+            os.link(temporary_path, destination)
+        except FileExistsError:
+            if not destination.is_file():
+                raise ScanConfigError(unavailable) from None
+        return destination
+    except ScanConfigError:
+        raise
+    except OSError:
+        raise ScanConfigError(unavailable) from None
+    finally:
+        if descriptor is not None:
+            with suppress(OSError):
+                os.close(descriptor)
+        if temporary_path is not None:
+            with suppress(OSError):
+                temporary_path.unlink()
+
+
+def _config_home(value: str | PathLike[str] | None) -> Path:
+    unavailable = "Content wordlist is unavailable."
+    if value is None:
+        configured = os.environ.get("XDG_CONFIG_HOME")
+        try:
+            base = Path(configured) if configured else Path.home() / ".config"
+        except (RuntimeError, TypeError, ValueError):
+            raise ScanConfigError(unavailable) from None
+    else:
+        base = _coerce_path(value, unavailable)
+        if base is None:
+            raise ScanConfigError(unavailable)
+    if not base.is_absolute():
+        raise ScanConfigError(unavailable)
+    return base
 
 
 def _load_wordlist(path: Path) -> tuple[str, ...]:

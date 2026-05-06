@@ -1,4 +1,4 @@
-"""Thread-safe editing of the repository-backed content wordlist.
+"""Thread-safe editing of the installation's content wordlist.
 
 The store exposes the source text so a local web editor can round-trip comments
 and formatting.  Effective entry counts use the same basic rules as scan
@@ -21,7 +21,7 @@ from threading import RLock
 
 from nordis_smb_inspector.core.scan_config import (
     ScanConfigError,
-    repository_wordlist_path,
+    editable_wordlist_path,
 )
 
 MAX_WORDLIST_BYTES = 1024 * 1024
@@ -32,7 +32,7 @@ class WordlistStoreError(ValueError):
 
 
 class WordlistKind(StrEnum):
-    """The repository wordlist that may be viewed or edited."""
+    """The installation wordlist that may be viewed or edited."""
 
     CONTENT = "content"
 
@@ -65,7 +65,7 @@ class WordlistDocument:
 
 
 class WordlistStore:
-    """Read and atomically replace the repository content wordlist."""
+    """Read and atomically replace the editable content wordlist."""
 
     def __init__(
         self,
@@ -74,9 +74,9 @@ class WordlistStore:
     ) -> None:
         if content_path is None:
             try:
-                content = repository_wordlist_path()
+                content = editable_wordlist_path()
             except ScanConfigError:
-                raise WordlistStoreError("Repository wordlist is unavailable.") from None
+                raise WordlistStoreError("Wordlist is unavailable.") from None
         else:
             try:
                 content = Path(content_path)

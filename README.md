@@ -46,8 +46,10 @@ The server does not expose a non-loopback bind option.
 .venv/bin/pytest
 ```
 
-The editable content wordlist is stored at
+Source checkouts use
 [`wordlists/content/default-sensitive.txt`](wordlists/content/default-sensitive.txt).
+Wheel installations create an editable copy under the user's XDG configuration
+directory on first use.
 
 ## Documentation
 

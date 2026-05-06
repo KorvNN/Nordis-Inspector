@@ -27,7 +27,7 @@ SRVSVC request is reported explicitly and ends share discovery for that target.
 - Wordlist and built-in credential-pattern detection
 - PDF, Office Open XML, OpenDocument, ZIP, TAR, and GZIP inspection
 - In-memory pagination for inventory and findings
-- Editable content wordlist in source-checkout installations
+- Packaged default wordlist with an editable source or per-user copy
 
 The web application currently uses 32 target workers and a default directory depth
 limit of 32. These are implementation constants, not selectable load profiles.
@@ -84,10 +84,6 @@ targets first and obtain authorization before scanning.
 - DFS capability is recorded, but referrals are not followed.
 - SMB1-only classification exists in the result model, but there is no separate SMB1
   dialect probe.
-- The repository content wordlist is outside the Python package. Editable installs
-  can find it by walking the source tree, but a built wheel or `pipx` install does not
-  currently include it. Packaging a default resource and copying it to a writable
-  user location remains required before wheel distribution.
 - No project license has been selected yet.
 
 Detection details are documented in [DETECTION.md](DETECTION.md). SMB and web

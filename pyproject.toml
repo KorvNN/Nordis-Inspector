@@ -37,6 +37,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
+"nordis_smb_inspector.wordlists" = ["*.txt"]
 "nordis_smb_inspector.web" = [
   "static/*.css",
   "static/*.js",

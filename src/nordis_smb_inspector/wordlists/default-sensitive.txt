@@ -1,0 +1,105 @@
+# General credentials and secrets
+password
+passwd
+pwd
+passphrase
+credential
+credentials
+username
+user_name
+login_password
+account_password
+service_account_password
+svc_password
+secret
+secret_key
+shared_secret
+master_secret
+client_secret
+api_key
+apikey
+api_secret
+api_token
+access_token
+refresh_token
+session_token
+bearer
+connection_string
+connectionstring
+database_url
+datasource_url
+jdbc_url
+mongodb_uri
+database_password
+db_password
+sql_password
+redis_password
+ldap_password
+bind_password
+smtp_password
+ftp_password
+private_key
+privatekey
+encryption_key
+signing_key
+master_key
+BEGIN PRIVATE KEY
+BEGIN RSA PRIVATE KEY
+BEGIN OPENSSH PRIVATE KEY
+BEGIN EC PRIVATE KEY
+
+# Turkish terms
+şifre
+sifre
+parola
+kullanıcı adı
+kullanici adi
+gizli anahtar
+gizli değer
+gizli deger
+erişim anahtarı
+erisim anahtari
+veritabanı şifresi
+veritabani sifresi
+servis hesabı
+servis hesabi
+
+# Common cloud and application keys
+aws_access_key_id
+aws_secret_access_key
+aws_session_token
+azure_client_secret
+azure_storage_key
+azure_storage_connection_string
+google_application_credentials
+gcp_service_account
+slack_token
+slack_bot_token
+github_token
+gitlab_token
+bitbucket_token
+stripe_secret_key
+twilio_auth_token
+sendgrid_api_key
+telegram_bot_token
+discord_bot_token
+npm_token
+pypi_token
+docker_auth
+kubeconfig
+
+# Windows and Active Directory artifacts
+cpassword
+DefaultPassword
+AutoAdminLogon
+ClearTextPassword
+PSCredential
+ConvertTo-SecureString
+krb5tgs
+krb5asrep
+krb5pa
+nthash
+ntlm_hash
+lmhash
+netntlm
+DCC2

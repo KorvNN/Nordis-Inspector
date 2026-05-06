@@ -10,6 +10,11 @@ The source-checkout wordlist is
 [`wordlists/content/default-sensitive.txt`](../wordlists/content/default-sensitive.txt).
 The web editor reads and saves this file atomically.
 
+Wheel and `pipx` installations bundle the same default and create an editable copy
+at `$XDG_CONFIG_HOME/nordis-smb-inspector/wordlists/default-sensitive.txt` on first
+use. If `XDG_CONFIG_HOME` is unset, `~/.config` is used. Existing user content is not
+overwritten by startup or package upgrades.
+
 - One literal term per line
 - Blank lines and lines beginning with `#` are ignored
 - Matching is Unicode case-insensitive
@@ -20,10 +25,6 @@ The web editor reads and saves this file atomically.
 Additional terms entered for a scan are combined with the saved wordlist for that
 scan only. Editing the saved wordlist while a scan is running does not change the
 active scan's immutable configuration.
-
-The default file is currently available only from a source checkout or editable
-install. It is not yet bundled in wheels; see the packaging limitation in
-[SCOPE.md](SCOPE.md).
 
 ## Built-in patterns
 

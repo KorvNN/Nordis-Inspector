@@ -76,13 +76,11 @@ separation, or remote authorization model.
 
 ## Wordlist persistence
 
-Wordlist saves use an atomic replacement under the source-checkout `wordlists`
-directory. A running scan keeps the wordlist snapshot it started with.
-
-The default wordlist currently lives outside the Python package. Editable installs
-find it in the repository, but wheels and `pipx` installs do not bundle it. A future
-packaging change must ship a read-only default resource and copy it to a writable
-per-user location before wheel distribution is supported.
+Wordlist saves use an atomic replacement. Source checkouts edit the tracked
+`wordlists` file. Wheel and `pipx` installations copy the packaged default to the
+user's XDG configuration directory on first use and edit that copy. Existing user
+content is never overwritten during initialization. A running scan keeps the
+wordlist snapshot it started with.
 
 ## Operational limits
 

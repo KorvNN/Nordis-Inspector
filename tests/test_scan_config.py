@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import re
+import stat
 import tempfile
 import unittest
 from dataclasses import FrozenInstanceError
+from importlib.resources import files
 from pathlib import Path
+from unittest.mock import patch
 
 from nordis_smb_inspector.core.scan_config import (
     ScanConfigError,
     ScanOptions,
+    editable_wordlist_path,
     parse_scan_options,
     repository_wordlist_path,
 )
@@ -74,6 +78,60 @@ class ScanConfigTests(unittest.TestCase):
             32,
         )
         self.assertIn("password", (term.casefold() for term in options.terms))
+
+    def test_packaged_default_matches_the_repository_source(self) -> None:
+        packaged = (
+            files("nordis_smb_inspector.wordlists")
+            .joinpath("default-sensitive.txt")
+            .read_bytes()
+        )
+
+        self.assertEqual(packaged, repository_wordlist_path().read_bytes())
+
+    def test_wheel_fallback_initializes_private_editable_user_copy(self) -> None:
+        config_home = Path(self.temporary_directory.name) / "xdg-config"
+        unavailable = ScanConfigError("Repository wordlist is unavailable.")
+
+        with patch(
+            "nordis_smb_inspector.core.scan_config.repository_wordlist_path",
+            side_effect=unavailable,
+        ):
+            content_path = editable_wordlist_path(config_home=config_home)
+
+        self.assertEqual(
+            content_path,
+            config_home
+            / "nordis-smb-inspector"
+            / "wordlists"
+            / "default-sensitive.txt",
+        )
+        self.assertEqual(
+            content_path.read_bytes(),
+            files("nordis_smb_inspector.wordlists")
+            .joinpath("default-sensitive.txt")
+            .read_bytes(),
+        )
+        self.assertEqual(stat.S_IMODE(content_path.stat().st_mode), 0o600)
+
+        content_path.write_text("custom-term\n", encoding="utf-8")
+        with patch(
+            "nordis_smb_inspector.core.scan_config.repository_wordlist_path",
+            side_effect=unavailable,
+        ):
+            existing_path = editable_wordlist_path(config_home=config_home)
+        self.assertEqual(existing_path, content_path)
+        self.assertEqual(existing_path.read_text(encoding="utf-8"), "custom-term\n")
+
+    def test_wheel_fallback_rejects_relative_config_home(self) -> None:
+        unavailable = ScanConfigError("Repository wordlist is unavailable.")
+        with patch(
+            "nordis_smb_inspector.core.scan_config.repository_wordlist_path",
+            side_effect=unavailable,
+        ), self.assertRaisesRegex(
+            ScanConfigError,
+            r"^Content wordlist is unavailable\.$",
+        ):
+            editable_wordlist_path(config_home="relative/config")
 
     def test_requires_at_least_one_search_term(self) -> None:
         with self.assertRaisesRegex(
