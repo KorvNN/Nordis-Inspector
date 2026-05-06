@@ -43,7 +43,7 @@ The server does not expose a non-loopback bind option.
 
 ```bash
 .venv/bin/pip install -e '.[dev]'
-.venv/bin/pytest
+./scripts/check.sh
 ```
 
 Source checkouts use
