@@ -95,10 +95,16 @@ class ImpacketShareDiscoverer:
     def __init__(
         self,
         *,
+        port: int = 445,
         connection_factory: Callable[..., _ImpacketConnection] | None = None,
         ccache_factory: Callable[[bytes], object] | None = None,
     ) -> None:
+        if isinstance(port, bool) or not isinstance(port, int):
+            raise TypeError("port must be an integer.")
+        if not 1 <= port <= 65535:
+            raise ValueError("port must be between 1 and 65535.")
         logging.getLogger("impacket").disabled = True
+        self._port = port
         self._connection_factory = connection_factory or _default_connection_factory
         self._ccache_factory = ccache_factory or _default_ccache_factory
 
@@ -120,7 +126,7 @@ class ImpacketShareDiscoverer:
             connection = self._connection_factory(
                 remoteName=remote_name,
                 remoteHost=target,
-                sess_port=445,
+                sess_port=self._port,
                 timeout=timeout_seconds,
             )
             cancellation.raise_if_cancelled()

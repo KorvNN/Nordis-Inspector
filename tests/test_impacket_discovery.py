@@ -111,6 +111,33 @@ def _password() -> Credential:
 
 
 class ImpacketShareDiscoveryTests(unittest.TestCase):
+    def test_custom_port_is_validated_and_forwarded(self) -> None:
+        connection = _Connection(shares=({"shi1_netname": "Data\x00"},))
+        factory = _ConnectionFactory(connection)
+
+        ImpacketShareDiscoverer(port=1445, connection_factory=factory).discover(
+            target="192.0.2.10",
+            credential=_password(),
+            kerberos_hostname=None,
+            mechanism=AuthMechanism.NTLM,
+            timeout_seconds=5,
+            cancellation=NEVER_CANCELLED,
+        )
+
+        self.assertEqual(1445, factory.calls[0]["sess_port"])
+        for invalid in (0, 65536, -1):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                ValueError,
+                r"^port must be between 1 and 65535\.$",
+            ):
+                ImpacketShareDiscoverer(port=invalid)
+        for invalid in (True, 445.0, "445"):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                TypeError,
+                r"^port must be an integer\.$",
+            ):
+                ImpacketShareDiscoverer(port=invalid)  # type: ignore[arg-type]
+
     def test_ntlm_password_enumerates_deduplicated_safe_names_and_closes(self) -> None:
         connection = _Connection(
             shares=(
