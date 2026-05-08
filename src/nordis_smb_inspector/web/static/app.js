@@ -171,23 +171,57 @@ function setSelectionPlaceholder(container, message) {
   container.replaceChildren(placeholder);
 }
 
+function detailList(fields) {
+  const list = document.createElement("dl");
+  list.className = "detail-list";
+  for (const [label, value, className = ""] of fields) {
+    const group = document.createElement("div");
+    const term = document.createElement("dt");
+    const description = document.createElement("dd");
+    term.textContent = label;
+    description.className = className;
+    description.textContent = displayValue(value);
+    group.append(term, description);
+    list.append(group);
+  }
+  return list;
+}
+
 function renderSelectionDetail(container, title, fields) {
   const heading = document.createElement("h3");
   heading.className = "detail-heading";
   heading.textContent = displayValue(title);
 
-  const list = document.createElement("dl");
-  list.className = "detail-list";
-  for (const [label, value] of fields) {
-    const group = document.createElement("div");
-    const term = document.createElement("dt");
-    const description = document.createElement("dd");
-    term.textContent = label;
-    description.textContent = displayValue(value);
-    group.append(term, description);
-    list.append(group);
-  }
+  const list = detailList(fields);
   container.replaceChildren(heading, list);
+}
+
+function appendHighlightedText(container, value, term) {
+  const text = displayValue(value);
+  const needle = term === null || term === undefined ? "" : String(term).trim();
+  if (needle === "") {
+    container.textContent = text;
+    return;
+  }
+
+  const searchableText = text.toLocaleLowerCase("tr-TR");
+  const searchableNeedle = needle.toLocaleLowerCase("tr-TR");
+  let cursor = 0;
+  let matchIndex = searchableText.indexOf(searchableNeedle);
+  if (matchIndex === -1) {
+    container.textContent = text;
+    return;
+  }
+
+  while (matchIndex !== -1) {
+    container.append(document.createTextNode(text.slice(cursor, matchIndex)));
+    const highlight = document.createElement("mark");
+    highlight.textContent = text.slice(matchIndex, matchIndex + needle.length);
+    container.append(highlight);
+    cursor = matchIndex + needle.length;
+    matchIndex = searchableText.indexOf(searchableNeedle, cursor);
+  }
+  container.append(document.createTextNode(text.slice(cursor)));
 }
 
 function bindSelectableRow(row, {selected, select}) {
@@ -398,7 +432,7 @@ function renderTargetRows(emptyMessage = "Henüz tarama başlatılmadı.") {
   let visible = 0;
   for (const record of visibleRecords) {
     const row = document.createElement("tr");
-    row.append(textCell(record.ip));
+    row.append(textCell(record.ip, "code-value"));
     row.append(textCell(record.tcp, `status-value ${statusTone(record.tcp)}`));
     row.append(textCell(record.smb, `status-value ${statusTone(record.smb)}`));
     row.append(textCell(
@@ -552,18 +586,43 @@ function findingKey(record) {
 }
 
 function renderFindingDetail(record) {
-  renderSelectionDetail(findingSelectionDetail, record.file, [
-    ["Hedef", record.target],
-    ["Share", record.share],
-    ["Dosya", record.file],
-    ["Satır no", record.lineNumber],
+  const header = document.createElement("header");
+  header.className = "finding-detail-header";
+  const heading = document.createElement("h3");
+  heading.className = "detail-heading";
+  heading.textContent = displayValue(record.file);
+  header.append(heading);
+
+  const signal = document.createElement("section");
+  signal.className = "finding-signal";
+  const signalLabel = document.createElement("span");
+  signalLabel.className = "finding-signal-label";
+  signalLabel.textContent = "Eşleşme";
+  const signalValue = document.createElement("strong");
+  signalValue.className = "finding-signal-value";
+  signalValue.textContent = displayValue(record.term);
+  signal.append(signalLabel, signalValue);
+
+  const context = document.createElement("section");
+  context.className = "finding-context";
+  const contextLabel = document.createElement("span");
+  contextLabel.className = "finding-context-label";
+  contextLabel.textContent = "Satır içeriği";
+  const line = document.createElement("code");
+  appendHighlightedText(line, record.fullLine, record.term);
+  context.append(contextLabel, line);
+
+  const metadata = detailList([
+    ["Hedef", record.target, "detail-code"],
+    ["Share", record.share, "detail-code"],
+    ["Satır no", record.lineNumber, "detail-code"],
     ["Yöntem", record.method],
-    ["Terim", record.term],
-    ["Kural", record.ruleId],
+    ["Kural", record.ruleId, "detail-code"],
     ["Kategori", record.category],
     ["Güven", record.confidence],
-    ["Tam satır", record.fullLine],
   ]);
+  metadata.classList.add("finding-metadata");
+  findingSelectionDetail.replaceChildren(header, signal, context, metadata);
 }
 
 function recordsByTarget(records) {
@@ -717,9 +776,9 @@ function renderFindings() {
       rowForRecord: ([key, record]) => {
         const row = document.createElement("tr");
         row.append(textCell(record.file, "path-value"));
-        row.append(textCell(record.lineNumber));
+        row.append(textCell(record.lineNumber, "code-value"));
         row.append(textCell(record.method, `status-value ${statusTone(record.method)}`));
-        row.append(textCell(record.term));
+        row.append(textCell(record.term, "finding-term-pill"));
         bindSelectableRow(row, {
           selected: selectedFindingKey === key,
           select: () => {

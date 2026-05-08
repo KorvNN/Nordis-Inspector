@@ -16,7 +16,6 @@
     <aside class="panel scan-sidebar" aria-labelledby="scan-form-heading">
       <div class="section-heading">
         <div>
-          <p class="step">Tarama</p>
           <h2 id="scan-form-heading">Yeni tarama</h2>
         </div>
         <span id="scope-state" class="state idle">Bekliyor</span>
@@ -77,7 +76,7 @@
         <textarea id="additional-terms" rows="3" spellcheck="false"></textarea>
         <label class="option-control" for="detect-patterns">
           <input id="detect-patterns" type="checkbox" checked>
-          <span>Yerleşik kalıp algılama</span>
+          <span>Parola, token, anahtar ve hash kalıplarını tara</span>
         </label>
       </fieldset>
 
@@ -94,7 +93,6 @@
       <article class="panel status-panel">
         <div class="status-summary">
           <div>
-            <p class="step">Canlı durum</p>
             <h2 id="scan-phase">Tarama yok</h2>
             <p id="progress-message" class="hint">Yeni bir tarama başlatılmadı.</p>
           </div>
@@ -213,7 +211,7 @@
             <div id="findings-groups" class="grouped-results">
               <p class="group-empty-state">Henüz bulgu yok.</p>
             </div>
-            <aside id="finding-selection-detail" class="selection-detail"
+            <aside id="finding-selection-detail" class="selection-detail finding-detail"
               aria-label="Bulgu ayrıntısı">
               <p class="selection-placeholder">Tam satır için bir bulgu seç.</p>
             </aside>
@@ -226,7 +224,6 @@
   <dialog id="wordlist-dialog" class="wordlist-dialog" aria-labelledby="wordlist-heading">
     <div class="dialog-heading">
       <div>
-        <p class="step">Yapılandırma</p>
         <h2 id="wordlist-heading">Wordlist yönetimi</h2>
       </div>
       <button id="close-wordlists" class="icon-button" type="button" aria-label="Kapat">×</button>
