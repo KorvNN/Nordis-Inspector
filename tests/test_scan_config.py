@@ -80,13 +80,20 @@ class ScanConfigTests(unittest.TestCase):
         self.assertIn("password", (term.casefold() for term in options.terms))
 
     def test_packaged_default_matches_the_repository_source(self) -> None:
+        source = repository_wordlist_path().read_bytes()
         packaged = (
             files("nordis_smb_inspector.wordlists")
             .joinpath("default-sensitive.txt")
             .read_bytes()
         )
 
-        self.assertEqual(packaged, repository_wordlist_path().read_bytes())
+        self.assertEqual(packaged, source)
+        terms = tuple(
+            line.strip()
+            for line in source.decode("utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+        self.assertEqual(len(terms), len({term.casefold() for term in terms}))
 
     def test_wheel_fallback_initializes_private_editable_user_copy(self) -> None:
         config_home = Path(self.temporary_directory.name) / "xdg-config"
