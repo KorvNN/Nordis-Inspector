@@ -7,6 +7,24 @@ NTLM, SRVSVC, document, access-denial, and Kerberos behavior.
 Use only synthetic data. Keep the lab disconnected from production networks and
 revert VM snapshots after testing.
 
+## Offline loopback smoke test
+
+Before building VMs, run the rootless local smoke test:
+
+```bash
+.venv/bin/python scripts/run-local-smb-smoke.py
+```
+
+It creates a temporary read-only share on an ephemeral loopback port and exercises
+real SMB2 negotiation, NTLM authentication, SRVSVC share discovery, directory
+walking, bounded file reads, and canary detection. It uses synthetic data, needs no
+internet connection, and removes the share when it exits.
+
+This is a narrow protocol smoke test. It deliberately disables required signing and
+secure negotiate because Impacket's embedded test server does not model a hardened
+Windows target. Use the VM lab below for Windows, Kerberos, signing, encryption,
+access-denial, timeout, and cancellation acceptance cases.
+
 ## Recommended topology
 
 Create one libvirt network with no `<forward>` element:
@@ -253,9 +271,8 @@ its canary must not appear because its content was never readable.
 Run the local suite before and after live testing:
 
 ```bash
-.venv/bin/ruff check .
-.venv/bin/pytest
-node --check src/nordis_smb_inspector/web/static/app.js
+./scripts/check.sh
+.venv/bin/python scripts/run-local-smb-smoke.py
 ```
 
 Capture the application status values, negotiated dialect, authentication history,

@@ -44,7 +44,13 @@ The server does not expose a non-loopback bind option.
 ```bash
 .venv/bin/pip install -e '.[dev]'
 ./scripts/check.sh
+.venv/bin/python scripts/run-local-smb-smoke.py
 ```
+
+The smoke test starts a temporary SMB server on loopback and exercises real SMB2,
+NTLM, SRVSVC discovery, file walking, and content detection without root or internet
+access. Windows, Kerberos, signing, and access-denial behavior require the isolated
+integration lab.
 
 Source checkouts use
 [`wordlists/content/default-sensitive.txt`](wordlists/content/default-sensitive.txt).

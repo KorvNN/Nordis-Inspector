@@ -113,6 +113,8 @@ replace the primary target outcome.
 - DFS capability is recorded, but referrals are not followed.
 - There is no SMB1 data path or active SMB1-only probe.
 - SRVSVC discovery is not supplemented with common-share guesses.
-- The automated suite validates adapters with fakes; real Windows/Samba behavior
-  still requires the isolated lab in [TEST_LAB.md](TEST_LAB.md).
+- Unit tests validate adapters with fakes. The manual loopback smoke test exercises
+  SMB2, NTLM, SRVSVC, and content reads against an embedded server; real
+  Windows/Samba policy behavior still requires the isolated lab in
+  [TEST_LAB.md](TEST_LAB.md).
 - Server-specific throttling and selectable load profiles are not implemented.
