@@ -15,6 +15,13 @@ const credentialCcacheField = document.querySelector("#credential-ccache-field")
 const credentialCcache = document.querySelector("#credential-ccache");
 const authMode = document.querySelector("#auth-mode");
 const additionalTermsInput = document.querySelector("#additional-terms");
+const toggleTermGenerator = document.querySelector("#toggle-term-generator");
+const termGenerator = document.querySelector("#term-generator");
+const termGeneratorRoots = document.querySelector("#term-generator-roots");
+const generateCredentialTerms = document.querySelector("#generate-credential-terms");
+const generateEnvironmentTerms = document.querySelector("#generate-environment-terms");
+const generateTermsButton = document.querySelector("#generate-terms");
+const termGeneratorStatus = document.querySelector("#term-generator-status");
 const detectPatternsInput = document.querySelector("#detect-patterns");
 const contentWordlist = document.querySelector("#content-wordlist");
 const contentWordlistFile = document.querySelector("#content-wordlist-file");
@@ -60,6 +67,18 @@ let latestGeneration = null;
 
 const CCACHE_MAX_BYTES = 1024 * 1024;
 const WORDLIST_MAX_BYTES = 1024 * 1024;
+const MAX_GENERATED_TERMS = 2000;
+const GENERATOR_CREDENTIAL_FIELDS = [
+  "password",
+  "secret",
+  "token",
+  "api key",
+  "access token",
+  "client secret",
+  "private key",
+  "connection string",
+];
+const GENERATOR_ENVIRONMENTS = ["dev", "test", "staging", "prod", "production"];
 const WORDLIST_EDITORS = {
   content: {
     count: contentWordlistCount,
@@ -1125,6 +1144,83 @@ function additionalSearchTerms() {
   return [...new Set(terms)];
 }
 
+function generatorRoots() {
+  return [...new Set(
+    termGeneratorRoots.value
+      .split(/[\n,]+/u)
+      .map((root) => root.trim().replace(/\s+/gu, " "))
+      .filter(Boolean),
+  )];
+}
+
+function generatorSeparatorForms(root) {
+  const words = root.split(/[\s_-]+/u).filter(Boolean);
+  return [...new Set([
+    root,
+    words.join("_"),
+    words.join("-"),
+    words.join(" "),
+  ])];
+}
+
+function generatorJoin(left, right, separator) {
+  return `${left}${separator}${right.split(" ").join(separator)}`;
+}
+
+function generatedTerms() {
+  const terms = new Set();
+  const credentialFields = generateCredentialTerms.checked
+    ? GENERATOR_CREDENTIAL_FIELDS
+    : [];
+  const environments = generateEnvironmentTerms.checked
+    ? GENERATOR_ENVIRONMENTS
+    : [];
+
+  for (const root of generatorRoots()) {
+    for (const base of generatorSeparatorForms(root)) {
+      terms.add(base);
+      for (const field of credentialFields) {
+        for (const separator of ["_", "-", " "]) {
+          terms.add(generatorJoin(base, field, separator));
+          terms.add(generatorJoin(field, base, separator));
+        }
+      }
+      for (const environment of environments) {
+        for (const separator of ["_", "-"]) {
+          terms.add(generatorJoin(base, environment, separator));
+          terms.add(generatorJoin(environment, base, separator));
+        }
+      }
+      if (terms.size >= MAX_GENERATED_TERMS) return [...terms].slice(0, MAX_GENERATED_TERMS);
+    }
+  }
+  return [...terms];
+}
+
+function addGeneratedTerms() {
+  const roots = generatorRoots();
+  if (roots.length === 0) {
+    termGeneratorStatus.textContent = "Kök ifade girin.";
+    termGeneratorStatus.className = "term-generator-status is-error";
+    return;
+  }
+
+  const existing = additionalSearchTerms();
+  const seen = new Set(existing.map((term) => term.toLocaleLowerCase("tr-TR")));
+  const newTerms = [];
+  for (const term of generatedTerms()) {
+    const key = term.toLocaleLowerCase("tr-TR");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    newTerms.push(term);
+  }
+  additionalTermsInput.value = [...existing, ...newTerms].join("\n");
+  termGeneratorStatus.textContent = newTerms.length > 0
+    ? `${newTerms.length} yeni terim eklendi.`
+    : "Yeni terim yok.";
+  termGeneratorStatus.className = "term-generator-status";
+}
+
 function scanFormIsValid() {
   return credentialIsValid();
 }
@@ -1372,6 +1468,12 @@ closeWordlistsButton.addEventListener("click", () => wordlistDialog.close());
 wordlistDialog.addEventListener("click", (event) => {
   if (event.target === wordlistDialog) wordlistDialog.close();
 });
+toggleTermGenerator.addEventListener("click", () => {
+  termGenerator.hidden = !termGenerator.hidden;
+  toggleTermGenerator.setAttribute("aria-expanded", String(!termGenerator.hidden));
+  if (!termGenerator.hidden) termGeneratorRoots.focus();
+});
+generateTermsButton.addEventListener("click", addGeneratedTerms);
 
 startScanButton.addEventListener("click", startScan);
 cancelScanButton.addEventListener("click", cancelScan);

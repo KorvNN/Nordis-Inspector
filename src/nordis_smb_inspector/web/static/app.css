@@ -190,6 +190,13 @@ select:disabled { color: var(--muted); opacity: .78; }
   cursor: pointer;
 }
 .form-field label { margin-top: 9px; }
+.field-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 8px;
+}
+.field-heading label { margin-bottom: 7px; }
 .option-control {
   display: flex;
   align-items: center;
@@ -235,6 +242,30 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
   background: #281719;
   font-size: .76rem;
 }
+
+.term-generator {
+  margin-top: 9px;
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+.term-generator textarea { margin-top: 0; }
+.term-generator-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.term-generator-options .option-control {
+  margin-top: 9px;
+  font-size: .72rem;
+}
+.term-generator-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.term-generator-actions button { font-size: .7rem; }
+.term-generator-status.is-error { color: var(--danger); }
 
 .status-panel { padding: 17px 18px 14px; }
 .status-summary { align-items: center; }

@@ -72,8 +72,31 @@
           <button id="open-wordlists" class="inline-management-button secondary-button"
             type="button">Wordlist yönetimi</button>
         </legend>
-        <label for="additional-terms">Ek arama terimleri</label>
+        <div class="field-heading">
+          <label for="additional-terms">Ek arama terimleri</label>
+          <button id="toggle-term-generator" class="inline-management-button secondary-button"
+            type="button" aria-expanded="false" aria-controls="term-generator">Terim üret</button>
+        </div>
         <textarea id="additional-terms" rows="3" spellcheck="false"></textarea>
+        <div id="term-generator" class="term-generator" hidden>
+          <label for="term-generator-roots">Kök ifadeler</label>
+          <textarea id="term-generator-roots" rows="2" spellcheck="false"
+            placeholder="acme&#10;nordis"></textarea>
+          <div class="term-generator-options">
+            <label class="option-control" for="generate-credential-terms">
+              <input id="generate-credential-terms" type="checkbox" checked>
+              <span>Credential alanları</span>
+            </label>
+            <label class="option-control" for="generate-environment-terms">
+              <input id="generate-environment-terms" type="checkbox">
+              <span>Ortam adları</span>
+            </label>
+          </div>
+          <div class="term-generator-actions">
+            <button id="generate-terms" type="button">Ek terimleri üret</button>
+            <span id="term-generator-status" class="summary" aria-live="polite"></span>
+          </div>
+        </div>
         <label class="option-control" for="detect-patterns">
           <input id="detect-patterns" type="checkbox" checked>
           <span>Veri Kalıplarını Aramaya Dahil Et</span>
