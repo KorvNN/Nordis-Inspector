@@ -23,7 +23,7 @@
 
       <label for="targets">IP, CIDR veya hostname</label>
       <textarea id="targets" rows="5" spellcheck="false"
-        placeholder="10.20.30.15, 10.20.40.0/24&#10;filesrv01.nordis.local"></textarea>
+        placeholder="example.com, files.example.com&#10;192.0.2.10"></textarea>
       <p class="hint">Virgül veya yeni satırla ayır.</p>
 
       <fieldset class="credential-block">
@@ -77,11 +77,12 @@
           <button id="toggle-term-generator" class="inline-management-button secondary-button"
             type="button" aria-expanded="false" aria-controls="term-generator">Terim üret</button>
         </div>
-        <textarea id="additional-terms" rows="3" spellcheck="false"></textarea>
+        <textarea id="additional-terms" rows="3" spellcheck="false"
+          placeholder="example, client_secret"></textarea>
         <div id="term-generator" class="term-generator" hidden>
           <label for="term-generator-roots">Kök ifadeler</label>
           <textarea id="term-generator-roots" rows="2" spellcheck="false"
-            placeholder="acme&#10;nordis"></textarea>
+            placeholder="example, acme"></textarea>
           <div class="term-generator-options">
             <label class="option-control" for="generate-credential-terms">
               <input id="generate-credential-terms" type="checkbox" checked>

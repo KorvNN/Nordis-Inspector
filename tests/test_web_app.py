@@ -375,6 +375,8 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="toggle-term-generator"', response.text)
         self.assertIn('id="term-generator-roots"', response.text)
         self.assertIn("Veri Kalıplarını Aramaya Dahil Et", response.text)
+        self.assertIn("example.com, files.example.com", response.text)
+        self.assertIn("example, client_secret", response.text)
         self.assertIn(self.csrf, response.text)
         self.assertNotIn("https://", response.text)
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
