@@ -81,6 +81,41 @@ class PatternDetectionTests(unittest.TestCase):
             with self.subTest(rule_id=rule_id):
                 self.assert_rule(line, rule_id)
 
+    def test_provider_and_credential_file_artifacts(self) -> None:
+        cases = (
+            (f"ghp_{'a' * 24}", "github-token-prefix"),
+            (f"github_pat_{'a' * 24}", "github-fine-grained-token"),
+            (f"glpat-{'a' * 24}", "gitlab-token-prefix"),
+            (f"xoxb-{'a' * 24}", "slack-token-prefix"),
+            (f"sk_live_{'a' * 20}", "stripe-secret-key"),
+            (f"SG.{'a' * 20}", "sendgrid-api-key"),
+            (f"AIza{'a' * 32}", "google-api-key"),
+            (f"npm_{'a' * 24}", "npm-token-prefix"),
+            (f"pypi-{'a' * 20}", "pypi-token-prefix"),
+            (f"hf_{'a' * 24}", "huggingface-token-prefix"),
+            (f"hvs.{'a' * 20}", "vault-token-prefix"),
+            (f"PRIVATE-TOKEN: {'a' * 20}", "private-token-header"),
+            (f"session_cookie={'a' * 20}", "cookie-secret-assignment"),
+            (
+                "machine registry.example login alice password "
+                "NetrcSecretValue123",
+                "netrc-credential",
+            ),
+            (f"aws_secret_access_key={'a' * 40}", "aws-secret-access-key"),
+            (f'{{"auth":"{"a" * 24}"}}', "docker-registry-auth"),
+            (f"$ANSIBLE_VAULT;1.2;AES256;{'a' * 24}", "ansible-vault-artifact"),
+            (f"secret: ENC[AES256_GCM,data:{'a' * 24}]", "sops-encrypted-artifact"),
+            (
+                "msLAPS-EncryptedPassword=" + "A" * 24,
+                "windows-managed-password",
+            ),
+            ("-----BEGIN PGP PRIVATE KEY BLOCK-----", "private-key-header"),
+            ("-----BEGIN AGE ENCRYPTED FILE-----", "age-encrypted-file"),
+        )
+        for line, rule_id in cases:
+            with self.subTest(rule_id=rule_id):
+                self.assert_rule(line, rule_id)
+
     def test_credential_artifact_patterns(self) -> None:
         lm = "aad3b435b51404eeaad3b435b51404ee"
         nt = "31d6cfe0d16ae931b73c59d7e0c089c0"

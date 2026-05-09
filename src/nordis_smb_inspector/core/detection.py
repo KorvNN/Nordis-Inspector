@@ -176,7 +176,8 @@ DEFAULT_DETECTION_RULES = (
         category="Kriptografik anahtar",
         confidence=DetectionConfidence.HIGH,
         pattern=(
-            r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"
+            r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?"
+            r"PRIVATE KEY(?: BLOCK)?-----"
         ),
         keywords=("PRIVATE KEY",),
     ),
@@ -318,5 +319,189 @@ DEFAULT_DETECTION_RULES = (
             r"(?:\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}|"
             r"\$argon2(?:id|i|d)\$v=[0-9]+\$[^\s]{20,})"
         ),
+    ),
+    DetectionRule(
+        rule_id="github-token-prefix",
+        title="GitHub access token",
+        category="Source control",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b",
+        keywords=("ghp_", "gho_", "ghu_", "ghs_", "ghr_"),
+    ),
+    DetectionRule(
+        rule_id="github-fine-grained-token",
+        title="GitHub fine-grained token",
+        category="Source control",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\bgithub_pat_[A-Za-z0-9_]{20,}\b",
+        keywords=("github_pat_",),
+    ),
+    DetectionRule(
+        rule_id="gitlab-token-prefix",
+        title="GitLab access token",
+        category="Source control",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\bglpat-[A-Za-z0-9_-]{20,}\b",
+        keywords=("glpat-",),
+    ),
+    DetectionRule(
+        rule_id="slack-token-prefix",
+        title="Slack token",
+        category="Oturum tokenı",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b",
+        keywords=("xox",),
+    ),
+    DetectionRule(
+        rule_id="stripe-secret-key",
+        title="Stripe secret key",
+        category="Ödeme servisi",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b",
+        keywords=("sk_live_", "sk_test_", "rk_live_", "rk_test_"),
+    ),
+    DetectionRule(
+        rule_id="sendgrid-api-key",
+        title="SendGrid API key",
+        category="Cloud / SaaS",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\bSG\.[A-Za-z0-9_-]{16,}\b",
+        keywords=("SG.",),
+    ),
+    DetectionRule(
+        rule_id="google-api-key",
+        title="Google API key",
+        category="Cloud / SaaS",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\bAIza[0-9A-Za-z_-]{30,}\b",
+        keywords=("AIza",),
+    ),
+    DetectionRule(
+        rule_id="npm-token-prefix",
+        title="npm access token",
+        category="Developer tooling",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\bnpm_[A-Za-z0-9]{20,}\b",
+        keywords=("npm_",),
+    ),
+    DetectionRule(
+        rule_id="pypi-token-prefix",
+        title="PyPI API token",
+        category="Developer tooling",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\bpypi-[A-Za-z0-9_-]{16,}\b",
+        keywords=("pypi-",),
+    ),
+    DetectionRule(
+        rule_id="huggingface-token-prefix",
+        title="Hugging Face token",
+        category="Cloud / SaaS",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\bhf_[A-Za-z0-9]{20,}\b",
+        keywords=("hf_",),
+    ),
+    DetectionRule(
+        rule_id="vault-token-prefix",
+        title="Vault token",
+        category="Infrastructure",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\bhvs\.[A-Za-z0-9_-]{16,}\b",
+        keywords=("hvs.",),
+    ),
+    DetectionRule(
+        rule_id="private-token-header",
+        title="Private access token header",
+        category="Source control",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"\b(?:PRIVATE|JOB|DEPLOY|REGISTRY)-TOKEN:[ \t]*"
+            r"[A-Za-z0-9._~+/=-]{16,}\b"
+        ),
+        keywords=("-TOKEN:",),
+    ),
+    DetectionRule(
+        rule_id="cookie-secret-assignment",
+        title="Session cookie değeri",
+        category="Oturum tokenı",
+        confidence=DetectionConfidence.MEDIUM,
+        pattern=(
+            r"\b(?:session|auth|access)[_-]?cookie[ \t]*=[ \t]*"
+            r"(?P<secret>[^;\s]{16,})"
+        ),
+        secret_group="secret",
+        ignore_common_values=True,
+    ),
+    DetectionRule(
+        rule_id="netrc-credential",
+        title="netrc kimlik bilgisi",
+        category="Kimlik bilgisi",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"\bmachine[ \t]+\S+[ \t]+login[ \t]+\S+[ \t]+"
+            r"password[ \t]+(?P<secret>\S+)"
+        ),
+        keywords=("machine", "login", "password"),
+        secret_group="secret",
+        ignore_common_values=True,
+    ),
+    DetectionRule(
+        rule_id="aws-secret-access-key",
+        title="AWS secret access key assignment",
+        category="Cloud / SaaS",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"\baws[_-]?secret[_-]?access[_-]?key[ \t]*[:=][ \t]*"
+            r"(?P<secret>[A-Za-z0-9/+=]{20,})"
+        ),
+        keywords=("aws", "secret", "access", "key"),
+        secret_group="secret",
+        ignore_common_values=True,
+    ),
+    DetectionRule(
+        rule_id="docker-registry-auth",
+        title="Docker registry auth değeri",
+        category="Container tooling",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"[\"']auth[\"'][ \t]*:[ \t]*[\"'](?P<secret>[A-Za-z0-9+/=]{20,})[\"']",
+        keywords=("auth",),
+        secret_group="secret",
+        ignore_common_values=True,
+    ),
+    DetectionRule(
+        rule_id="ansible-vault-artifact",
+        title="Ansible Vault artifact",
+        category="Infrastructure",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"\$ANSIBLE_VAULT;[0-9.]+;AES[0-9]+;[0-9a-f]{20,}",
+        keywords=("$ANSIBLE_VAULT;",),
+    ),
+    DetectionRule(
+        rule_id="sops-encrypted-artifact",
+        title="SOPS encrypted value",
+        category="Infrastructure",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"ENC\[AES256_GCM,data:[^\]]{16,}\]",
+        keywords=("ENC[AES256_GCM,data:",),
+    ),
+    DetectionRule(
+        rule_id="windows-managed-password",
+        title="Windows managed password attribute",
+        category="Windows / AD",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"\b(?:ms-Mcs-AdmPwd|msLAPS-Password|msLAPS-EncryptedPassword)"
+            r"[ \t]*[:=][ \t]*(?P<secret>[^\s,;]+)"
+        ),
+        keywords=("ms-Mcs-AdmPwd", "msLAPS-Password", "msLAPS-EncryptedPassword"),
+        secret_group="secret",
+        ignore_common_values=True,
+    ),
+    DetectionRule(
+        rule_id="age-encrypted-file",
+        title="Age encrypted file",
+        category="Kriptografik anahtar",
+        confidence=DetectionConfidence.HIGH,
+        pattern=r"-----BEGIN AGE ENCRYPTED FILE-----",
+        keywords=("BEGIN AGE ENCRYPTED FILE",),
     ),
 )

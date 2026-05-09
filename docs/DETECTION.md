@@ -35,12 +35,16 @@ text. Current rule families include:
 - JSON Web Tokens
 - PEM private-key headers
 - Basic and Bearer authorization values
+- Provider token prefixes for GitHub, GitLab, Slack, Stripe, Google, npm, PyPI,
+  Hugging Face, and Vault
 - Credentials embedded in URLs
 - Database and service connection strings
+- netrc, Docker registry auth, Ansible Vault, and SOPS secret artifacts
 - Secret assignments such as passwords, tokens, API keys, and client secrets
 - Group Policy Preferences `cpassword` values
 - Kerberos ticket and credential-cache artifacts
 - LM/NT hash pairs and common hash-dump forms
+- Windows LAPS/managed-password attributes and private access-token headers
 - NetNTLMv2 and DCC2 material
 - Unix password hashes and modern application password hashes
 
@@ -48,6 +52,10 @@ Each rule has a stable identifier and confidence level. Common examples and obvi
 placeholders are filtered where the rule can identify them reliably. The detector
 does not use a general entropy threshold, so a finding is evidence for review rather
 than proof that a live secret exists.
+
+The scan form can generate literal search-term variants from supplied roots. Generated
+terms are added only to the current scan's additional terms; they do not modify the
+saved default wordlist.
 
 ## File processing
 
