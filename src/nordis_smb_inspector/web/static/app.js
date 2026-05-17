@@ -4,6 +4,8 @@ const body = document.body;
 const csrfToken = body.dataset.csrfToken;
 const origin = body.dataset.origin;
 const targets = document.querySelector("#targets");
+const scanProfile = document.querySelector("#scan-profile");
+const saveProfileButton = document.querySelector("#save-profile");
 const credentialDomain = document.querySelector("#credential-domain");
 const credentialUsername = document.querySelector("#credential-username");
 const credentialUsernameLabel = document.querySelector("#credential-username-label");
@@ -51,6 +53,9 @@ const resultPanels = [...document.querySelectorAll("[data-result-panel]")];
 const targetWorkspaceCount = document.querySelector("[data-workspace-count='targets']");
 const inventoryTabCount = document.querySelector("#inventory-tab-count");
 const findingsTabCount = document.querySelector("#findings-tab-count");
+const historyTabCount = document.querySelector("#history-tab-count");
+const scanHistory = document.querySelector("#scan-history");
+const exportResultsButton = document.querySelector("#export-results");
 const targetSelectionDetail = document.querySelector("#target-selection-detail");
 const inventorySelectionDetail = document.querySelector("#inventory-selection-detail");
 const findingSelectionDetail = document.querySelector("#finding-selection-detail");
@@ -64,6 +69,15 @@ let selectedTargetKey = null;
 let selectedInventoryKey = null;
 let selectedFindingKey = null;
 let latestGeneration = null;
+let lastSavedGeneration = null;
+
+const HISTORY_KEY = "nordis.scan-history.v1";
+const PROFILE_KEY = "nordis.scan-profile.v1";
+const SCAN_PROFILES = {
+  quick: {detect_patterns: false},
+  balanced: {detect_patterns: true},
+  deep: {detect_patterns: true},
+};
 
 const CCACHE_MAX_BYTES = 1024 * 1024;
 const WORDLIST_MAX_BYTES = 1024 * 1024;
@@ -1225,6 +1239,75 @@ function scanFormIsValid() {
   return credentialIsValid();
 }
 
+function storedHistory() {
+  try {
+    const value = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
+    return Array.isArray(value) ? value : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+function renderHistory() {
+  const history = storedHistory();
+  historyTabCount.textContent = history.length;
+  scanHistory.replaceChildren();
+  if (history.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "group-empty-state";
+    empty.textContent = "Henüz kayıtlı tarama yok.";
+    scanHistory.append(empty);
+    return;
+  }
+  for (const item of history) {
+    const row = document.createElement("div");
+    row.className = "result-group";
+    const title = document.createElement("strong");
+    title.textContent = `${item.targets} · ${item.status}`;
+    const summary = document.createElement("span");
+    summary.className = "summary";
+    summary.textContent = `${item.finished_at} · ${item.findings} bulgu · ${item.inventory} envanter`;
+    row.append(title, summary);
+    scanHistory.append(row);
+  }
+}
+
+function saveCompletedScan(state) {
+  if (state.status !== "completed" || state.generation === lastSavedGeneration) return;
+  const history = storedHistory();
+  history.unshift({
+    scan_id: state.scan_id,
+    targets: targets.value.trim() || "Hedefler",
+    status: SCAN_STATUS_LABELS.completed,
+    findings: state.finding_count ?? findingStore.size,
+    inventory: state.inventory_count ?? inventoryStore.size,
+    finished_at: new Date().toLocaleString("tr-TR"),
+  });
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
+  lastSavedGeneration = state.generation;
+  renderHistory();
+}
+
+function exportResults() {
+  const payload = {
+    exported_at: new Date().toISOString(),
+    targets: [...targetStore.values()],
+    inventory: [...inventoryStore.values()],
+    findings: [...findingStore.values()],
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json"});
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `nordis-scan-${new Date().toISOString().replaceAll(":", "-")}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function applyScanProfile() {
+  const profile = SCAN_PROFILES[scanProfile.value];
+  if (profile) detectPatternsInput.checked = profile.detect_patterns;
+}
+
 async function startScan() {
   if (!scanFormIsValid()) return;
   startScanButton.disabled = true;
@@ -1336,6 +1419,7 @@ function setScanState(state) {
       : STATUS_MESSAGES[status] ?? "";
   }
   document.querySelector("#progress-message").textContent = progressMessage;
+  saveCompletedScan(state);
 
   document.querySelector("#inventory-count").textContent = state.inventory_count ?? 0;
   document.querySelector("#finding-count").textContent = state.finding_count ?? 0;
@@ -1508,3 +1592,27 @@ scanEvents.addEventListener("resync.required", async () => {
   await refreshSnapshot();
   await refreshResultPanels();
 });
+
+scanProfile.addEventListener("change", applyScanProfile);
+detectPatternsInput.addEventListener("change", () => {
+  if (scanProfile.value !== "custom") scanProfile.value = "custom";
+});
+saveProfileButton.addEventListener("click", () => {
+  localStorage.setItem(PROFILE_KEY, JSON.stringify({
+    profile: scanProfile.value,
+    detect_patterns: detectPatternsInput.checked,
+  }));
+  saveProfileButton.textContent = "Kaydedildi";
+  setTimeout(() => { saveProfileButton.textContent = "Ayarları hatırla"; }, 1200);
+});
+exportResultsButton.addEventListener("click", exportResults);
+renderHistory();
+try {
+  const saved = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? "null");
+  if (saved && typeof saved === "object") {
+    scanProfile.value = saved.profile ?? "balanced";
+    detectPatternsInput.checked = saved.detect_patterns !== false;
+  }
+} catch (_error) {
+  // Invalid local preferences are ignored.
+}

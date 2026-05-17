@@ -22,6 +22,17 @@
       </div>
 
       <label for="targets">IP, CIDR veya hostname</label>
+      <div class="field-heading">
+        <label for="scan-profile">Tarama profili</label>
+        <button id="save-profile" class="inline-management-button secondary-button"
+          type="button">Ayarları hatırla</button>
+      </div>
+      <select id="scan-profile">
+        <option value="balanced">Dengeli</option>
+        <option value="quick">Hızlı</option>
+        <option value="deep">Derin</option>
+        <option value="custom">Özel</option>
+      </select>
       <textarea id="targets" rows="5" spellcheck="false"
         placeholder="example.com, files.example.com&#10;192.0.2.10"></textarea>
       <p class="hint">Virgül veya yeni satırla ayır.</p>
@@ -145,6 +156,10 @@
             aria-selected="false" aria-controls="findings-panel" data-result-tab="findings">
             Bulgular <strong id="findings-tab-count">0</strong>
           </button>
+          <button id="history-tab" class="result-tab" type="button" role="tab"
+            aria-selected="false" aria-controls="history-panel" data-result-tab="history">
+            Geçmiş <strong id="history-tab-count">0</strong>
+          </button>
         </div>
 
         <section id="targets-panel" class="result-tab-panel" role="tabpanel"
@@ -199,6 +214,17 @@
               aria-label="Hedef ayrıntısı">
               <p class="selection-placeholder">Ayrıntı için bir hedef seç.</p>
             </aside>
+          </div>
+        </section>
+
+        <section id="history-panel" class="result-tab-panel" role="tabpanel"
+          aria-labelledby="history-tab" data-result-panel="history" hidden>
+          <div class="panel-toolbar">
+            <span class="summary">Tamamlanan taramalar bu tarayıcıda saklanır.</span>
+            <button id="export-results" class="secondary-button" type="button">Sonuçları JSON indir</button>
+          </div>
+          <div id="scan-history" class="grouped-results">
+            <p class="group-empty-state">Henüz kayıtlı tarama yok.</p>
           </div>
         </section>
 
