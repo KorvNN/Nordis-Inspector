@@ -140,10 +140,18 @@ const STATUS_LABELS = {
   pattern: "Kalıp",
   high: "Yüksek",
   medium: "Orta",
+  low: "Düşük",
   allowed: "İzin var",
   denied: "Reddedildi",
   unknown: "Bilinmiyor",
   error: "Hata",
+};
+const FINDING_METHOD_LABELS = {
+  wordlist: "Terim listesi eşleşmesi",
+  pattern: "Veri kalıbı eşleşmesi",
+};
+const FINDING_RULE_LABELS = {
+  "secret-assignment": "Gizli bilgi ataması",
 };
 const SCAN_STATUS_LABELS = {
   idle: "Tarama yok",
@@ -289,6 +297,22 @@ function displayValue(value) {
   if (value === null || value === undefined || value === "") return "—";
   const raw = String(value);
   return STATUS_LABELS[raw.toLowerCase()] ?? raw;
+}
+
+function findingLabel(value, labels) {
+  if (value === null || value === undefined || value === "") return "—";
+  const raw = String(value);
+  return labels[raw.toLowerCase()] ?? raw;
+}
+
+function confidenceLabel(value) {
+  const level = displayValue(value);
+  const explanations = {
+    "Yüksek": "Güçlü ve belirgin credential kalıbı.",
+    "Orta": "Şüpheli kalıp; bağlamla doğrulanmalı.",
+    "Düşük": "Zayıf sinyal; yanlış eşleşme olabilir.",
+  };
+  return explanations[level] ? `${level} · ${explanations[level]}` : level;
 }
 
 function firstValue(record, names) {
@@ -657,10 +681,10 @@ function renderFindingDetail(record) {
     ["Hedef", record.target, "detail-code"],
     ["Share", record.share, "detail-code"],
     ["Satır no", record.lineNumber, "detail-code"],
-    ["Yöntem", record.method],
-    ["Kural", record.ruleId, "detail-code"],
+    ["Yöntem", findingLabel(record.method, FINDING_METHOD_LABELS)],
+    ["Kural", findingLabel(record.ruleId, FINDING_RULE_LABELS)],
     ["Kategori", record.category],
-    ["Güven", record.confidence],
+    ["Güven", confidenceLabel(record.confidence)],
   ]);
   metadata.classList.add("finding-metadata");
   findingSelectionDetail.replaceChildren(header, signal, context, metadata);
@@ -831,7 +855,10 @@ function renderFindings() {
         const row = document.createElement("tr");
         row.append(textCell(record.file, "path-value"));
         row.append(textCell(record.lineNumber, "code-value"));
-        row.append(textCell(record.method, `status-value ${statusTone(record.method)}`));
+        row.append(textCell(
+          findingLabel(record.method, FINDING_METHOD_LABELS),
+          `status-value ${statusTone(record.method)}`,
+        ));
         row.append(textCell(record.term, "finding-term-pill"));
         bindSelectableRow(row, {
           selected: selectedFindingKey === key,
