@@ -1263,7 +1263,18 @@ function scanFormIsValid() {
 function storedHistory() {
   try {
     const value = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
-    return Array.isArray(value) ? value : [];
+    if (!Array.isArray(value)) return [];
+    const seen = new Set();
+    const unique = value.filter((item) => {
+      const key = item?.scan_id ?? `${item?.targets}|${item?.finished_at}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (unique.length !== value.length) {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(unique));
+    }
+    return unique;
   } catch (_error) {
     return [];
   }
@@ -1282,18 +1293,22 @@ function renderHistory() {
   }
   for (const item of history) {
     const row = document.createElement("div");
-    row.className = "result-group";
+    row.className = "history-item";
     const title = document.createElement("strong");
-    title.textContent = `${item.targets} · ${item.status}`;
+    title.className = "history-item-title";
+    title.textContent = item.targets || "Hedefler";
     const summary = document.createElement("span");
-    summary.className = "summary";
-    summary.textContent = `${item.finished_at} · ${item.findings} bulgu · ${item.inventory} envanter`;
+    summary.className = "history-item-summary";
+    summary.textContent = `${item.status} · ${item.finished_at}`;
+    const counts = document.createElement("span");
+    counts.className = "history-item-counts";
+    counts.textContent = `${item.findings} bulgu · ${item.inventory} envanter`;
     const view = document.createElement("button");
     view.type = "button";
     view.className = "secondary-button";
     view.textContent = "Görüntüle";
     view.addEventListener("click", () => loadHistoryItem(item));
-    row.append(title, summary, view);
+    row.append(title, summary, counts, view);
     scanHistory.append(row);
   }
 }
@@ -1306,8 +1321,12 @@ function loadHistoryItem(item) {
 }
 
 function saveCompletedScan(state) {
-  if (state.status !== "completed" || state.generation === lastSavedGeneration) return;
+  if (state.status !== "completed" || !state.scan_id || state.generation === lastSavedGeneration) return;
   const history = storedHistory();
+  if (history.some((item) => item.scan_id === state.scan_id)) {
+    lastSavedGeneration = state.generation;
+    return;
+  }
   history.unshift({
     scan_id: state.scan_id,
     targets: targets.value.trim() || "Hedefler",

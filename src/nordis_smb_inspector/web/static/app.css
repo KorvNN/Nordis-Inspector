@@ -397,6 +397,23 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
   background: #0d1917;
 }
 .result-group + .result-group { margin-top: 7px; }
+.history-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.history-item + .history-item { margin-top: 8px; }
+.history-item-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-item-summary, .history-item-counts { color: var(--muted); font-size: 0.84rem; white-space: nowrap; }
+@media (max-width: 760px) {
+  .history-item { grid-template-columns: 1fr auto; }
+  .history-item-summary, .history-item-counts { white-space: normal; }
+}
 .result-group > summary {
   display: flex;
   align-items: center;
