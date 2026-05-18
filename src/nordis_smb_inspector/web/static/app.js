@@ -676,6 +676,19 @@ function recordsByTarget(records) {
   return groups;
 }
 
+function inventorySections(records) {
+  const sections = new Map();
+  const labels = {share: "Share'ler", directory: "Dizinler", file: "Dosyalar"};
+  for (const item of records) {
+    const target = item[1].target === null ? "Hedef bilinmiyor" : String(item[1].target);
+    const kind = labels[item[1].type] ?? "Diğer kayıtlar";
+    const key = `${target}\u001f${kind}`;
+    if (!sections.has(key)) sections.set(key, {title: `${target} · ${kind}`, records: []});
+    sections.get(key).records.push(item);
+  }
+  return sections;
+}
+
 function setGroupedResultMessage(container, message) {
   const emptyState = document.createElement("p");
   emptyState.className = "group-empty-state";
@@ -740,13 +753,13 @@ function renderInventory() {
     if (visibleRecords[0]) renderInventoryDetail(visibleRecords[0][1]);
     else setSelectionPlaceholder(inventorySelectionDetail, "Ayrıntı için bir kayıt seç.");
   }
-  const groups = recordsByTarget(visibleRecords);
+  const groups = inventorySections(visibleRecords);
   inventoryGroups.replaceChildren();
   let groupIndex = 0;
-  for (const [target, records] of groups) {
+  for (const [target, section] of groups) {
     inventoryGroups.append(groupedResult({
-      target,
-      records,
+      target: section.title,
+      records: section.records,
       openState: inventoryGroupOpenState,
       defaultOpen: groupIndex === 0,
       countLabel: "kayıt",
@@ -1275,9 +1288,21 @@ function renderHistory() {
     const summary = document.createElement("span");
     summary.className = "summary";
     summary.textContent = `${item.finished_at} · ${item.findings} bulgu · ${item.inventory} envanter`;
-    row.append(title, summary);
+    const view = document.createElement("button");
+    view.type = "button";
+    view.className = "secondary-button";
+    view.textContent = "Görüntüle";
+    view.addEventListener("click", () => loadHistoryItem(item));
+    row.append(title, summary, view);
     scanHistory.append(row);
   }
+}
+
+function loadHistoryItem(item) {
+  replaceTargets(item.targets_snapshot ?? []);
+  replaceInventory(item.inventory_items ?? []);
+  replaceFindings(item.finding_items ?? []);
+  activateResultTab("findings");
 }
 
 function saveCompletedScan(state) {
@@ -1289,6 +1314,9 @@ function saveCompletedScan(state) {
     status: SCAN_STATUS_LABELS.completed,
     findings: state.finding_count ?? findingStore.size,
     inventory: state.inventory_count ?? inventoryStore.size,
+    targets_snapshot: [...targetStore.values()],
+    inventory_items: [...inventoryStore.values()],
+    finding_items: [...findingStore.values()],
     finished_at: new Date().toLocaleString("tr-TR"),
   });
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
