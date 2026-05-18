@@ -806,6 +806,22 @@ def _inventory_payload(
     *,
     generation: int,
 ) -> dict[str, object]:
+    read_access = (
+        "allowed"
+        if entry.status.value in {
+            "share_connected",
+            "directory_listable",
+            "file_readable",
+            "depth_limit_reached",
+        }
+        else "denied"
+        if entry.status.value in {
+            "share_access_denied",
+            "directory_list_denied",
+            "file_read_denied",
+        }
+        else "error"
+    )
     return {
         "generation": generation,
         "target": entry.target,
@@ -813,6 +829,8 @@ def _inventory_payload(
         "path": entry.relative_path,
         "type": entry.kind.value,
         "status": entry.status.value,
+        "read_access": read_access,
+        "write_access": "unknown",
         "size": entry.size,
         "modified_at": entry.modified_at.isoformat() if entry.modified_at else None,
         "raw_error_code": entry.error.raw_code if entry.error is not None else None,

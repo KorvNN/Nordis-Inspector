@@ -140,6 +140,10 @@ const STATUS_LABELS = {
   pattern: "Kalıp",
   high: "Yüksek",
   medium: "Orta",
+  allowed: "İzin var",
+  denied: "Reddedildi",
+  unknown: "Bilinmiyor",
+  error: "Hata",
 };
 const SCAN_STATUS_LABELS = {
   idle: "Tarama yok",
@@ -546,6 +550,8 @@ function inventoryRecord(payload) {
     path,
     type: firstValue(candidate, ["type", "item_type", "kind", "entry_type"]),
     status: firstValue(candidate, ["status", "read_status", "content_status", "scan_status"]),
+    readAccess: firstValue(candidate, ["read_access"]),
+    writeAccess: firstValue(candidate, ["write_access"]),
     size: firstValue(candidate, ["size", "size_bytes", "file_size"]),
     modifiedAt: firstValue(candidate, ["modified_at", "modified", "mtime"]),
     detail: targetErrorDetail(candidate),
@@ -566,6 +572,8 @@ function renderInventoryDetail(record) {
     ["Path", record.path],
     ["Tür", record.type],
     ["Durum", record.status],
+    ["Okuma", record.readAccess],
+    ["Yazma", record.writeAccess],
     ["Boyut", formatSize(record.size)],
     ["Değiştirilme", record.modifiedAt],
     ["Hata ayrıntısı", record.detail],
