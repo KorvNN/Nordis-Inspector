@@ -1348,9 +1348,22 @@ function loadHistoryItem(item) {
 }
 
 function saveCompletedScan(state) {
-  if (state.status !== "completed" || !state.scan_id || state.generation === lastSavedGeneration) return;
+  if (state.status !== "completed" || !state.scan_id) return;
   const history = storedHistory();
-  if (history.some((item) => item.scan_id === state.scan_id)) {
+  const existing = history.find((item) => item.scan_id === state.scan_id);
+  const snapshot = {
+    targets_snapshot: [...targetStore.values()],
+    inventory_items: [...inventoryStore.values()],
+    finding_items: [...findingStore.values()],
+  };
+  if (existing) {
+    Object.assign(existing, {
+      findings: state.finding_count ?? findingStore.size,
+      inventory: state.inventory_count ?? inventoryStore.size,
+      ...snapshot,
+    });
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
+    renderHistory();
     lastSavedGeneration = state.generation;
     return;
   }
@@ -1360,9 +1373,7 @@ function saveCompletedScan(state) {
     status: SCAN_STATUS_LABELS.completed,
     findings: state.finding_count ?? findingStore.size,
     inventory: state.inventory_count ?? inventoryStore.size,
-    targets_snapshot: [...targetStore.values()],
-    inventory_items: [...inventoryStore.values()],
-    finding_items: [...findingStore.values()],
+    ...snapshot,
     finished_at: new Date().toLocaleString("tr-TR"),
   });
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
@@ -1572,6 +1583,7 @@ async function refreshSnapshot() {
     setScanState(state);
     targetsFromSnapshot(state);
     resultsFromSnapshot(state);
+    saveCompletedScan(state);
     if (targetStore.size === 0) {
       const message = state.status === "idle"
         ? "Henüz tarama başlatılmadı."
@@ -1593,6 +1605,7 @@ function handleServerEvent(event) {
       setScanState(payload);
       targetsFromSnapshot(payload);
       resultsFromSnapshot(payload);
+      saveCompletedScan(payload);
     }
   } catch (_error) {
     // Invalid or incomplete live events are ignored; the snapshot remains authoritative.
