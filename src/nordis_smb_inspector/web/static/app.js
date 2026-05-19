@@ -77,7 +77,6 @@ const PROFILE_KEY = "nordis.scan-profile.v1";
 const SCAN_PROFILES = {
   quick: {detect_patterns: false},
   balanced: {detect_patterns: true},
-  deep: {detect_patterns: true},
 };
 
 const CCACHE_MAX_BYTES = 1024 * 1024;
@@ -1330,7 +1329,12 @@ function renderHistory() {
     summary.textContent = `${item.status} · ${item.finished_at}`;
     const counts = document.createElement("span");
     counts.className = "history-item-counts";
-    counts.textContent = `${item.findings} bulgu · ${item.inventory} envanter`;
+    const credential = item.credential ?? {};
+    const identity = credential.username || "Kullanıcı yok";
+    const domain = credential.domain ? `${credential.domain}\\${identity}` : identity;
+    const kind = credential.kind === "nt_hash" ? "NT hash" : credential.kind === "ccache" ? "CCache" : "Parola";
+    const auth = credential.auth_mode ? ` · ${credential.auth_mode}` : "";
+    counts.textContent = `${domain} · ${kind}${auth} · ${item.findings} bulgu · ${item.inventory} envanter`;
     const view = document.createElement("button");
     view.type = "button";
     view.className = "secondary-button";
@@ -1383,6 +1387,12 @@ function saveCompletedScan(state) {
     scan_id: state.scan_id,
     name: scanName.value.trim() || targets.value.trim() || "Hedefler",
     targets: targets.value.trim() || "Hedefler",
+    credential: {
+      domain: credentialDomain.value.trim() || null,
+      username: credentialUsername.value.trim() || null,
+      kind: credentialKind.value,
+      auth_mode: authMode.value,
+    },
     status: SCAN_STATUS_LABELS.completed,
     findings: state.finding_count ?? findingStore.size,
     inventory: state.inventory_count ?? inventoryStore.size,
