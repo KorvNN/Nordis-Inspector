@@ -5,6 +5,7 @@ const csrfToken = body.dataset.csrfToken;
 const origin = body.dataset.origin;
 const targets = document.querySelector("#targets");
 const scanProfile = document.querySelector("#scan-profile");
+const scanName = document.querySelector("#scan-name");
 const saveProfileButton = document.querySelector("#save-profile");
 const credentialDomain = document.querySelector("#credential-domain");
 const credentialUsername = document.querySelector("#credential-username");
@@ -1323,7 +1324,7 @@ function renderHistory() {
     row.className = "history-item";
     const title = document.createElement("strong");
     title.className = "history-item-title";
-    title.textContent = item.targets || "Hedefler";
+    title.textContent = item.name || item.targets || "Hedefler";
     const summary = document.createElement("span");
     summary.className = "history-item-summary";
     summary.textContent = `${item.status} · ${item.finished_at}`;
@@ -1380,6 +1381,7 @@ function saveCompletedScan(state) {
   }
   history.unshift({
     scan_id: state.scan_id,
+    name: scanName.value.trim() || targets.value.trim() || "Hedefler",
     targets: targets.value.trim() || "Hedefler",
     status: SCAN_STATUS_LABELS.completed,
     findings: state.finding_count ?? findingStore.size,
