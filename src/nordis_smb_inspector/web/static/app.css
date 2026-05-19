@@ -399,7 +399,7 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
 .result-group + .result-group { margin-top: 7px; }
 .history-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   align-items: center;
   gap: 12px;
   padding: 13px 15px;
@@ -410,6 +410,7 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
 .history-item + .history-item { margin-top: 8px; }
 .history-item-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-item-summary, .history-item-counts { color: var(--muted); font-size: 0.84rem; white-space: nowrap; }
+.history-delete { color: var(--danger); }
 @media (max-width: 760px) {
   .history-item { grid-template-columns: 1fr auto; }
   .history-item-summary, .history-item-counts { white-space: normal; }

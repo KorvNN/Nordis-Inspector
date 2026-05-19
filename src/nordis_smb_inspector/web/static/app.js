@@ -1335,9 +1335,20 @@ function renderHistory() {
     view.className = "secondary-button";
     view.textContent = "Görüntüle";
     view.addEventListener("click", () => loadHistoryItem(item));
-    row.append(title, summary, counts, view);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary-button history-delete";
+    remove.textContent = "Sil";
+    remove.addEventListener("click", () => deleteHistoryItem(item));
+    row.append(title, summary, counts, view, remove);
     scanHistory.append(row);
   }
+}
+
+function deleteHistoryItem(item) {
+  const history = storedHistory().filter((entry) => entry !== item);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  renderHistory();
 }
 
 function loadHistoryItem(item) {
