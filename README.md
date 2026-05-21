@@ -1,27 +1,28 @@
 # Nordis SMB Inspector
 
-Nordis SMB Inspector is a local, read-only SMB 2/3 auditing tool. It discovers
-shares, inventories accessible files, scans supported content for sensitive
-data, and streams results to a web interface.
+Nordis SMB Inspector is a local, read-only SMB 2/3 assessment tool for finding
+exposed files, weak access boundaries, and credential material across authorized
+Windows and Samba environments.
 
-Use it only on systems you are authorized to assess.
+It combines protocol-aware SMB inspection with bounded content scanning. Results
+arrive live in a local web console so operators can see what responded, what was
+accessible, what was readable, and which lines require review.
 
-## Features
+## What it does
 
-- IP address, CIDR, and hostname targets
-- Password, NT hash, and Kerberos ccache authentication
-- Kerberos-to-NTLM fallback with explicit authentication history
-- SMB dialect, signing, and encryption reporting
-- SRVSVC share discovery with explicit enumeration errors
-- Read-only share, directory, and file inventory
-- Streaming content scans without local file copies
-- Built-in wordlist and credential-pattern detection
-- PDF, Office, OpenDocument, ZIP, TAR, and GZIP inspection
-- Live target, inventory, finding, and progress views
+- Scans IPs, CIDR ranges, and hostnames on SMB/TCP 445
+- Supports password, NT hash, and Kerberos CCache authentication
+- Records Kerberos, NTLM, and fallback authentication outcomes
+- Reports SMB dialect, signing, encryption, share access, and file readability
+- Enumerates shares through SRVSVC without guessing hidden share names
+- Builds separate share, directory, and file inventory views
+- Scans readable text and bounded document/archive content without copying files locally
+- Uses an editable literal wordlist plus built-in credential-pattern rules
+- Streams progress, target states, inventory entries, and findings to the UI
+- Keeps local scan history with safe credential metadata and JSON export
 
-Share names are obtained only through SRVSVC. If enumeration fails, the target
-reports a `SHARE_ENUM_*` status and no guessed share names are attempted.
-Partial file or directory access is reported as `PARTIAL_ACCESS`.
+Nordis is intentionally read-only. It does not modify remote files, test write
+permissions, or expose a non-loopback web bind.
 
 ## Quick start
 
@@ -30,41 +31,67 @@ Partial file or directory access is reported as `PARTIAL_ACCESS`.
 ./run.sh
 ```
 
-The interface is available at <http://127.0.0.1:8765>. To use another loopback
-port:
+Open <http://127.0.0.1:8765>. To use another local port:
 
 ```bash
 ./run.sh --port 9000
 ```
 
-The server does not expose a non-loopback bind option.
+Use Nordis only against systems and data you are authorized to assess.
+
+## Local SMB lab
+
+On CachyOS/Arch, the repository includes a disposable Samba fixture:
+
+```bash
+sudo ./scripts/setup-local-samba-lab.sh
+```
+
+The fixture uses synthetic data and creates `Public` and access-denied `Finance`
+shares. The credentials printed by the script are intended only for this lab.
+
+For a rootless protocol smoke test:
+
+```bash
+.venv/bin/python scripts/run-local-smb-smoke.py
+```
+
+See [the integration lab guide](docs/TEST_LAB.md) for Windows, Kerberos, signing,
+encryption, and access-denial scenarios.
+
+## Detection model
+
+The scanner currently supports:
+
+- Literal, Unicode case-insensitive wordlist matching
+- Built-in credential-pattern rules with rule IDs, categories, and confidence
+- Optional built-in pattern detection
+- Additional terms entered per scan, including comma- or newline-separated values
+
+User-supplied regular expressions, user-configurable category rule packs, multiple
+selectable wordlists, case-sensitive matching, and whole-word matching are not
+currently exposed by the web panel. The matching engine has some lower-level
+support for boundary and case options, but those options are not part of the web
+scan contract yet.
 
 ## Development
 
 ```bash
 .venv/bin/pip install -e '.[dev]'
 ./scripts/check.sh
-.venv/bin/python scripts/run-local-smb-smoke.py
 ```
 
-The smoke test starts a temporary SMB server on loopback and exercises real SMB2,
-NTLM, SRVSVC discovery, file walking, and content detection without root or internet
-access. Windows, Kerberos, signing, and access-denial behavior require the isolated
-integration lab.
-
-Source checkouts use
-[`wordlists/content/default-sensitive.txt`](wordlists/content/default-sensitive.txt).
-Wheel installations create an editable copy under the user's XDG configuration
-directory on first use.
+The full test suite covers SMB contracts, authentication paths, content parsing,
+web events, access outcomes, and the local inspection workflow.
 
 ## Documentation
 
-- [Scope and behavior](docs/SCOPE.md)
 - [Detection model](docs/DETECTION.md)
+- [Scope and behavior](docs/SCOPE.md)
 - [SMB architecture](docs/TECH_SMB.md)
 - [Web architecture](docs/TECH_WEB.md)
 - [Isolated integration lab](docs/TEST_LAB.md)
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+MIT License. See [LICENSE](LICENSE).

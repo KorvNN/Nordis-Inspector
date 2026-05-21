@@ -55,7 +55,13 @@ than proof that a live secret exists.
 
 The scan form can generate literal search-term variants from supplied roots. Generated
 terms are added only to the current scan's additional terms; they do not modify the
-saved default wordlist.
+saved default wordlist. The web panel currently exposes one editable content list.
+
+The following matching controls are deliberately not part of the current web
+contract: user-supplied regular expressions, selectable rule-category packs,
+multiple wordlist selection, case-sensitive matching, and whole-word matching.
+The lower-level text matcher has case and word-boundary options for future use, but
+the scan configuration does not expose them yet.
 
 ## File processing
 
