@@ -4,9 +4,7 @@ const body = document.body;
 const csrfToken = body.dataset.csrfToken;
 const origin = body.dataset.origin;
 const targets = document.querySelector("#targets");
-const scanProfile = document.querySelector("#scan-profile");
 const scanName = document.querySelector("#scan-name");
-const saveProfileButton = document.querySelector("#save-profile");
 const credentialDomain = document.querySelector("#credential-domain");
 const credentialUsername = document.querySelector("#credential-username");
 const credentialUsernameLabel = document.querySelector("#credential-username-label");
@@ -73,11 +71,6 @@ let latestGeneration = null;
 let lastSavedGeneration = null;
 
 const HISTORY_KEY = "nordis.scan-history.v1";
-const PROFILE_KEY = "nordis.scan-profile.v1";
-const SCAN_PROFILES = {
-  quick: {detect_patterns: false},
-  balanced: {detect_patterns: true},
-};
 
 const CCACHE_MAX_BYTES = 1024 * 1024;
 const WORDLIST_MAX_BYTES = 1024 * 1024;
@@ -1351,6 +1344,7 @@ function renderHistory() {
 }
 
 function deleteHistoryItem(item) {
+  if (!window.confirm("Bu tarama geçmişten silinsin mi?")) return;
   const history = storedHistory().filter((entry) => entry !== item);
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
   renderHistory();
@@ -1417,11 +1411,6 @@ function exportResults() {
   link.download = `nordis-scan-${new Date().toISOString().replaceAll(":", "-")}.json`;
   link.click();
   URL.revokeObjectURL(link.href);
-}
-
-function applyScanProfile() {
-  const profile = SCAN_PROFILES[scanProfile.value];
-  if (profile) detectPatternsInput.checked = profile.detect_patterns;
 }
 
 async function startScan() {
@@ -1711,26 +1700,5 @@ scanEvents.addEventListener("resync.required", async () => {
   await refreshResultPanels();
 });
 
-scanProfile.addEventListener("change", applyScanProfile);
-detectPatternsInput.addEventListener("change", () => {
-  if (scanProfile.value !== "custom") scanProfile.value = "custom";
-});
-saveProfileButton.addEventListener("click", () => {
-  localStorage.setItem(PROFILE_KEY, JSON.stringify({
-    profile: scanProfile.value,
-    detect_patterns: detectPatternsInput.checked,
-  }));
-  saveProfileButton.textContent = "Kaydedildi";
-  setTimeout(() => { saveProfileButton.textContent = "Ayarları hatırla"; }, 1200);
-});
 exportResultsButton.addEventListener("click", exportResults);
 renderHistory();
-try {
-  const saved = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? "null");
-  if (saved && typeof saved === "object") {
-    scanProfile.value = saved.profile ?? "balanced";
-    detectPatternsInput.checked = saved.detect_patterns !== false;
-  }
-} catch (_error) {
-  // Invalid local preferences are ignored.
-}
