@@ -194,6 +194,32 @@ const ERROR_MESSAGE_LABELS = {
   "The visible file could not be opened for reading.": "Görünen dosya okumak için açılamadı.",
 };
 const LANGUAGE_KEY = "nordis.dashboard-language";
+let currentLanguage = "tr";
+const EN_STATUS_LABELS = {
+  port_open: "Port 445 open", timeout_no_response: "No response / timeout",
+  connection_refused: "Connection refused", network_unreachable: "Network unreachable",
+  authenticated: "Authenticated", auth_failed: "Authentication failed",
+  access_denied: "Access denied", share_enum_denied: "Share listing denied",
+  share_enum_unavailable: "Share listing unavailable", share_enum_failed: "Share discovery failed",
+  partial_access: "Partial access", completed: "Completed", cancelled: "Cancelled",
+  failed: "Failed", high: "High", medium: "Medium", low: "Low",
+  allowed: "Allowed", denied: "Denied", unknown: "Unknown", error: "Error",
+  wordlist: "Wordlist match", pattern: "Pattern match",
+  security_active_required: "Active · Required", security_active: "Active",
+  security_required: "Required", security_supported: "Supported", security_unsupported: "Unsupported",
+};
+const EN_PHASE_LABELS = {
+  preparing_targets: "Preparing targets", connectivity: "TCP/445 check",
+  inspection: "SMB and content scan", authentication: "Authentication",
+  share_discovery: "Share discovery", file_inventory: "File inventory",
+  content_scan: "Content scan", cancelling: "Cancelling", cancelled: "Cancelled",
+  completed: "Completed", failed: "Failed",
+};
+const EN_SCAN_STATUS_LABELS = {idle: "No scan", running: "Running", cancelling: "Cancelling", cancelled: "Cancelled", completed: "Completed", failed: "Failed"};
+
+function localizedMap(map, englishMap, key) {
+  return currentLanguage === "en" ? (englishMap[key] ?? map[key] ?? key) : (map[key] ?? key);
+}
 const LANGUAGE_TEXT = {
   en: {
     "Yeni tarama": "New scan",
@@ -351,12 +377,18 @@ function activateResultTab(name) {
 function displayValue(value) {
   if (value === null || value === undefined || value === "") return "—";
   const raw = String(value);
-  return STATUS_LABELS[raw.toLowerCase()] ?? raw;
+  return localizedMap(STATUS_LABELS, EN_STATUS_LABELS, raw.toLowerCase());
 }
 
 function findingLabel(value, labels) {
   if (value === null || value === undefined || value === "") return "—";
   const raw = String(value);
+  if (currentLanguage === "en") {
+    const english = labels === FINDING_METHOD_LABELS
+      ? {wordlist: "Wordlist match", pattern: "Pattern match"}
+      : {"secret-assignment": "Secret assignment"};
+    return english[raw.toLowerCase()] ?? labels[raw.toLowerCase()] ?? raw;
+  }
   return labels[raw.toLowerCase()] ?? raw;
 }
 
@@ -1449,7 +1481,7 @@ function saveCompletedScan(state) {
       kind: credentialKind.value,
       auth_mode: authMode.value,
     },
-    status: SCAN_STATUS_LABELS.completed,
+    status: localizedMap(SCAN_STATUS_LABELS, EN_SCAN_STATUS_LABELS, "completed"),
     findings: state.finding_count ?? findingStore.size,
     inventory: state.inventory_count ?? inventoryStore.size,
     ...snapshot,
@@ -1554,8 +1586,10 @@ function setScanState(state) {
   const phase = String(state.progress?.phase ?? "").toLowerCase();
   const terminal = ["completed", "cancelled", "failed"].includes(status);
   scanPhase.textContent = terminal
-    ? SCAN_STATUS_LABELS[status]
-    : PHASE_LABELS[phase] ?? SCAN_STATUS_LABELS[status] ?? "Bilinmiyor";
+    ? localizedMap(SCAN_STATUS_LABELS, EN_SCAN_STATUS_LABELS, status)
+    : localizedMap(PHASE_LABELS, EN_PHASE_LABELS, phase)
+      ?? localizedMap(SCAN_STATUS_LABELS, EN_SCAN_STATUS_LABELS, status)
+      ?? (currentLanguage === "en" ? "Unknown" : "Bilinmiyor");
 
   if (state.progress) {
     const percent = state.progress.phase_percent;
@@ -1595,7 +1629,7 @@ function setScanState(state) {
   cancelScanButton.disabled = !active || status === "cancelling";
   if (!active && status !== "idle") {
     const kind = status === "failed" ? "error" : "ready";
-    setScopeState(SCAN_STATUS_LABELS[status] ?? "Bitti", kind);
+    setScopeState(localizedMap(SCAN_STATUS_LABELS, EN_SCAN_STATUS_LABELS, status), kind);
   }
 }
 
@@ -1764,7 +1798,8 @@ scanEvents.addEventListener("resync.required", async () => {
 
 exportResultsButton.addEventListener("click", exportResults);
 renderHistory();
-const savedLanguage = localStorage.getItem(LANGUAGE_KEY) ?? "tr";
+  const savedLanguage = localStorage.getItem(LANGUAGE_KEY) ?? "tr";
+  currentLanguage = savedLanguage;
 languageSelect.value = savedLanguage;
 if (savedLanguage !== "tr") applyLanguage(savedLanguage);
 languageSelect.addEventListener("change", () => {
