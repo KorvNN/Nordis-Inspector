@@ -39,26 +39,6 @@ Open <http://127.0.0.1:8765>. To use another local port:
 
 Use Nordis only against systems and data you are authorized to assess.
 
-## Local SMB lab
-
-On CachyOS/Arch, the repository includes a disposable Samba fixture:
-
-```bash
-sudo ./scripts/setup-local-samba-lab.sh
-```
-
-The fixture uses synthetic data and creates `Public` and access-denied `Finance`
-shares. The credentials printed by the script are intended only for this lab.
-
-For a rootless protocol smoke test:
-
-```bash
-.venv/bin/python scripts/run-local-smb-smoke.py
-```
-
-See [the integration lab guide](docs/TEST_LAB.md) for Windows, Kerberos, signing,
-encryption, and access-denial scenarios.
-
 ## Detection model
 
 The scanner currently supports:
@@ -73,16 +53,6 @@ selectable wordlists, case-sensitive matching, and whole-word matching are not
 currently exposed by the web panel. The matching engine has some lower-level
 support for boundary and case options, but those options are not part of the web
 scan contract yet.
-
-## Development
-
-```bash
-.venv/bin/pip install -e '.[dev]'
-./scripts/check.sh
-```
-
-The full test suite covers SMB contracts, authentication paths, content parsing,
-web events, access outcomes, and the local inspection workflow.
 
 ## Documentation
 
