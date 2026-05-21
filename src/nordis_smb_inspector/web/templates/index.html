@@ -10,6 +10,13 @@
 <body data-csrf-token="{{ csrf_token }}" data-origin="{{ app_origin }}">
   <header class="topbar">
     <h1>NordisGlobal SMB Inspector</h1>
+    <label class="language-switcher" for="language-select">
+      <span class="visually-hidden">Language</span>
+      <select id="language-select" aria-label="Language">
+        <option value="tr">TR</option>
+        <option value="en">EN</option>
+      </select>
+    </label>
   </header>
 
   <main class="app-shell">

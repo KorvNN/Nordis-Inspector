@@ -1,6 +1,7 @@
 "use strict";
 
 const body = document.body;
+const languageSelect = document.querySelector("#language-select");
 const csrfToken = body.dataset.csrfToken;
 const origin = body.dataset.origin;
 const targets = document.querySelector("#targets");
@@ -192,6 +193,67 @@ const ERROR_MESSAGE_LABELS = {
   "The file is visible but read access was denied.": "Dosya görünüyor fakat okuma erişimi reddedildi.",
   "The visible file could not be opened for reading.": "Görünen dosya okumak için açılamadı.",
 };
+const LANGUAGE_KEY = "nordis.dashboard-language";
+const LANGUAGE_TEXT = {
+  en: {
+    "Yeni tarama": "New scan",
+    "Bekliyor": "Idle",
+    "IP, CIDR veya hostname": "IP, CIDR, or hostname",
+    "Tarama adı": "Scan name",
+    "Örn. Finans sunucuları": "e.g. Finance servers",
+    "Virgül veya yeni satırla ayır.": "Separate with commas or new lines.",
+    "Kimlik bilgisi": "Credentials",
+    "Kullanıcı": "Username",
+    "Credential türü": "Credential type",
+    "Parola": "Password",
+    "CCache dosyası": "CCache file",
+    "Kimlik doğrulama": "Authentication",
+    "Yalnız Kerberos": "Kerberos only",
+    "Yalnız NTLM": "NTLM only",
+    "İçerik arama": "Content search",
+    "Wordlist yönetimi": "Wordlist management",
+    "Ek arama terimleri": "Additional search terms",
+    "Terim üret": "Generate terms",
+    "Kök ifadeler": "Root expressions",
+    "Credential alanları": "Credential fields",
+    "Ortam adları": "Environment names",
+    "Ek terimleri üret": "Generate terms",
+    "Veri Kalıplarını Aramaya Dahil Et": "Include built-in data patterns",
+    "Taramayı başlat": "Start scan",
+    "İptal et": "Cancel",
+    "Tarama yok": "No scan",
+    "Envanter": "Inventory",
+    "Bulgu": "Finding",
+    "Faz": "Phase",
+    "Hedefler": "Targets",
+    "Bulgular": "Findings",
+    "Geçmiş": "History",
+    "Sonuçları JSON indir": "Download results as JSON",
+    "Görüntüle": "View",
+    "Sil": "Delete",
+    "Share'ler": "Shares",
+    "Dizinler": "Directories",
+    "Dosyalar": "Files",
+    "Filtre": "Filter",
+  },
+};
+
+function applyLanguage(language) {
+  const dictionary = LANGUAGE_TEXT[language];
+  if (!dictionary) return;
+  document.documentElement.lang = language;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const translated = dictionary[node.nodeValue.trim()];
+    if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated);
+  }
+  for (const element of document.querySelectorAll("[placeholder]")) {
+    if (dictionary[element.getAttribute("placeholder")]) {
+      element.setAttribute("placeholder", dictionary[element.getAttribute("placeholder")]);
+    }
+  }
+}
 
 function textCell(value, className = "") {
   const cell = document.createElement("td");
@@ -1702,3 +1764,10 @@ scanEvents.addEventListener("resync.required", async () => {
 
 exportResultsButton.addEventListener("click", exportResults);
 renderHistory();
+const savedLanguage = localStorage.getItem(LANGUAGE_KEY) ?? "tr";
+languageSelect.value = savedLanguage;
+if (savedLanguage !== "tr") applyLanguage(savedLanguage);
+languageSelect.addEventListener("change", () => {
+  localStorage.setItem(LANGUAGE_KEY, languageSelect.value);
+  window.location.reload();
+});
