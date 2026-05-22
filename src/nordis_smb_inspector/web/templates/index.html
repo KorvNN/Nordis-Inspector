@@ -11,7 +11,12 @@
   <header class="topbar">
     <h1>NordisGlobal SMB Inspector</h1>
     <label class="language-switcher" for="language-select">
-      <span aria-hidden="true">🌐</span><span class="visually-hidden">Language</span>
+      <svg class="language-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="1.8">
+        <circle cx="12" cy="12" r="9"></circle>
+        <path d="M3 12h18M12 3c2.2 2.5 3.3 5.5 3.3 9S14.2 18.5 12 21M12 3C9.8 5.5 8.7 8.5 8.7 12S9.8 18.5 12 21"></path>
+      </svg>
+      <span class="visually-hidden">Language</span>
       <select id="language-select" aria-label="Language">
         <option value="tr">TR</option>
         <option value="en">EN</option>
@@ -27,10 +32,10 @@
         </div>
       </div>
 
-      <label for="targets">IP, CIDR veya hostname</label>
       <label for="scan-name">Tarama adı</label>
       <input id="scan-name" type="text" autocomplete="off" maxlength="80"
         placeholder="Örn. Finans sunucuları">
+      <label for="targets">IP, CIDR veya hostname</label>
       <textarea id="targets" rows="5" spellcheck="false"
         placeholder="example.com, files.example.com&#10;192.0.2.10"></textarea>
       <p class="hint">Virgül veya yeni satırla ayır.</p>

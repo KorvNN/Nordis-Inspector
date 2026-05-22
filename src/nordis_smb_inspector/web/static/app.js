@@ -68,7 +68,6 @@ let selectedTargetKey = null;
 let selectedInventoryKey = null;
 let selectedFindingKey = null;
 let latestGeneration = null;
-let lastSavedGeneration = null;
 
 const HISTORY_KEY = "nordis.scan-history.v1";
 
@@ -120,6 +119,16 @@ const STATUS_LABELS = {
   share_enum_denied: "Share listesi reddedildi",
   share_enum_unavailable: "Share listesi alınamıyor",
   share_enum_failed: "Share keşfi başarısız",
+  share_connected: "Share erişilebilir",
+  share_access_denied: "Share erişimi reddedildi",
+  non_file_share: "Dosya share'i değil",
+  directory_listable: "Dizin listelenebilir",
+  directory_list_denied: "Dizin listeleme reddedildi",
+  depth_limit_reached: "Derinlik sınırına ulaşıldı",
+  file_readable: "Dosya okunabilir",
+  file_read_denied: "Dosya okuma reddedildi",
+  sharing_violation: "Paylaşım ihlali",
+  read_error: "Okuma hatası",
   partial_access: "Kısmi erişim",
   security_active_required: "Aktif · Zorunlu",
   security_active: "Aktif",
@@ -193,7 +202,13 @@ const ERROR_MESSAGE_LABELS = {
   "The visible file could not be opened for reading.": "Görünen dosya okumak için açılamadı.",
 };
 const LANGUAGE_KEY = "nordis.dashboard-language";
-let currentLanguage = "tr";
+let currentLanguage = (() => {
+  try {
+    return localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "tr";
+  } catch (_error) {
+    return "tr";
+  }
+})();
 const EN_STATUS_LABELS = {
   port_open: "Port 445 open", timeout_no_response: "No response / timeout",
   connection_refused: "Connection refused", network_unreachable: "Network unreachable",
@@ -206,6 +221,19 @@ const EN_STATUS_LABELS = {
   wordlist: "Wordlist match", pattern: "Pattern match",
   security_active_required: "Active · Required", security_active: "Active",
   security_required: "Required", security_supported: "Supported", security_unsupported: "Unsupported",
+  share_connected: "Share accessible", share_access_denied: "Share access denied",
+  non_file_share: "Non-file share", directory_listable: "Directory listable",
+  directory_list_denied: "Directory listing denied", depth_limit_reached: "Depth limit reached",
+  file_readable: "File readable", file_read_denied: "File read denied",
+  sharing_violation: "Sharing violation", read_error: "Read error",
+};
+const EN_CATEGORY_LABELS = {
+  "Cloud / SaaS": "Cloud / SaaS", "Oturum tokenı": "Session token",
+  "Kriptografik anahtar": "Cryptographic key", "Kimlik bilgisi": "Credential",
+  Veritabanı: "Database", Yapılandırma: "Configuration", "Windows / AD": "Windows / AD",
+  "Credential artifact": "Credential artifact", "Source control": "Source control",
+  "Ödeme servisi": "Payment service", "Developer tooling": "Developer tooling",
+  Infrastructure: "Infrastructure", "Container tooling": "Container tooling",
 };
 const EN_PHASE_LABELS = {
   preparing_targets: "Preparing targets", connectivity: "TCP/445 check",
@@ -215,6 +243,10 @@ const EN_PHASE_LABELS = {
   completed: "Completed", failed: "Failed",
 };
 const EN_SCAN_STATUS_LABELS = {idle: "No scan", running: "Running", cancelling: "Cancelling", cancelled: "Cancelled", completed: "Completed", failed: "Failed"};
+const EN_STATUS_MESSAGES = {
+  idle: "No scan has been started.", cancelling: "Cancelling scan.",
+  cancelled: "Scan cancelled.", completed: "Scan completed.", failed: "Scan failed.",
+};
 const DETAIL_LABELS = {
   "Kimlik doğrulama": "Authentication", "Son durum": "Final status",
   "Denenen share": "Shares probed", "Erişilen share": "Shares accessible",
@@ -229,7 +261,7 @@ const DETAIL_LABELS = {
 };
 
 function localizedMap(map, englishMap, key) {
-  return currentLanguage === "en" ? (englishMap[key] ?? map[key] ?? key) : (map[key] ?? key);
+  return currentLanguage === "en" ? englishMap[key] : map[key];
 }
 const LANGUAGE_TEXT = {
   en: {
@@ -241,12 +273,14 @@ const LANGUAGE_TEXT = {
     "Virgül veya yeni satırla ayır.": "Separate with commas or new lines.",
     "Kimlik bilgisi": "Credentials",
     "Kullanıcı": "Username",
+    "Kullanıcı (isteğe bağlı)": "Username (optional)",
     "Credential türü": "Credential type",
     "Parola": "Password",
     "CCache dosyası": "CCache file",
     "Kimlik doğrulama": "Authentication",
     "Yalnız Kerberos": "Kerberos only",
     "Yalnız NTLM": "NTLM only",
+    "Auto (Kerberos öncelikli)": "Auto (Kerberos preferred)",
     "İçerik arama": "Content search",
     "Wordlist yönetimi": "Wordlist management",
     "Ek arama terimleri": "Additional search terms",
@@ -259,6 +293,7 @@ const LANGUAGE_TEXT = {
     "Taramayı başlat": "Start scan",
     "İptal et": "Cancel",
     "Tarama yok": "No scan",
+    "Yeni bir tarama başlatılmadı.": "No scan has been started.",
     "Envanter": "Inventory",
     "Bulgu": "Finding",
     "Faz": "Phase",
@@ -272,8 +307,81 @@ const LANGUAGE_TEXT = {
     "Dizinler": "Directories",
     "Dosyalar": "Files",
     "Filtre": "Filter",
+    "Son durum": "Final status",
+    "Tamamlanan taramalar bu tarayıcıda saklanır.": "Completed scans are stored in this browser.",
+    "İçerik arama terimleri": "Content search terms",
+    "TXT içe aktar": "Import TXT",
+    "Kaydet": "Save",
+    "0 hedef": "0 targets",
+    "0 kayıt": "0 entries",
+    "0 bulgu": "0 findings",
+    "— kayıt": "— entries",
+    "Ayrıntı için bir hedef seç.": "Select a target to view details.",
+    "Ayrıntı için bir kayıt seç.": "Select an entry to view details.",
+    "Tam satır için bir bulgu seç.": "Select a finding to view the full line.",
+    "Henüz tarama başlatılmadı.": "No scan has been started.",
+    "Hedef sonuçları bekleniyor.": "Waiting for target results.",
+    "Hedef durumları bekleniyor.": "Waiting for target statuses.",
+    "Bu filtreyle eşleşen hedef yok.": "No targets match this filter.",
+    "Henüz envanter yok.": "No inventory yet.",
+    "Filtreyle eşleşen kayıt yok.": "No entries match this filter.",
+    "Henüz bulgu yok.": "No findings yet.",
+    "Filtreyle eşleşen bulgu yok.": "No findings match this filter.",
+    "Henüz kayıtlı tarama yok.": "No saved scans yet.",
+    "Kullanıcı yok": "No username",
+    "Bu tarama geçmişten silinsin mi?": "Delete this scan from history?",
+    "Dosya": "File",
+    "Dizin": "Directory",
+    "Share": "Share",
+    "Kayıt": "Entry",
+    "kayıt": "entries",
+    "bulgu": "findings",
+    "Yanıt veren": "Responding",
+    "TCP açık": "TCP open",
+    "SMB hazır": "SMB ready",
+    "Doğrulandı": "Authenticated",
+    "Sorunlu": "Needs attention",
+    "Tarama çalışma alanı": "Scan workspace",
+    "Tarama ilerlemesi": "Scan progress",
+    "Tarama sonuçları": "Scan results",
+    "Hedef durumu filtreleri": "Target status filters",
+    "Hedef ayrıntısı": "Target details",
+    "Envanter ayrıntısı": "Inventory details",
+    "Bulgu ayrıntısı": "Finding details",
+    "Kapat": "Close",
+    "SMB sürümü": "SMB dialect",
+    "İmzalama": "Signing",
+    "Şifreleme": "Encryption",
+    "Yükleniyor": "Loading",
+    "Liste yüklenemedi": "Could not load the list",
+    "Kaydediliyor": "Saving",
+    "Kaydedildi": "Saved",
+    "Liste kaydedilemedi": "Could not save the list",
+    "İçe aktarıldı · kaydedilmedi": "Imported · not saved",
+    "Kök ifade girin.": "Enter a root expression.",
+    "Yeni terim yok.": "No new terms.",
+    "Bağlantı": "Connection",
+    "İptal": "Cancellation",
+    "Yerel panel yanıt vermedi.": "The local dashboard did not respond.",
+    "Yalnız .txt dosyası seçilebilir": "Only a .txt file can be selected",
+    "TXT dosyası en fazla 1 MiB olabilir": "The TXT file can be at most 1 MiB",
+    "TXT dosyası okunamadı": "The TXT file could not be read",
+    "CCache dosyası seçilmelidir.": "Select a CCache file.",
+    "Yalnız .ccache uzantılı dosya seçilebilir.": "Only a .ccache file can be selected.",
+    "CCache dosyası boş olamaz.": "The CCache file cannot be empty.",
+    "CCache dosyası en fazla 1 MiB olabilir.": "The CCache file can be at most 1 MiB.",
+    "CCache dosyası okunamadı.": "The CCache file could not be read.",
   },
 };
+
+function uiText(value) {
+  if (currentLanguage !== "en") return value;
+  return LANGUAGE_TEXT.en[value] ?? DETAIL_LABELS[value] ?? value;
+}
+
+function numberLocale() {
+  return currentLanguage === "en" ? "en-US" : "tr-TR";
+}
 
 function applyLanguage(language) {
   const dictionary = LANGUAGE_TEXT[language];
@@ -285,9 +393,12 @@ function applyLanguage(language) {
     const translated = dictionary[node.nodeValue.trim()];
     if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated);
   }
-  for (const element of document.querySelectorAll("[placeholder]")) {
-    if (dictionary[element.getAttribute("placeholder")]) {
-      element.setAttribute("placeholder", dictionary[element.getAttribute("placeholder")]);
+  for (const attribute of ["placeholder", "aria-label", "title"]) {
+    for (const element of document.querySelectorAll(`[${attribute}]`)) {
+      const value = element.getAttribute(attribute);
+      if (dictionary[value]) {
+        element.setAttribute(attribute, dictionary[value]);
+      }
     }
   }
 }
@@ -304,7 +415,7 @@ function textCell(value, className = "") {
 function setSelectionPlaceholder(container, message) {
   const placeholder = document.createElement("p");
   placeholder.className = "selection-placeholder";
-  placeholder.textContent = message;
+  placeholder.textContent = uiText(message);
   container.replaceChildren(placeholder);
 }
 
@@ -315,7 +426,7 @@ function detailList(fields) {
     const group = document.createElement("div");
     const term = document.createElement("dt");
     const description = document.createElement("dd");
-    term.textContent = currentLanguage === "en" ? (DETAIL_LABELS[label] ?? label) : label;
+    term.textContent = uiText(label);
     description.className = className;
     description.textContent = displayValue(value);
     group.append(term, description);
@@ -388,7 +499,7 @@ function activateResultTab(name) {
 function displayValue(value) {
   if (value === null || value === undefined || value === "") return "—";
   const raw = String(value);
-  return localizedMap(STATUS_LABELS, EN_STATUS_LABELS, raw.toLowerCase());
+  return localizedMap(STATUS_LABELS, EN_STATUS_LABELS, raw.toLowerCase()) ?? raw;
 }
 
 function findingLabel(value, labels) {
@@ -405,11 +516,17 @@ function findingLabel(value, labels) {
 
 function confidenceLabel(value) {
   const level = displayValue(value);
-  const explanations = {
-    "Yüksek": "Güçlü ve belirgin credential kalıbı.",
-    "Orta": "Şüpheli kalıp; bağlamla doğrulanmalı.",
-    "Düşük": "Zayıf sinyal; yanlış eşleşme olabilir.",
-  };
+  const explanations = currentLanguage === "en"
+    ? {
+        High: "Strong, specific credential pattern.",
+        Medium: "Suspicious pattern; verify it in context.",
+        Low: "Weak signal; may be a false positive.",
+      }
+    : {
+        Yüksek: "Güçlü ve belirgin credential kalıbı.",
+        Orta: "Şüpheli kalıp; bağlamla doğrulanmalı.",
+        Düşük: "Zayıf sinyal; yanlış eşleşme olabilir.",
+      };
   return explanations[level] ? `${level} · ${explanations[level]}` : level;
 }
 
@@ -442,18 +559,18 @@ function resultArray(payload, names) {
 }
 
 function normalizedSearch(value) {
-  return displayValue(value).toLocaleLowerCase("tr-TR");
+  return displayValue(value).toLocaleLowerCase(numberLocale());
 }
 
 function recordMatchesSearch(record, query, fields) {
-  const needle = query.trim().toLocaleLowerCase("tr-TR");
+  const needle = query.trim().toLocaleLowerCase(numberLocale());
   if (!needle) return true;
   return fields.some((field) => normalizedSearch(record[field]).includes(needle));
 }
 
 function formatSize(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
-    return `${value.toLocaleString("tr-TR")} B`;
+    return `${value.toLocaleString(numberLocale())} B`;
   }
   return value;
 }
@@ -481,27 +598,32 @@ function targetRecord(payload) {
 
   return {
     ip: ip.trim(),
-    tcp: firstValue(candidate, ["tcp_status", "tcp_445_status", "connectivity_status"]),
-    smb: firstValue(candidate, ["smb_status", "negotiation_status", "smb_dialect"]),
-    signing: securityFeatureValue(candidate, "signing"),
-    encryption: securityFeatureValue(candidate, "encryption"),
+    tcp: firstValue(candidate, ["tcp", "tcp_status", "tcp_445_status", "connectivity_status"]),
+    smb: firstValue(candidate, ["smb", "smb_status", "negotiation_status", "smb_dialect"]),
+    signing: firstValue(candidate, ["signing"]) ?? securityFeatureValue(candidate, "signing"),
+    encryption: firstValue(candidate, ["encryption"])
+      ?? securityFeatureValue(candidate, "encryption"),
     authentication: targetAuthenticationValue(candidate),
-    lastStatus: firstValue(candidate, ["last_status", "final_status", "status", "last_stage"]),
-    detail: targetErrorDetail(candidate) ?? targetErrorDetail(payload),
-    sharesProbed: firstValue(candidate, ["shares_probed"]),
-    sharesAccessible: firstValue(candidate, ["shares_accessible"]),
-    filesSeen: firstValue(candidate, ["files_seen"]),
-    filesScanned: firstValue(candidate, ["files_scanned"]),
-    unreadableFiles: firstValue(candidate, ["unreadable_files"]),
+    lastStatus: firstValue(candidate, ["lastStatus", "last_status", "final_status", "status", "last_stage"]),
+    detail: firstValue(candidate, ["detail"])
+      ?? targetErrorDetail(candidate) ?? targetErrorDetail(payload),
+    sharesProbed: firstValue(candidate, ["sharesProbed", "shares_probed"]),
+    sharesAccessible: firstValue(candidate, ["sharesAccessible", "shares_accessible"]),
+    filesSeen: firstValue(candidate, ["filesSeen", "files_seen"]),
+    filesScanned: firstValue(candidate, ["filesScanned", "files_scanned"]),
+    unreadableFiles: firstValue(candidate, ["unreadableFiles", "unreadable_files"]),
+    errorName: firstValue(candidate, ["errorName", "error_name"]),
+    rawErrorCode: firstValue(candidate, ["rawErrorCode", "raw_error_code"]),
+    errorMessage: firstValue(candidate, ["errorMessage", "error_message"]),
   };
 }
 
 function renderTargetDetail(record) {
   renderSelectionDetail(targetSelectionDetail, record.ip, [
     ["TCP/445", record.tcp],
-    ["SMB dialect", record.smb],
-    ["Signing", record.signing],
-    ["Encryption", record.encryption],
+    ["SMB sürümü", record.smb],
+    ["İmzalama", record.signing],
+    ["Şifreleme", record.encryption],
     ["Kimlik doğrulama", record.authentication],
     ["Son durum", record.lastStatus],
     ["Denenen share", record.sharesProbed],
@@ -509,20 +631,32 @@ function renderTargetDetail(record) {
     ["Görülen dosya", record.filesSeen],
     ["Taranan dosya", record.filesScanned],
     ["Okunamayan dosya", record.unreadableFiles],
-    ["Hata ayrıntısı", record.detail],
+    ["Hata ayrıntısı", targetErrorDetail(record) ?? record.detail],
   ]);
 }
 
 function targetAuthenticationValue(record) {
+  const normalized = firstValue(record, ["authentication"]);
+  if (normalized !== null) {
+    return currentLanguage === "en"
+      ? String(normalized).replace(/^Doğrulandı/u, "Authenticated")
+      : String(normalized).replace(/^Authenticated/u, "Doğrulandı");
+  }
   const method = firstValue(record, ["authentication_method", "auth_method"]);
   if (method !== null) return `${currentLanguage === "en" ? "Authenticated" : "Doğrulandı"} · ${displayValue(method)}`;
   return firstValue(record, ["authentication_status", "auth_status"]);
 }
 
 function targetErrorDetail(record) {
-  const values = [record.error_name, record.raw_error_code, record.error_message]
+  const values = [
+    firstValue(record, ["errorName", "error_name"]),
+    firstValue(record, ["rawErrorCode", "raw_error_code"]),
+    firstValue(record, ["errorMessage", "error_message"]),
+  ]
     .filter((value) => value !== null && value !== undefined && value !== "")
-    .map((value) => ERROR_MESSAGE_LABELS[String(value)] ?? String(value));
+    .map((value) => currentLanguage === "tr"
+      ? ERROR_MESSAGE_LABELS[String(value)] ?? String(value)
+      : String(value));
   return [...new Set(values)].join(" · ") || null;
 }
 
@@ -559,11 +693,11 @@ function targetMatches(record, filter) {
 
 function updateTargetCounters() {
   const records = [...targetStore.values()];
-  targetWorkspaceCount.textContent = records.length.toLocaleString("tr-TR");
+  targetWorkspaceCount.textContent = records.length.toLocaleString(numberLocale());
   for (const element of targetCountElements) {
     const filter = element.dataset.targetCount;
     const count = records.filter((record) => targetMatches(record, filter)).length;
-    element.textContent = count.toLocaleString("tr-TR");
+    element.textContent = count.toLocaleString(numberLocale());
   }
 }
 
@@ -572,10 +706,10 @@ function setTargetTableMessage(message) {
   row.className = "table-empty-row";
   const cell = document.createElement("td");
   cell.colSpan = 5;
-  cell.textContent = message;
+  cell.textContent = uiText(message);
   row.append(cell);
   targetStatusBody.replaceChildren(row);
-  visibleTargetCount.textContent = "0 hedef";
+  visibleTargetCount.textContent = currentLanguage === "en" ? "0 targets" : "0 hedef";
 }
 
 function renderTargetRows(emptyMessage = "Henüz tarama başlatılmadı.") {
@@ -617,7 +751,9 @@ function renderTargetRows(emptyMessage = "Henüz tarama başlatılmadı.") {
       : emptyMessage;
     setTargetTableMessage(message);
   } else {
-    visibleTargetCount.textContent = `${visible.toLocaleString("tr-TR")} hedef`;
+    visibleTargetCount.textContent = currentLanguage === "en"
+      ? `${visible.toLocaleString(numberLocale())} targets`
+      : `${visible.toLocaleString(numberLocale())} hedef`;
   }
   updateTargetCounters();
 }
@@ -672,11 +808,14 @@ function inventoryRecord(payload) {
     path,
     type: firstValue(candidate, ["type", "item_type", "kind", "entry_type"]),
     status: firstValue(candidate, ["status", "read_status", "content_status", "scan_status"]),
-    readAccess: firstValue(candidate, ["read_access"]),
-    writeAccess: firstValue(candidate, ["write_access"]),
+    readAccess: firstValue(candidate, ["readAccess", "read_access"]),
+    writeAccess: firstValue(candidate, ["writeAccess", "write_access"]),
     size: firstValue(candidate, ["size", "size_bytes", "file_size"]),
-    modifiedAt: firstValue(candidate, ["modified_at", "modified", "mtime"]),
-    detail: targetErrorDetail(candidate),
+    modifiedAt: firstValue(candidate, ["modifiedAt", "modified_at", "modified", "mtime"]),
+    detail: firstValue(candidate, ["detail"]) ?? targetErrorDetail(candidate),
+    errorName: firstValue(candidate, ["errorName", "error_name"]),
+    rawErrorCode: firstValue(candidate, ["rawErrorCode", "raw_error_code"]),
+    errorMessage: firstValue(candidate, ["errorMessage", "error_message"]),
   };
 }
 
@@ -698,7 +837,7 @@ function renderInventoryDetail(record) {
     ["Yazma", record.writeAccess],
     ["Boyut", formatSize(record.size)],
     ["Değiştirilme", record.modifiedAt],
-    ["Hata ayrıntısı", record.detail],
+    ["Hata ayrıntısı", targetErrorDetail(record) ?? record.detail],
   ]);
 }
 
@@ -706,9 +845,10 @@ function findingRecord(payload) {
   const candidate = nestedRecord(payload, ["finding", "item", "record"]);
   if (!candidate) return null;
   const file = firstValue(candidate, ["file", "filename", "file_path", "unc_path", "path"]);
-  const lineNumber = firstValue(candidate, ["line_number", "line_no", "line_index"]);
+  const lineNumber = firstValue(candidate, ["lineNumber", "line_number", "line_no", "line_index"]);
   const term = firstValue(candidate, ["term", "matched_term", "search_term", "rule_id"]);
   let fullLine = firstValue(candidate, [
+    "fullLine",
     "full_line",
     "matched_line",
     "line_text",
@@ -727,7 +867,7 @@ function findingRecord(payload) {
     term,
     fullLine,
     method: firstValue(candidate, ["method", "detection_method"]),
-    ruleId: firstValue(candidate, ["rule_id", "rule"]),
+    ruleId: firstValue(candidate, ["ruleId", "rule_id", "rule"]),
     category: firstValue(candidate, ["category", "rule_category"]),
     confidence: firstValue(candidate, ["confidence", "confidence_level"]),
   };
@@ -760,7 +900,7 @@ function renderFindingDetail(record) {
   signal.className = "finding-signal";
   const signalLabel = document.createElement("span");
   signalLabel.className = "finding-signal-label";
-  signalLabel.textContent = "Eşleşme";
+  signalLabel.textContent = uiText("Eşleşme");
   const signalValue = document.createElement("strong");
   signalValue.className = "finding-signal-value";
   signalValue.textContent = displayValue(record.term);
@@ -770,7 +910,7 @@ function renderFindingDetail(record) {
   context.className = "finding-context";
   const contextLabel = document.createElement("span");
   contextLabel.className = "finding-context-label";
-  contextLabel.textContent = "Satır içeriği";
+  contextLabel.textContent = uiText("Satır içeriği");
   const line = document.createElement("code");
   appendHighlightedText(line, record.fullLine, record.term);
   context.append(contextLabel, line);
@@ -781,7 +921,9 @@ function renderFindingDetail(record) {
     ["Satır no", record.lineNumber, "detail-code"],
     ["Yöntem", findingLabel(record.method, FINDING_METHOD_LABELS)],
     ["Kural", findingLabel(record.ruleId, FINDING_RULE_LABELS)],
-    ["Kategori", record.category],
+    ["Kategori", currentLanguage === "en"
+      ? EN_CATEGORY_LABELS[record.category] ?? record.category
+      : record.category],
     ["Güven", confidenceLabel(record.confidence)],
   ]);
   metadata.classList.add("finding-metadata");
@@ -805,10 +947,26 @@ function inventorySections(records) {
     const share = item[1].share === null ? "Share bilinmiyor" : String(item[1].share);
     if (!sections.has(target)) sections.set(target, new Map());
     const shares = sections.get(target);
-    if (!shares.has(share)) shares.set(share, []);
-    shares.get(share).push(item);
+    if (!shares.has(share)) shares.set(share, new Map());
+    const kinds = shares.get(share);
+    const kind = item[1].type ?? "other";
+    if (!kinds.has(kind)) kinds.set(kind, []);
+    kinds.get(kind).push(item);
   }
   return sections;
+}
+
+function inventoryKindLabel(kind) {
+  const labels = currentLanguage === "en"
+    ? {share: "Share", directory: "Directories", file: "Files", other: "Other"}
+    : {share: "Share", directory: "Dizinler", file: "Dosyalar", other: "Diğer"};
+  return labels[kind] ?? String(kind);
+}
+
+function nestedInventoryCount(groups) {
+  let count = 0;
+  for (const records of groups.values()) count += records.length;
+  return count;
 }
 
 function setGroupedResultMessage(container, message) {
@@ -823,6 +981,7 @@ function groupedResult({
   records,
   openState,
   defaultOpen,
+  stateKey = target,
   countLabel,
   tableClass,
   headings,
@@ -831,8 +990,8 @@ function groupedResult({
   const details = document.createElement("details");
   details.className = "result-group";
   details.dataset.groupTarget = target;
-  details.open = openState.has(target) ? openState.get(target) : defaultOpen;
-  details.addEventListener("toggle", () => openState.set(target, details.open));
+  details.open = openState.has(stateKey) ? openState.get(stateKey) : defaultOpen;
+  details.addEventListener("toggle", () => openState.set(stateKey, details.open));
 
   const summary = document.createElement("summary");
   const targetLabel = document.createElement("span");
@@ -840,7 +999,7 @@ function groupedResult({
   targetLabel.textContent = target;
   const count = document.createElement("span");
   count.className = "result-group-count";
-  count.textContent = `${records.length.toLocaleString("tr-TR")} ${countLabel}`;
+  count.textContent = `${records.length.toLocaleString(numberLocale())} ${uiText(countLabel)}`;
   summary.append(targetLabel, count);
 
   const frame = document.createElement("div");
@@ -852,7 +1011,7 @@ function groupedResult({
   for (const heading of headings) {
     const cell = document.createElement("th");
     cell.scope = "col";
-    cell.textContent = heading;
+    cell.textContent = uiText(heading);
     headingRow.append(cell);
   }
   head.append(headingRow);
@@ -879,45 +1038,80 @@ function renderInventory() {
   inventoryGroups.replaceChildren();
   let groupIndex = 0;
   for (const [target, shares] of groups) {
+    const targetStateKey = `target:${target}`;
     const targetGroup = document.createElement("details");
     targetGroup.className = "result-group inventory-target-group";
-    targetGroup.open = groupIndex === 0;
+    targetGroup.open = inventoryGroupOpenState.has(targetStateKey)
+      ? inventoryGroupOpenState.get(targetStateKey)
+      : groupIndex === 0;
+    targetGroup.addEventListener("toggle", () => {
+      inventoryGroupOpenState.set(targetStateKey, targetGroup.open);
+    });
     const targetSummary = document.createElement("summary");
     const targetLabel = document.createElement("span");
     targetLabel.className = "result-group-target";
     targetLabel.textContent = target;
     const targetCount = document.createElement("span");
     targetCount.className = "result-group-count";
-    targetCount.textContent = `${[...shares.values()].flat().length} kayıt`;
+    const targetRecordCount = [...shares.values()]
+      .reduce((total, kinds) => total + nestedInventoryCount(kinds), 0);
+    targetCount.textContent = currentLanguage === "en"
+      ? `${targetRecordCount} entries`
+      : `${targetRecordCount} kayıt`;
     targetSummary.append(targetLabel, targetCount);
     targetGroup.append(targetSummary);
     let shareIndex = 0;
-    for (const [share, records] of shares) {
-      const shareKey = `${target}\u001f${share}`;
-      targetGroup.append(groupedResult({
-        target: share,
-        records,
-        openState: inventoryGroupOpenState,
-        defaultOpen: shareIndex === 0,
-        countLabel: "kayıt",
-        tableClass: "inventory-table",
-        headings: ["Tür", "Path", "Durum"],
-        rowForRecord: ([key, record]) => {
-        const row = document.createElement("tr");
-        row.append(textCell(record.type));
-        row.append(textCell(record.path, "path-value"));
-        row.append(textCell(record.status, `status-value ${statusTone(record.status)}`));
-        bindSelectableRow(row, {
-          selected: selectedInventoryKey === key,
-          select: () => {
-            selectedInventoryKey = key;
-            renderInventory();
-            renderInventoryDetail(record);
+    for (const [share, kinds] of shares) {
+      const shareStateKey = `share:${target}\u001f${share}`;
+      const shareGroup = document.createElement("details");
+      shareGroup.className = "result-group inventory-share-group";
+      shareGroup.open = inventoryGroupOpenState.has(shareStateKey)
+        ? inventoryGroupOpenState.get(shareStateKey)
+        : shareIndex === 0;
+      shareGroup.addEventListener("toggle", () => {
+        inventoryGroupOpenState.set(shareStateKey, shareGroup.open);
+      });
+      const shareSummary = document.createElement("summary");
+      const shareLabel = document.createElement("span");
+      shareLabel.className = "result-group-target";
+      shareLabel.textContent = share;
+      const shareCount = document.createElement("span");
+      shareCount.className = "result-group-count";
+      const shareRecordCount = nestedInventoryCount(kinds);
+      shareCount.textContent = currentLanguage === "en"
+        ? `${shareRecordCount} entries`
+        : `${shareRecordCount} kayıt`;
+      shareSummary.append(shareLabel, shareCount);
+      shareGroup.append(shareSummary);
+      let kindIndex = 0;
+      for (const [kind, records] of kinds) {
+        shareGroup.append(groupedResult({
+          target: inventoryKindLabel(kind),
+          stateKey: `kind:${target}\u001f${share}\u001f${kind}`,
+          records,
+          openState: inventoryGroupOpenState,
+          defaultOpen: kindIndex === 0,
+          countLabel: "kayıt",
+          tableClass: "inventory-table",
+          headings: ["Path", "Durum"],
+          rowForRecord: ([key, record]) => {
+            const row = document.createElement("tr");
+            row.append(textCell(record.path || record.share, "path-value"));
+            row.append(textCell(record.status, `status-value ${statusTone(record.status)}`));
+            bindSelectableRow(row, {
+              selected: selectedInventoryKey === key,
+              select: () => {
+                selectedInventoryKey = key;
+                renderInventory();
+                renderInventoryDetail(record);
+              },
+            });
+            return row;
           },
-        });
-        return row;
-        },
-      }));
+        }));
+        kindIndex += 1;
+      }
+      targetGroup.append(shareGroup);
       shareIndex += 1;
     }
     inventoryGroups.append(targetGroup);
@@ -929,8 +1123,10 @@ function renderInventory() {
       inventoryStore.size === 0 ? "Henüz envanter yok." : "Filtreyle eşleşen kayıt yok.",
     );
   }
-  inventoryVisibleCount.textContent = `${visibleRecords.length.toLocaleString("tr-TR")} kayıt`;
-  inventoryTabCount.textContent = inventoryStore.size.toLocaleString("tr-TR");
+  inventoryVisibleCount.textContent = currentLanguage === "en"
+    ? `${visibleRecords.length.toLocaleString(numberLocale())} entries`
+    : `${visibleRecords.length.toLocaleString(numberLocale())} kayıt`;
+  inventoryTabCount.textContent = inventoryStore.size.toLocaleString(numberLocale());
 }
 
 function renderFindings() {
@@ -995,8 +1191,10 @@ function renderFindings() {
       findingStore.size === 0 ? "Henüz bulgu yok." : "Filtreyle eşleşen bulgu yok.",
     );
   }
-  findingsVisibleCount.textContent = `${visibleRecords.length.toLocaleString("tr-TR")} bulgu`;
-  findingsTabCount.textContent = findingStore.size.toLocaleString("tr-TR");
+  findingsVisibleCount.textContent = currentLanguage === "en"
+    ? `${visibleRecords.length.toLocaleString(numberLocale())} findings`
+    : `${visibleRecords.length.toLocaleString(numberLocale())} bulgu`;
+  findingsTabCount.textContent = findingStore.size.toLocaleString(numberLocale());
 }
 
 function upsertInventory(payload) {
@@ -1062,10 +1260,6 @@ function clearResults() {
   renderFindings();
 }
 
-function setScopeState(label, kind) {
-  // Scan status is presented in the main progress panel.
-}
-
 function showErrors(errors) {
   previewErrors.replaceChildren();
   for (const error of errors) {
@@ -1098,12 +1292,14 @@ function setWordlistCount(kind, count = null) {
   const resolvedCount = Number.isInteger(count)
     ? count
     : wordlistEntryCount(controls.editor.value);
-  controls.count.textContent = `${resolvedCount.toLocaleString("tr-TR")} kayıt`;
+  controls.count.textContent = currentLanguage === "en"
+    ? `${resolvedCount.toLocaleString(numberLocale())} entries`
+    : `${resolvedCount.toLocaleString(numberLocale())} kayıt`;
 }
 
 function setWordlistStatus(kind, message, tone = "") {
   const status = WORDLIST_EDITORS[kind].status;
-  status.textContent = message;
+  status.textContent = uiText(message);
   status.className = `wordlist-status${tone ? ` ${tone}` : ""}`;
 }
 
@@ -1190,10 +1386,10 @@ async function importWordlist(kind) {
 
   try {
     if (!file.name.toLocaleLowerCase("tr-TR").endsWith(".txt")) {
-      throw new CredentialInputError("Yalnız .txt dosyası seçilebilir");
+      throw new CredentialInputError(uiText("Yalnız .txt dosyası seçilebilir"));
     }
     if (file.size > WORDLIST_MAX_BYTES) {
-      throw new CredentialInputError("TXT dosyası en fazla 1 MiB olabilir");
+      throw new CredentialInputError(uiText("TXT dosyası en fazla 1 MiB olabilir"));
     }
     controls.editor.value = await file.text();
     setWordlistCount(kind);
@@ -1201,7 +1397,7 @@ async function importWordlist(kind) {
   } catch (error) {
     const message = error instanceof CredentialInputError
       ? error.message
-      : "TXT dosyası okunamadı";
+      : uiText("TXT dosyası okunamadı");
     setWordlistStatus(kind, message, "is-error");
   } finally {
     controls.file.value = "";
@@ -1211,8 +1407,10 @@ async function importWordlist(kind) {
 function syncCredentialControls() {
   const hashSelected = credentialKind.value === "nt_hash";
   const ccacheSelected = credentialKind.value === "ccache";
-  credentialSecretLabel.textContent = hashSelected ? "NT hash" : "Parola";
-  credentialUsernameLabel.textContent = ccacheSelected ? "Kullanıcı (isteğe bağlı)" : "Kullanıcı";
+  credentialSecretLabel.textContent = hashSelected ? "NT hash" : uiText("Parola");
+  credentialUsernameLabel.textContent = ccacheSelected
+    ? uiText("Kullanıcı (isteğe bağlı)")
+    : uiText("Kullanıcı");
   credentialUsername.required = !ccacheSelected;
 
   credentialSecret.value = "";
@@ -1245,12 +1443,12 @@ function syncCredentialControls() {
 }
 
 function ccacheValidationMessage(file) {
-  if (!file) return "CCache dosyası seçilmelidir.";
+  if (!file) return uiText("CCache dosyası seçilmelidir.");
   if (!file.name.toLocaleLowerCase("tr-TR").endsWith(".ccache")) {
-    return "Yalnız .ccache uzantılı dosya seçilebilir.";
+    return uiText("Yalnız .ccache uzantılı dosya seçilebilir.");
   }
-  if (file.size === 0) return "CCache dosyası boş olamaz.";
-  if (file.size > CCACHE_MAX_BYTES) return "CCache dosyası en fazla 1 MiB olabilir.";
+  if (file.size === 0) return uiText("CCache dosyası boş olamaz.");
+  if (file.size > CCACHE_MAX_BYTES) return uiText("CCache dosyası en fazla 1 MiB olabilir.");
   return "";
 }
 
@@ -1283,10 +1481,10 @@ async function credentialPayload() {
     try {
       buffer = await file.arrayBuffer();
     } catch (_error) {
-      throw new CredentialInputError("CCache dosyası okunamadı.");
+      throw new CredentialInputError(uiText("CCache dosyası okunamadı."));
     }
     if (buffer.byteLength > CCACHE_MAX_BYTES) {
-      throw new CredentialInputError("CCache dosyası en fazla 1 MiB olabilir.");
+      throw new CredentialInputError(uiText("CCache dosyası en fazla 1 MiB olabilir."));
     }
     return {
       kind: "ccache",
@@ -1377,7 +1575,7 @@ function generatedTerms() {
 function addGeneratedTerms() {
   const roots = generatorRoots();
   if (roots.length === 0) {
-    termGeneratorStatus.textContent = "Kök ifade girin.";
+    termGeneratorStatus.textContent = uiText("Kök ifade girin.");
     termGeneratorStatus.className = "term-generator-status is-error";
     return;
   }
@@ -1393,8 +1591,10 @@ function addGeneratedTerms() {
   }
   additionalTermsInput.value = [...existing, ...newTerms].join("\n");
   termGeneratorStatus.textContent = newTerms.length > 0
-    ? `${newTerms.length} yeni terim eklendi.`
-    : "Yeni terim yok.";
+    ? currentLanguage === "en"
+      ? `${newTerms.length} new terms added.`
+      : `${newTerms.length} yeni terim eklendi.`
+    : uiText("Yeni terim yok.");
   termGeneratorStatus.className = "term-generator-status";
 }
 
@@ -1414,12 +1614,50 @@ function storedHistory() {
       return true;
     });
     if (unique.length !== value.length) {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(unique));
+      writeHistory(unique);
     }
     return unique;
   } catch (_error) {
     return [];
   }
+}
+
+function historyItemKey(item) {
+  return item?.scan_id ?? `${item?.targets ?? ""}|${item?.finished_at ?? ""}`;
+}
+
+function writeHistory(history) {
+  const candidate = history.slice(0, 20);
+  while (candidate.length > 0) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(candidate));
+      return true;
+    } catch (_error) {
+      if (candidate.length > 1) {
+        candidate.pop();
+        continue;
+      }
+      const summaryOnly = [{
+        ...candidate[0],
+        targets_snapshot: [],
+        inventory_items: [],
+        finding_items: [],
+        history_incomplete: true,
+      }];
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(summaryOnly));
+      } catch (_ignored) {
+        return false;
+      }
+      return false;
+    }
+  }
+  try {
+    localStorage.setItem(HISTORY_KEY, "[]");
+  } catch (_error) {
+    return false;
+  }
+  return true;
 }
 
 function renderHistory() {
@@ -1429,7 +1667,7 @@ function renderHistory() {
   if (history.length === 0) {
     const empty = document.createElement("p");
     empty.className = "group-empty-state";
-    empty.textContent = "Henüz kayıtlı tarama yok.";
+    empty.textContent = uiText("Henüz kayıtlı tarama yok.");
     scanHistory.append(empty);
     return;
   }
@@ -1441,34 +1679,55 @@ function renderHistory() {
     title.textContent = item.name || item.targets || "Hedefler";
     const summary = document.createElement("span");
     summary.className = "history-item-summary";
-    summary.textContent = `${item.status} · ${item.finished_at}`;
+    const rawStoredStatus = String(item.status ?? "completed").toLowerCase();
+    const storedStatus = rawStoredStatus === "tamamlandı" ? "completed" : rawStoredStatus;
+    const status = localizedMap(SCAN_STATUS_LABELS, EN_SCAN_STATUS_LABELS, storedStatus)
+      ?? item.status;
+    const parsedDate = Date.parse(item.finished_at);
+    const finishedAt = Number.isNaN(parsedDate)
+      ? item.finished_at
+      : new Date(parsedDate).toLocaleString(numberLocale());
+    summary.textContent = `${status} · ${finishedAt}`;
     const counts = document.createElement("span");
     counts.className = "history-item-counts";
     const credential = item.credential ?? {};
-    const identity = credential.username || "Kullanıcı yok";
+    const identity = credential.username || uiText("Kullanıcı yok");
     const domain = credential.domain ? `${credential.domain}\\${identity}` : identity;
-    const kind = credential.kind === "nt_hash" ? "NT hash" : credential.kind === "ccache" ? "CCache" : "Parola";
+    const kind = credential.kind === "nt_hash"
+      ? "NT hash"
+      : credential.kind === "ccache" ? "CCache" : uiText("Parola");
     const auth = credential.auth_mode ? ` · ${credential.auth_mode}` : "";
-    counts.textContent = `${domain} · ${kind}${auth} · ${item.findings} bulgu · ${item.inventory} envanter`;
+    counts.textContent = currentLanguage === "en"
+      ? `${domain} · ${kind}${auth} · ${item.findings} findings · ${item.inventory} inventory entries`
+      : `${domain} · ${kind}${auth} · ${item.findings} bulgu · ${item.inventory} envanter`;
     const view = document.createElement("button");
     view.type = "button";
     view.className = "secondary-button";
-    view.textContent = "Görüntüle";
+    view.textContent = uiText("Görüntüle");
     view.addEventListener("click", () => loadHistoryItem(item));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "secondary-button history-delete";
-    remove.textContent = "Sil";
+    remove.textContent = uiText("Sil");
     remove.addEventListener("click", () => deleteHistoryItem(item));
     row.append(title, summary, counts, view, remove);
+    if (item.history_incomplete) {
+      const warning = document.createElement("span");
+      warning.className = "history-item-warning";
+      warning.textContent = currentLanguage === "en"
+        ? "Details could not be retained because browser storage is full."
+        : "Tarayıcı depolama alanı dolduğu için ayrıntılar saklanamadı.";
+      row.append(warning);
+    }
     scanHistory.append(row);
   }
 }
 
 function deleteHistoryItem(item) {
-  if (!window.confirm("Bu tarama geçmişten silinsin mi?")) return;
-  const history = storedHistory().filter((entry) => entry !== item);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  if (!window.confirm(uiText("Bu tarama geçmişten silinsin mi?"))) return;
+  const itemKey = historyItemKey(item);
+  const history = storedHistory().filter((entry) => historyItemKey(entry) !== itemKey);
+  writeHistory(history);
   renderHistory();
 }
 
@@ -1489,14 +1748,19 @@ function saveCompletedScan(state) {
     finding_items: [...findingStore.values()],
   };
   if (existing) {
+    const unchanged = JSON.stringify({
+      targets_snapshot: existing.targets_snapshot ?? [],
+      inventory_items: existing.inventory_items ?? [],
+      finding_items: existing.finding_items ?? [],
+    }) === JSON.stringify(snapshot);
+    if (unchanged) return;
     Object.assign(existing, {
       findings: state.finding_count ?? findingStore.size,
       inventory: state.inventory_count ?? inventoryStore.size,
       ...snapshot,
     });
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
+    writeHistory(history);
     renderHistory();
-    lastSavedGeneration = state.generation;
     return;
   }
   history.unshift({
@@ -1509,14 +1773,13 @@ function saveCompletedScan(state) {
       kind: credentialKind.value,
       auth_mode: authMode.value,
     },
-    status: localizedMap(SCAN_STATUS_LABELS, EN_SCAN_STATUS_LABELS, "completed"),
+    status: "completed",
     findings: state.finding_count ?? findingStore.size,
     inventory: state.inventory_count ?? inventoryStore.size,
     ...snapshot,
-    finished_at: new Date().toLocaleString("tr-TR"),
+    finished_at: new Date().toISOString(),
   });
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
-  lastSavedGeneration = state.generation;
+  writeHistory(history);
   renderHistory();
 }
 
@@ -1538,7 +1801,6 @@ function exportResults() {
 async function startScan() {
   if (!scanFormIsValid()) return;
   startScanButton.disabled = true;
-  setScopeState("Başlatılıyor", "working");
   showErrors([]);
 
   try {
@@ -1565,7 +1827,6 @@ async function startScan() {
         value: item.value ?? item.code,
         reason: item.reason ?? item.message,
       })));
-      setScopeState("Hatalı", "error");
       return;
     }
 
@@ -1575,16 +1836,13 @@ async function startScan() {
     renderTargetRows("Hedef sonuçları bekleniyor.");
     clearResults();
     activateResultTab("targets");
-    setScopeState("Çalışıyor", "working");
     cancelScanButton.disabled = false;
     await refreshSnapshot();
   } catch (error) {
     if (error instanceof CredentialInputError) {
       showErrors([{value: "CCache", reason: error.message}]);
-      setScopeState("Hatalı", "error");
     } else {
-      showErrors([{value: "Bağlantı", reason: "Yerel panel yanıt vermedi."}]);
-      setScopeState("Hata", "error");
+      showErrors([{value: uiText("Bağlantı"), reason: uiText("Yerel panel yanıt vermedi.")}]);
     }
   } finally {
     if (cancelScanButton.disabled) startScanButton.disabled = false;
@@ -1602,10 +1860,10 @@ async function cancelScan() {
       body: "{}",
     });
     if (response.ok) {
-      setScopeState("İptal ediliyor", "working");
+      // The main progress panel reflects the cancelling state via SSE.
     }
   } catch (_error) {
-    showErrors([{value: "İptal", reason: "Yerel panel yanıt vermedi."}]);
+    showErrors([{value: uiText("İptal"), reason: uiText("Yerel panel yanıt vermedi.")}]);
   }
 }
 
@@ -1638,14 +1896,16 @@ function setScanState(state) {
   let progressMessage;
   if (status === "failed") {
     progressMessage = terminalFailureMessage(state)
-      ?? (rawMessage ? MESSAGE_LABELS[rawMessage] ?? rawMessage : null)
-      ?? STATUS_MESSAGES.failed;
+      ?? (rawMessage
+        ? currentLanguage === "en" ? rawMessage : MESSAGE_LABELS[rawMessage] ?? rawMessage
+        : null)
+      ?? localizedMap(STATUS_MESSAGES, EN_STATUS_MESSAGES, "failed");
   } else if (terminal) {
-    progressMessage = STATUS_MESSAGES[status];
+    progressMessage = localizedMap(STATUS_MESSAGES, EN_STATUS_MESSAGES, status);
   } else {
     progressMessage = rawMessage
-      ? MESSAGE_LABELS[rawMessage] ?? rawMessage
-      : STATUS_MESSAGES[status] ?? "";
+      ? currentLanguage === "en" ? rawMessage : MESSAGE_LABELS[rawMessage] ?? rawMessage
+      : localizedMap(STATUS_MESSAGES, EN_STATUS_MESSAGES, status) ?? "";
   }
   document.querySelector("#progress-message").textContent = progressMessage;
   saveCompletedScan(state);
@@ -1655,10 +1915,6 @@ function setScanState(state) {
   const active = ["running", "cancelling"].includes(status);
   startScanButton.disabled = active;
   cancelScanButton.disabled = !active || status === "cancelling";
-  if (!active && status !== "idle") {
-    const kind = status === "failed" ? "error" : "ready";
-    setScopeState(localizedMap(SCAN_STATUS_LABELS, EN_SCAN_STATUS_LABELS, status), kind);
-  }
 }
 
 function terminalFailureMessage(state) {
@@ -1666,7 +1922,7 @@ function terminalFailureMessage(state) {
   if (!error || typeof error !== "object" || Array.isArray(error)) return null;
 
   const phaseKey = typeof error.phase === "string" ? error.phase.toLowerCase() : "";
-  const phase = PHASE_LABELS[phaseKey] ?? error.phase;
+  const phase = localizedMap(PHASE_LABELS, EN_PHASE_LABELS, phaseKey) ?? error.phase;
   const parts = [phase, error.code, error.message]
     .filter((value) => value !== null && value !== undefined && value !== "")
     .map((value) => String(value));
@@ -1804,6 +2060,8 @@ for (const [kind, controls] of Object.entries(WORDLIST_EDITORS)) {
   controls.file.addEventListener("change", () => importWordlist(kind));
   controls.save.addEventListener("click", () => saveWordlist(kind));
 }
+languageSelect.value = currentLanguage;
+if (currentLanguage === "en") applyLanguage(currentLanguage);
 syncCredentialControls();
 activateResultTab("targets");
 refreshSnapshot();
@@ -1826,10 +2084,6 @@ scanEvents.addEventListener("resync.required", async () => {
 
 exportResultsButton.addEventListener("click", exportResults);
 renderHistory();
-  const savedLanguage = localStorage.getItem(LANGUAGE_KEY) ?? "tr";
-  currentLanguage = savedLanguage;
-languageSelect.value = savedLanguage;
-if (savedLanguage !== "tr") applyLanguage(savedLanguage);
 languageSelect.addEventListener("change", () => {
   localStorage.setItem(LANGUAGE_KEY, languageSelect.value);
   window.location.reload();
