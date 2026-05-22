@@ -35,7 +35,6 @@ const closeWordlistsButton = document.querySelector("#close-wordlists");
 const wordlistDialog = document.querySelector("#wordlist-dialog");
 const startScanButton = document.querySelector("#start-scan-button");
 const cancelScanButton = document.querySelector("#cancel-scan-button");
-const scopeState = document.querySelector("#scope-state");
 const previewErrors = document.querySelector("#preview-errors");
 const scanPhase = document.querySelector("#scan-phase");
 const targetStatusBody = document.querySelector("#target-status-body");
@@ -216,6 +215,18 @@ const EN_PHASE_LABELS = {
   completed: "Completed", failed: "Failed",
 };
 const EN_SCAN_STATUS_LABELS = {idle: "No scan", running: "Running", cancelling: "Cancelling", cancelled: "Cancelled", completed: "Completed", failed: "Failed"};
+const DETAIL_LABELS = {
+  "Kimlik doğrulama": "Authentication", "Son durum": "Final status",
+  "Denenen share": "Shares probed", "Erişilen share": "Shares accessible",
+  "Görülen dosya": "Files seen", "Taranan dosya": "Files scanned",
+  "Okunamayan dosya": "Unreadable files", "Hata ayrıntısı": "Error details",
+  "Ayrıntı için bir hedef seç.": "Select a target to view details.",
+  "Hedef": "Target", "Path": "Path", "Tür": "Type", "Durum": "Status",
+  "Okuma": "Read access", "Yazma": "Write access", "Boyut": "Size",
+  "Değiştirilme": "Modified", "Eşleşme": "Match", "Satır içeriği": "Line content",
+  "Satır no": "Line number", "Yöntem": "Method", "Kural": "Rule",
+  "Kategori": "Category", "Güven": "Confidence",
+};
 
 function localizedMap(map, englishMap, key) {
   return currentLanguage === "en" ? (englishMap[key] ?? map[key] ?? key) : (map[key] ?? key);
@@ -304,7 +315,7 @@ function detailList(fields) {
     const group = document.createElement("div");
     const term = document.createElement("dt");
     const description = document.createElement("dd");
-    term.textContent = label;
+    term.textContent = currentLanguage === "en" ? (DETAIL_LABELS[label] ?? label) : label;
     description.className = className;
     description.textContent = displayValue(value);
     group.append(term, description);
@@ -504,7 +515,7 @@ function renderTargetDetail(record) {
 
 function targetAuthenticationValue(record) {
   const method = firstValue(record, ["authentication_method", "auth_method"]);
-  if (method !== null) return `Doğrulandı · ${displayValue(method)}`;
+  if (method !== null) return `${currentLanguage === "en" ? "Authenticated" : "Doğrulandı"} · ${displayValue(method)}`;
   return firstValue(record, ["authentication_status", "auth_status"]);
 }
 
@@ -789,13 +800,13 @@ function recordsByTarget(records) {
 
 function inventorySections(records) {
   const sections = new Map();
-  const labels = {share: "Share'ler", directory: "Dizinler", file: "Dosyalar"};
   for (const item of records) {
     const target = item[1].target === null ? "Hedef bilinmiyor" : String(item[1].target);
-    const kind = labels[item[1].type] ?? "Diğer kayıtlar";
-    const key = `${target}\u001f${kind}`;
-    if (!sections.has(key)) sections.set(key, {title: `${target} · ${kind}`, records: []});
-    sections.get(key).records.push(item);
+    const share = item[1].share === null ? "Share bilinmiyor" : String(item[1].share);
+    if (!sections.has(target)) sections.set(target, new Map());
+    const shares = sections.get(target);
+    if (!shares.has(share)) shares.set(share, []);
+    shares.get(share).push(item);
   }
   return sections;
 }
@@ -867,18 +878,33 @@ function renderInventory() {
   const groups = inventorySections(visibleRecords);
   inventoryGroups.replaceChildren();
   let groupIndex = 0;
-  for (const [target, section] of groups) {
-    inventoryGroups.append(groupedResult({
-      target: section.title,
-      records: section.records,
-      openState: inventoryGroupOpenState,
-      defaultOpen: groupIndex === 0,
-      countLabel: "kayıt",
-      tableClass: "inventory-table",
-      headings: ["Share", "Path", "Durum"],
-      rowForRecord: ([key, record]) => {
+  for (const [target, shares] of groups) {
+    const targetGroup = document.createElement("details");
+    targetGroup.className = "result-group inventory-target-group";
+    targetGroup.open = groupIndex === 0;
+    const targetSummary = document.createElement("summary");
+    const targetLabel = document.createElement("span");
+    targetLabel.className = "result-group-target";
+    targetLabel.textContent = target;
+    const targetCount = document.createElement("span");
+    targetCount.className = "result-group-count";
+    targetCount.textContent = `${[...shares.values()].flat().length} kayıt`;
+    targetSummary.append(targetLabel, targetCount);
+    targetGroup.append(targetSummary);
+    let shareIndex = 0;
+    for (const [share, records] of shares) {
+      const shareKey = `${target}\u001f${share}`;
+      targetGroup.append(groupedResult({
+        target: share,
+        records,
+        openState: inventoryGroupOpenState,
+        defaultOpen: shareIndex === 0,
+        countLabel: "kayıt",
+        tableClass: "inventory-table",
+        headings: ["Tür", "Path", "Durum"],
+        rowForRecord: ([key, record]) => {
         const row = document.createElement("tr");
-        row.append(textCell(record.share));
+        row.append(textCell(record.type));
         row.append(textCell(record.path, "path-value"));
         row.append(textCell(record.status, `status-value ${statusTone(record.status)}`));
         bindSelectableRow(row, {
@@ -890,8 +916,11 @@ function renderInventory() {
           },
         });
         return row;
-      },
-    }));
+        },
+      }));
+      shareIndex += 1;
+    }
+    inventoryGroups.append(targetGroup);
     groupIndex += 1;
   }
   if (visibleRecords.length === 0) {
@@ -1034,8 +1063,7 @@ function clearResults() {
 }
 
 function setScopeState(label, kind) {
-  scopeState.textContent = label;
-  scopeState.className = `state ${kind}`;
+  // Scan status is presented in the main progress panel.
 }
 
 function showErrors(errors) {
