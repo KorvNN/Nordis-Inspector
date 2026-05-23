@@ -986,13 +986,14 @@ function groupedResult({
   openState,
   defaultOpen,
   stateKey = target,
+  extraClass = "",
   countLabel,
   tableClass,
   headings,
   rowForRecord,
 }) {
   const details = document.createElement("details");
-  details.className = "result-group";
+  details.className = `result-group${extraClass ? ` ${extraClass}` : ""}`;
   details.dataset.groupTarget = target;
   details.open = openState.has(stateKey) ? openState.get(stateKey) : defaultOpen;
   details.addEventListener("toggle", () => openState.set(stateKey, details.open));
@@ -1092,6 +1093,7 @@ function renderInventory() {
         shareGroup.append(groupedResult({
           target: inventoryKindLabel(kind),
           stateKey: `kind:${target}\u001f${share}\u001f${kind}`,
+          extraClass: "inventory-kind-group",
           records,
           openState: inventoryGroupOpenState,
           defaultOpen: kindIndex === 0,
