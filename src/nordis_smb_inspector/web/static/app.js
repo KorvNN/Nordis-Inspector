@@ -200,6 +200,7 @@ const ERROR_MESSAGE_LABELS = {
   "The directory could not be listed.": "Dizin listelenemedi.",
   "The file is visible but read access was denied.": "Dosya görünüyor fakat okuma erişimi reddedildi.",
   "The visible file could not be opened for reading.": "Görünen dosya okumak için açılamadı.",
+  "The target inspection completed with inaccessible content.": "Hedef incelemesi erişilemeyen içerikle tamamlandı.",
 };
 const LANGUAGE_KEY = "nordis.dashboard-language";
 let currentLanguage = (() => {
@@ -648,15 +649,18 @@ function targetAuthenticationValue(record) {
 }
 
 function targetErrorDetail(record) {
+  const errorName = firstValue(record, ["errorName", "error_name"]);
+  const rawCode = firstValue(record, ["rawErrorCode", "raw_error_code"]);
+  const errorMessage = firstValue(record, ["errorMessage", "error_message"]);
   const values = [
-    firstValue(record, ["errorName", "error_name"]),
-    firstValue(record, ["rawErrorCode", "raw_error_code"]),
-    firstValue(record, ["errorMessage", "error_message"]),
-  ]
-    .filter((value) => value !== null && value !== undefined && value !== "")
-    .map((value) => currentLanguage === "tr"
-      ? ERROR_MESSAGE_LABELS[String(value)] ?? String(value)
-      : String(value));
+    errorName === null ? null : displayValue(errorName),
+    rawCode === null ? null : `${currentLanguage === "en" ? "Code" : "Kod"} ${rawCode}`,
+    errorMessage === null
+      ? null
+      : currentLanguage === "tr"
+        ? ERROR_MESSAGE_LABELS[String(errorMessage)] ?? String(errorMessage)
+        : String(errorMessage),
+  ].filter((value) => value !== null && value !== undefined && value !== "");
   return [...new Set(values)].join(" · ") || null;
 }
 
