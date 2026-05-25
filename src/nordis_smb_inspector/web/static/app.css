@@ -412,23 +412,11 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
 }
 .inventory-share-group > summary { padding-left: 24px; }
 .inventory-share-group > summary .result-group-target { color: var(--accent); }
-.inventory-share-group > .inventory-kind-group {
-  margin: 0;
-  border: 0;
-  border-top: 1px solid rgb(64 91 85 / 55%);
-  border-radius: 0;
-  background: transparent;
-}
-.inventory-kind-group > summary { min-height: 36px; padding: 7px 12px 7px 42px; }
-.inventory-kind-group > summary .result-group-target {
-  color: var(--muted);
-  font-family: inherit;
-  font-size: .74rem;
-}
-.inventory-kind-group > .group-table-frame {
-  margin-left: 42px;
+.inventory-share-group > .group-table-frame {
+  margin-left: 24px;
   border-left: 1px solid var(--line-strong);
 }
+.inventory-kind-value { color: var(--muted); font-size: .72rem; }
 .history-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto auto;

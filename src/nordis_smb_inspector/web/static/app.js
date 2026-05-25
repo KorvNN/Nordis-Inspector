@@ -962,8 +962,8 @@ function inventorySections(records) {
 
 function inventoryKindLabel(kind) {
   const labels = currentLanguage === "en"
-    ? {share: "Share", directory: "Directories", file: "Files", other: "Other"}
-    : {share: "Share", directory: "Dizinler", file: "Dosyalar", other: "Diğer"};
+    ? {share: "Share", directory: "Directory", file: "File", other: "Other"}
+    : {share: "Share", directory: "Dizin", file: "Dosya", other: "Diğer"};
   return labels[kind] ?? String(kind);
 }
 
@@ -1007,6 +1007,12 @@ function groupedResult({
   count.textContent = `${records.length.toLocaleString(numberLocale())} ${uiText(countLabel)}`;
   summary.append(targetLabel, count);
 
+  const frame = resultTable({records, tableClass, headings, rowForRecord});
+  details.append(summary, frame);
+  return details;
+}
+
+function resultTable({records, tableClass, headings, rowForRecord}) {
   const frame = document.createElement("div");
   frame.className = "group-table-frame";
   const table = document.createElement("table");
@@ -1024,8 +1030,7 @@ function groupedResult({
   for (const item of records) bodyElement.append(rowForRecord(item));
   table.append(head, bodyElement);
   frame.append(table);
-  details.append(summary, frame);
-  return details;
+  return frame;
 }
 
 function renderInventory() {
@@ -1088,35 +1093,27 @@ function renderInventory() {
         : `${shareRecordCount} kayıt`;
       shareSummary.append(shareLabel, shareCount);
       shareGroup.append(shareSummary);
-      let kindIndex = 0;
-      for (const [kind, records] of kinds) {
-        shareGroup.append(groupedResult({
-          target: inventoryKindLabel(kind),
-          stateKey: `kind:${target}\u001f${share}\u001f${kind}`,
-          extraClass: "inventory-kind-group",
-          records,
-          openState: inventoryGroupOpenState,
-          defaultOpen: kindIndex === 0,
-          countLabel: "kayıt",
-          tableClass: "inventory-table",
-          headings: ["Path", "Durum"],
-          rowForRecord: ([key, record]) => {
-            const row = document.createElement("tr");
-            row.append(textCell(record.path || record.share, "path-value"));
-            row.append(textCell(record.status, `status-value ${statusTone(record.status)}`));
-            bindSelectableRow(row, {
-              selected: selectedInventoryKey === key,
-              select: () => {
-                selectedInventoryKey = key;
-                renderInventory();
-                renderInventoryDetail(record);
-              },
-            });
-            return row;
-          },
-        }));
-        kindIndex += 1;
-      }
+      const records = [...kinds.values()].flat();
+      shareGroup.append(resultTable({
+        records,
+        tableClass: "inventory-table",
+        headings: ["Tür", "Path", "Durum"],
+        rowForRecord: ([key, record]) => {
+          const row = document.createElement("tr");
+          row.append(textCell(inventoryKindLabel(record.type), "inventory-kind-value"));
+          row.append(textCell(record.path || record.share, "path-value"));
+          row.append(textCell(record.status, `status-value ${statusTone(record.status)}`));
+          bindSelectableRow(row, {
+            selected: selectedInventoryKey === key,
+            select: () => {
+              selectedInventoryKey = key;
+              renderInventory();
+              renderInventoryDetail(record);
+            },
+          });
+          return row;
+        },
+      }));
       targetGroup.append(shareGroup);
       shareIndex += 1;
     }
