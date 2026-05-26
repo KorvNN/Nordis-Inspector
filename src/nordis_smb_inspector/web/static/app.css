@@ -510,12 +510,10 @@ tbody tr:not(.table-empty-row) {
 tbody tr:not(.table-empty-row):hover { background: rgb(95 225 183 / 7%); }
 tbody tr.is-selected {
   background: rgb(95 225 183 / 12%);
-  box-shadow: inset 4px 0 var(--accent);
 }
 .findings-table tbody tr:not(.table-empty-row):hover { background: rgb(244 201 107 / 7%); }
 .findings-table tbody tr.is-selected {
   background: rgb(244 201 107 / 11%);
-  box-shadow: inset 4px 0 var(--finding);
 }
 tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .findings-table tbody tr:focus-visible { outline-color: var(--finding); }
