@@ -525,8 +525,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .target-status-table th:nth-child(3) { width: 15%; }
 .target-status-table th:nth-child(4) { width: 25%; }
 .target-status-table th:nth-child(5) { width: 24%; }
-.inventory-table th:nth-child(1) { width: 70%; }
-.inventory-table th:nth-child(2) { width: 30%; }
+.inventory-path-column { width: 70%; }
+.inventory-status-column { width: 30%; }
 .inventory-table tbody tr.inventory-kind-heading-row {
   cursor: default;
   transition: none;

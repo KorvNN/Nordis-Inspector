@@ -1047,16 +1047,13 @@ function inventoryTable(kinds) {
   frame.className = "group-table-frame";
   const table = document.createElement("table");
   table.className = "result-table inventory-table";
-  const head = document.createElement("thead");
-  const headingRow = document.createElement("tr");
-  for (const heading of ["Path", "Durum"]) {
-    const cell = document.createElement("th");
-    cell.scope = "col";
-    cell.textContent = uiText(heading);
-    headingRow.append(cell);
+  const columns = document.createElement("colgroup");
+  for (const className of ["inventory-path-column", "inventory-status-column"]) {
+    const column = document.createElement("col");
+    column.className = className;
+    columns.append(column);
   }
-  head.append(headingRow);
-  table.append(head);
+  table.append(columns);
 
   for (const [kind, records] of orderedInventoryKinds(kinds)) {
     const body = document.createElement("tbody");
