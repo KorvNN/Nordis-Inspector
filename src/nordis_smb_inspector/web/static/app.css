@@ -534,21 +534,16 @@ tbody tr:last-child td { border-bottom: 0; }
 .inventory-table tbody tr.inventory-kind-heading-row:hover { background: transparent; }
 .inventory-kind-heading-row th {
   position: static;
-  padding: 12px 10px 7px;
+  padding: 11px 10px;
   border-bottom-color: var(--line-strong);
-  color: var(--text);
-  background: #0a1513;
-  font-size: .67rem;
-  letter-spacing: .055em;
+  color: var(--accent);
+  background: #10231f;
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: .07em;
 }
 .inventory-kind-section + .inventory-kind-section .inventory-kind-heading-row th {
   border-top: 1px solid var(--line-strong);
-}
-.inventory-kind-heading { display: flex; align-items: center; gap: 8px; }
-.inventory-kind-count {
-  color: var(--muted);
-  font: 600 .66rem/1 ui-monospace, SFMono-Regular, Consolas, monospace;
-  letter-spacing: 0;
 }
 .findings-table th:nth-child(1) { width: 49%; }
 .findings-table th:nth-child(2) { width: 13%; }

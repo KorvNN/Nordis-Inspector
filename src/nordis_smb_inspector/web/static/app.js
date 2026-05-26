@@ -1062,15 +1062,7 @@ function inventoryTable(kinds) {
     kindRow.className = "inventory-kind-heading-row";
     const kindCell = document.createElement("th");
     kindCell.colSpan = 2;
-    const kindHeading = document.createElement("span");
-    kindHeading.className = "inventory-kind-heading";
-    const kindLabel = document.createElement("span");
-    kindLabel.textContent = inventoryKindLabel(kind);
-    const kindCount = document.createElement("span");
-    kindCount.className = "inventory-kind-count";
-    kindCount.textContent = records.length.toLocaleString(numberLocale());
-    kindHeading.append(kindLabel, kindCount);
-    kindCell.append(kindHeading);
+    kindCell.textContent = inventoryKindLabel(kind);
     kindRow.append(kindCell);
     body.append(kindRow);
 
