@@ -81,6 +81,27 @@ class PatternDetectionTests(unittest.TestCase):
             with self.subTest(rule_id=rule_id):
                 self.assert_rule(line, rule_id)
 
+    def test_plain_password_assignment_is_not_a_connection_string(self) -> None:
+        matches = detect_patterns("password = NORDIS_LAB_CANARY_ONE", 1)
+        rule_ids = {match.rule_id for match in matches}
+
+        self.assertIn("secret-assignment", rule_ids)
+        self.assertNotIn("connection-string-password", rule_ids)
+
+    def test_specific_pattern_suppresses_overlapping_secret_assignment(self) -> None:
+        cases = (
+            (
+                "Server=db01;User Id=app;Password=RealPassword!;",
+                "connection-string-password",
+            ),
+            ("token=eyJabcdefghijk.eyJabcdefghijkl.ABCDEFGHIJKL", "jwt-token"),
+        )
+        for line, expected_rule in cases:
+            with self.subTest(expected_rule=expected_rule):
+                rule_ids = {match.rule_id for match in detect_patterns(line, 1)}
+                self.assertIn(expected_rule, rule_ids)
+                self.assertNotIn("secret-assignment", rule_ids)
+
     def test_provider_and_credential_file_artifacts(self) -> None:
         cases = (
             (f"ghp_{'a' * 24}", "github-token-prefix"),

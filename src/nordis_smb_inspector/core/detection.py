@@ -150,7 +150,24 @@ def detect_patterns(
                     end=match.end(),
                 )
             )
-    return tuple(findings)
+    return _without_redundant_secret_assignments(findings)
+
+
+def _without_redundant_secret_assignments(
+    findings: list[PatternMatch],
+) -> tuple[PatternMatch, ...]:
+    specific_matches = tuple(
+        match for match in findings if match.rule_id != "secret-assignment"
+    )
+    return tuple(
+        match
+        for match in findings
+        if match.rule_id != "secret-assignment"
+        or not any(
+            match.start < specific.end and specific.start < match.end
+            for specific in specific_matches
+        )
+    )
 
 
 DEFAULT_DETECTION_RULES = (
@@ -211,11 +228,13 @@ DEFAULT_DETECTION_RULES = (
     ),
     DetectionRule(
         rule_id="connection-string-password",
-        title="Connection string parolası",
+        title="Veritabanı bağlantı parolası",
         category="Veritabanı",
         confidence=DetectionConfidence.HIGH,
         pattern=(
-            r"\b(?:Password|Pwd)[ \t]*=[ \t]*"
+            r"^(?=[^\r\n]*\b(?:Server|Data[ \t]+Source|Host|Database|"
+            r"Initial[ \t]+Catalog|User[ \t]+Id|UID)[ \t]*=)"
+            r"[^\r\n]*?\b(?:Password|Pwd)[ \t]*=[ \t]*"
             r"(?P<secret>[^;\s'\"]{3,}|['\"][^'\"\r\n]{3,}['\"])"
         ),
         keywords=("password", "pwd"),
