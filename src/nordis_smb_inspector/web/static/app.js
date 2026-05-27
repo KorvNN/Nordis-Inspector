@@ -149,11 +149,12 @@ const STATUS_LABELS = {
   error: "Hata",
 };
 const FINDING_METHOD_LABELS = {
-  wordlist: "Terim listesi eşleşmesi",
-  pattern: "Veri kalıbı eşleşmesi",
+  wordlist: "Arama terimi",
+  pattern: "Otomatik tespit",
 };
 const FINDING_RULE_LABELS = {
-  "secret-assignment": "Gizli bilgi ataması",
+  "secret-assignment": "Parola veya token",
+  "aws-secret-access-key": "AWS secret access key",
 };
 const SCAN_STATUS_LABELS = {
   idle: "Tarama yok",
@@ -259,6 +260,8 @@ const DETAIL_LABELS = {
   "Değiştirilme": "Modified", "Eşleşme": "Match", "Satır içeriği": "Line content",
   "Satır no": "Line number", "Yöntem": "Method", "Kural": "Rule",
   "Kategori": "Category", "Güven": "Confidence",
+  "Kaynak": "Source", "Bulgu": "Finding", "Eşleşen terim": "Matched term",
+  "Bulgu sınıfı": "Finding class", "Eşleşme gücü": "Match strength",
 };
 
 function localizedMap(map, englishMap, key) {
@@ -508,8 +511,11 @@ function findingLabel(value, labels) {
   const raw = String(value);
   if (currentLanguage === "en") {
     const english = labels === FINDING_METHOD_LABELS
-      ? {wordlist: "Wordlist match", pattern: "Pattern match"}
-      : {"secret-assignment": "Secret assignment"};
+      ? {wordlist: "Search term", pattern: "Automatic detection"}
+      : {
+        "secret-assignment": "Password or token",
+        "aws-secret-access-key": "AWS secret access key",
+      };
     return english[raw.toLowerCase()] ?? labels[raw.toLowerCase()] ?? raw;
   }
   return labels[raw.toLowerCase()] ?? raw;
@@ -519,16 +525,44 @@ function confidenceLabel(value) {
   const level = displayValue(value);
   const explanations = currentLanguage === "en"
     ? {
-        High: "Strong, specific credential pattern.",
-        Medium: "Suspicious pattern; verify it in context.",
-        Low: "Weak signal; may be a false positive.",
+        High: "Strong · A specific credential format was found.",
+        Medium: "Review needed · A general key/value pattern was found.",
+        Low: "Weak · This may be a false positive.",
       }
     : {
-        Yüksek: "Güçlü ve belirgin credential kalıbı.",
-        Orta: "Şüpheli kalıp; bağlamla doğrulanmalı.",
-        Düşük: "Zayıf sinyal; yanlış eşleşme olabilir.",
+        Yüksek: "Güçlü · Belirgin bir kimlik bilgisi biçimi bulundu.",
+        Orta: "İnceleme gerekli · Genel bir anahtar/değer kalıbı bulundu.",
+        Düşük: "Zayıf · Yanlış eşleşme olabilir.",
       };
-  return explanations[level] ? `${level} · ${explanations[level]}` : level;
+  return explanations[level] ?? level;
+}
+
+function findingAssignmentKey(record) {
+  if (String(record.ruleId).toLowerCase() !== "secret-assignment") return null;
+  const line = record.fullLine === null || record.fullLine === undefined
+    ? ""
+    : String(record.fullLine);
+  const match = line.match(
+    /\b(api[_-]?key|access[_-]?token|client[_-]?secret|password|passwd|pwd|secret|token)[ \t]*[:=]/iu,
+  );
+  return match?.[1] ?? null;
+}
+
+function isPatternFinding(record) {
+  return String(record.method).toLowerCase() === "pattern";
+}
+
+function findingSignalValue(record) {
+  const assignmentKey = findingAssignmentKey(record);
+  if (assignmentKey !== null) return assignmentKey;
+  if (isPatternFinding(record) && FINDING_RULE_LABELS[record.ruleId]) {
+    return findingLabel(record.ruleId, FINDING_RULE_LABELS);
+  }
+  return displayValue(record.term);
+}
+
+function findingHighlightTerm(record) {
+  return findingAssignmentKey(record) ?? (isPatternFinding(record) ? null : record.term);
 }
 
 function firstValue(record, names) {
@@ -904,10 +938,10 @@ function renderFindingDetail(record) {
   signal.className = "finding-signal";
   const signalLabel = document.createElement("span");
   signalLabel.className = "finding-signal-label";
-  signalLabel.textContent = uiText("Eşleşme");
+  signalLabel.textContent = uiText(isPatternFinding(record) ? "Bulgu" : "Eşleşen terim");
   const signalValue = document.createElement("strong");
   signalValue.className = "finding-signal-value";
-  signalValue.textContent = displayValue(record.term);
+  signalValue.textContent = findingSignalValue(record);
   signal.append(signalLabel, signalValue);
 
   const context = document.createElement("section");
@@ -916,20 +950,24 @@ function renderFindingDetail(record) {
   contextLabel.className = "finding-context-label";
   contextLabel.textContent = uiText("Satır içeriği");
   const line = document.createElement("code");
-  appendHighlightedText(line, record.fullLine, record.term);
+  appendHighlightedText(line, record.fullLine, findingHighlightTerm(record));
   context.append(contextLabel, line);
 
-  const metadata = detailList([
+  const metadataFields = [
     ["Hedef", record.target, "detail-code"],
     ["Share", record.share, "detail-code"],
     ["Satır no", record.lineNumber, "detail-code"],
-    ["Yöntem", findingLabel(record.method, FINDING_METHOD_LABELS)],
-    ["Kural", findingLabel(record.ruleId, FINDING_RULE_LABELS)],
-    ["Kategori", currentLanguage === "en"
+    ["Kaynak", findingLabel(record.method, FINDING_METHOD_LABELS)],
+  ];
+  if (isPatternFinding(record)) {
+    metadataFields.push(
+      ["Bulgu sınıfı", currentLanguage === "en"
       ? EN_CATEGORY_LABELS[record.category] ?? record.category
       : record.category],
-    ["Güven", confidenceLabel(record.confidence)],
-  ]);
+      ["Eşleşme gücü", confidenceLabel(record.confidence)],
+    );
+  }
+  const metadata = detailList(metadataFields);
   metadata.classList.add("finding-metadata");
   findingSelectionDetail.replaceChildren(header, signal, context, metadata);
 }
@@ -1231,7 +1269,7 @@ function renderFindings() {
       defaultOpen: groupIndex === 0,
       countLabel: "bulgu",
       tableClass: "findings-table",
-      headings: ["Dosya", "Satır no", "Yöntem", "Eşleşme"],
+      headings: ["Dosya", "Satır no", "Kaynak", "Bulgu"],
       rowForRecord: ([key, record]) => {
         const row = document.createElement("tr");
         row.append(textCell(record.file, "path-value"));
@@ -1240,7 +1278,7 @@ function renderFindings() {
           findingLabel(record.method, FINDING_METHOD_LABELS),
           `status-value ${statusTone(record.method)}`,
         ));
-        row.append(textCell(record.term, "finding-term-pill"));
+        row.append(textCell(findingSignalValue(record), "finding-term-pill"));
         bindSelectableRow(row, {
           selected: selectedFindingKey === key,
           select: () => {
