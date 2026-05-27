@@ -99,7 +99,7 @@ class CredentialInputError extends Error {}
 
 const ATTENTION_STATUS = /(?:DENIED|FAILED|ERROR|REFUSED|TIMEOUT|UNREACHABLE|UNAVAILABLE|VIOLATION)/u;
 const WORKING_STATUS = /(?:PENDING|CONNECTING|NEGOTIATING|AUTHENTICATING|SCANNING|RUNNING)/u;
-const OK_STATUS = /(?:OPEN|READY|SUCCESS|AUTHENTICATED|DOĞRULANDI|KERBEROS|NTLM|COMPLETED|PARTIAL_ACCESS)/u;
+const OK_STATUS = /(?:OPEN|READY|SUCCESS|AUTHENTICATED|DOĞRULANDI|KERBEROS|NTLM|COMPLETED|PARTIAL_ACCESS|CONNECTED|LISTABLE|READABLE)/u;
 const STATUS_LABELS = {
   port_open: "445 açık",
   timeout_no_response: "Yanıt yok / timeout",
@@ -831,7 +831,7 @@ function inventoryKey(record) {
 }
 
 function renderInventoryDetail(record) {
-  renderSelectionDetail(inventorySelectionDetail, record.path, [
+  renderSelectionDetail(inventorySelectionDetail, record.path || record.share, [
     ["Hedef", record.target],
     ["Share", record.share],
     ["Path", record.path],
@@ -967,6 +967,21 @@ function inventoryKindLabel(kind) {
   return labels[kind] ?? String(kind);
 }
 
+function inventoryShareStatusLabel(status) {
+  const labels = currentLanguage === "en"
+    ? {
+      share_connected: "Accessible",
+      share_access_denied: "Access denied",
+      non_file_share: "Non-file share",
+    }
+    : {
+      share_connected: "Erişilebilir",
+      share_access_denied: "Erişim reddedildi",
+      non_file_share: "Dosya paylaşımı değil",
+    };
+  return labels[String(status).toLowerCase()] ?? displayValue(status);
+}
+
 function orderedInventoryKinds(kinds) {
   const order = new Map(["share", "directory", "file", "other"].map((kind, index) => [kind, index]));
   return [...kinds].sort(([left], [right]) => {
@@ -1043,6 +1058,9 @@ function resultTable({records, tableClass, headings, rowForRecord}) {
 }
 
 function inventoryTable(kinds) {
+  const contentKinds = orderedInventoryKinds(kinds).filter(([kind]) => kind !== "share");
+  if (contentKinds.length === 0) return null;
+
   const frame = document.createElement("div");
   frame.className = "group-table-frame";
   const table = document.createElement("table");
@@ -1055,7 +1073,7 @@ function inventoryTable(kinds) {
   }
   table.append(columns);
 
-  for (const [kind, records] of orderedInventoryKinds(kinds)) {
+  for (const [kind, records] of contentKinds) {
     const body = document.createElement("tbody");
     body.className = "inventory-kind-section";
     const kindRow = document.createElement("tr");
@@ -1098,6 +1116,7 @@ function renderInventory() {
     else setSelectionPlaceholder(inventorySelectionDetail, "Ayrıntı için bir kayıt seç.");
   }
   const groups = inventorySections(visibleRecords);
+  const allGroups = inventorySections([...inventoryStore]);
   inventoryGroups.replaceChildren();
   let groupIndex = 0;
   for (const [target, shares] of groups) {
@@ -1138,15 +1157,29 @@ function renderInventory() {
       const shareLabel = document.createElement("span");
       shareLabel.className = "result-group-target";
       shareLabel.textContent = share;
-      const shareCount = document.createElement("span");
-      shareCount.className = "result-group-count";
-      const shareRecordCount = nestedInventoryCount(kinds);
-      shareCount.textContent = currentLanguage === "en"
-        ? `${shareRecordCount} entries`
-        : `${shareRecordCount} kayıt`;
-      shareSummary.append(shareLabel, shareCount);
+      const shareItem = allGroups.get(target)?.get(share)?.get("share")?.[0] ?? null;
+      const shareStatus = document.createElement("span");
+      const shareStatusValue = shareItem?.[1].status ?? "unknown";
+      shareStatus.className = `status-value result-group-status ${statusTone(shareStatusValue)}`;
+      shareStatus.textContent = inventoryShareStatusLabel(shareStatusValue);
+      shareSummary.append(shareLabel, shareStatus);
+      if (shareItem) {
+        shareSummary.addEventListener("click", () => {
+          selectedInventoryKey = shareItem[0];
+          for (const row of inventoryGroups.querySelectorAll("tr.is-selected")) {
+            row.classList.remove("is-selected");
+          }
+          renderInventoryDetail(shareItem[1]);
+        });
+      }
       shareGroup.append(shareSummary);
-      shareGroup.append(inventoryTable(kinds));
+      const contentTable = inventoryTable(kinds);
+      if (contentTable) {
+        shareGroup.append(contentTable);
+      } else {
+        shareGroup.classList.add("is-empty");
+        shareSummary.addEventListener("click", (event) => event.preventDefault());
+      }
       targetGroup.append(shareGroup);
       shareIndex += 1;
     }

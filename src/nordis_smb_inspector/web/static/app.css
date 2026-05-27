@@ -412,10 +412,13 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
 }
 .inventory-share-group > summary { padding-left: 24px; }
 .inventory-share-group > summary .result-group-target { color: var(--accent); }
+.inventory-share-group.is-empty > summary { cursor: default; }
+.inventory-share-group.is-empty > summary::before { visibility: hidden; }
 .inventory-share-group > .group-table-frame {
   margin-left: 24px;
   border-left: 1px solid var(--line-strong);
 }
+.result-group-status { margin-left: auto; }
 .history-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto auto;
