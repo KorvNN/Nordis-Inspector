@@ -11,9 +11,11 @@ from pathlib import Path
 import httpx
 
 from nordis_smb_inspector.core.credentials import AuthMode, Credential, CredentialKind
+from nordis_smb_inspector.core.detection import DetectionConfidence
 from nordis_smb_inspector.core.wordlist_store import WordlistStore
 from nordis_smb_inspector.smb.inspection import (
     ContentFinding,
+    FindingMethod,
     InspectionEventKind,
     InspectionResult,
     InspectionTargetEvent,
@@ -247,6 +249,23 @@ class _FakeAccessInspector:
                 )
         elif target.endswith(".2"):
             result = _connect_failure_result(target, TargetStatus.CONNECTION_REFUSED)
+        elif target.endswith(".5"):
+            result = _completed_result(target)
+            if callable(on_finding):
+                on_finding(
+                    ContentFinding(
+                        target=target,
+                        share="Shared",
+                        path="tickets/admin.ccache",
+                        line_number=None,
+                        term="Kerberos credential cache",
+                        full_line=None,
+                        method=FindingMethod.ARTIFACT,
+                        rule_id="kerberos-ccache-file",
+                        category="Windows / AD",
+                        confidence=DetectionConfidence.HIGH,
+                    )
+                )
         elif target.endswith(".4"):
             result = _share_enum_failure_result(target)
         else:
@@ -593,6 +612,19 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(findings["items"][0]["full_line"], "password=lab-value")
         self.assertEqual(findings["items"][0]["method"], "wordlist")
         self.assertIsNone(findings["items"][0]["rule_id"])
+
+    async def test_binary_credential_artifact_has_no_line_content_in_api(self) -> None:
+        _response, snapshot = await self._start_and_wait(targets="192.0.2.5")
+
+        self.assertEqual(snapshot["finding_count"], 1)
+        findings = (await self.client.get("/findings")).json()
+        artifact = findings["items"][0]
+        self.assertEqual(artifact["method"], "artifact")
+        self.assertEqual(artifact["rule_id"], "kerberos-ccache-file")
+        self.assertEqual(artifact["category"], "Windows / AD")
+        self.assertEqual(artifact["confidence"], "high")
+        self.assertIsNone(artifact["line_number"])
+        self.assertIsNone(artifact["full_line"])
 
     async def test_share_enumeration_failure_remains_visible_in_target_snapshot(self) -> None:
         _response, snapshot = await self._start_and_wait(targets="192.0.2.4")

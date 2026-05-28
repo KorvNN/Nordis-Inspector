@@ -147,6 +147,7 @@ const STATUS_LABELS = {
   failed: "Başarısız",
   wordlist: "Wordlist",
   pattern: "Kalıp",
+  artifact: "Dosya imzası",
   high: "Yüksek",
   medium: "Orta",
   low: "Düşük",
@@ -158,11 +159,112 @@ const STATUS_LABELS = {
 const FINDING_METHOD_LABELS = {
   wordlist: "Arama terimi",
   pattern: "Otomatik tespit",
+  artifact: "Dosya imzası",
+};
+const EN_FINDING_METHOD_LABELS = {
+  wordlist: "Search term",
+  pattern: "Automatic detection",
+  artifact: "File signature",
 };
 const FINDING_RULE_LABELS = {
+  "cloud-access-key": "Bulut erişim anahtarı",
+  "jwt-token": "JWT oturum tokenı",
+  "private-key-header": "Özel anahtar başlangıcı",
+  "authorization-bearer": "Bearer token",
+  "authorization-basic": "Basic kimlik doğrulama değeri",
+  "credential-url": "URL içindeki kimlik bilgisi",
   "secret-assignment": "Parola veya token",
   "connection-string-password": "Veritabanı bağlantı parolası",
+  "gpp-cpassword": "Group Policy cpassword",
+  "kerberos-tgs-artifact": "Kerberos TGS-REP verisi",
+  "kerberos-asrep-artifact": "Kerberos AS-REP verisi",
+  "kerberos-preauth-artifact": "Kerberos ön kimlik doğrulama verisi",
+  "kerberos-db-key": "Kerberos KDC veritabanı anahtarı",
+  "windows-nt-hash": "NTLM hash",
+  "kerberos-rc4-key": "Kerberos RC4 anahtarı",
+  "kerberos-aes128-key": "Kerberos AES-128 anahtarı",
+  "kerberos-aes256-key": "Kerberos AES-256 anahtarı",
+  "kerberos-des-key": "Kerberos DES anahtarı",
+  "lm-nt-hash-pair": "LM/NT hash çifti",
+  "credential-dump-line": "Hesap RID'si ve parola hash'leri",
+  "netntlmv1-response": "NetNTLMv1 yanıtı",
+  "netntlmv2-response": "NetNTLMv2 yanıtı",
+  "dcc2-hash": "Önbelleğe alınmış etki alanı hash'i (DCC2)",
+  "unix-password-hash": "Unix parola hash'i",
+  "modern-password-hash": "Bcrypt veya Argon2 hash'i",
+  "github-token-prefix": "GitHub erişim tokenı",
+  "github-fine-grained-token": "GitHub ayrıntılı erişim tokenı",
+  "gitlab-token-prefix": "GitLab erişim tokenı",
+  "slack-token-prefix": "Slack tokenı",
+  "stripe-secret-key": "Stripe gizli anahtarı",
+  "sendgrid-api-key": "SendGrid API anahtarı",
+  "google-api-key": "Google API anahtarı",
+  "npm-token-prefix": "npm erişim tokenı",
+  "pypi-token-prefix": "PyPI API tokenı",
+  "huggingface-token-prefix": "Hugging Face tokenı",
+  "vault-token-prefix": "Vault tokenı",
+  "private-token-header": "Özel erişim tokenı başlığı",
+  "cookie-secret-assignment": "Oturum çerezi değeri",
+  "netrc-credential": "netrc kimlik bilgisi",
+  "aws-secret-access-key": "AWS gizli erişim anahtarı",
+  "docker-registry-auth": "Docker kayıt deposu kimlik bilgisi",
+  "ansible-vault-artifact": "Ansible Vault verisi",
+  "sops-encrypted-artifact": "SOPS şifreli değeri",
+  "windows-managed-password": "Windows yönetilen parola alanı",
+  "age-encrypted-file": "Age ile şifrelenmiş dosya",
+  "kerberos-ccache-file": "Kerberos kimlik bilgisi önbelleği (CCache)",
+  "kerberos-keytab-file": "Kerberos anahtar tablosu (keytab)",
+  "kerberos-kirbi-file": "Kerberos bilet dosyası (KIRBI)",
+};
+const EN_FINDING_RULE_LABELS = {
+  "cloud-access-key": "Cloud access key",
+  "jwt-token": "JWT session token",
+  "private-key-header": "Private key header",
+  "authorization-bearer": "Bearer token",
+  "authorization-basic": "Basic authentication value",
+  "credential-url": "Credential embedded in URL",
+  "secret-assignment": "Password or token",
+  "connection-string-password": "Database connection password",
+  "gpp-cpassword": "Group Policy cpassword",
+  "kerberos-tgs-artifact": "Kerberos TGS-REP material",
+  "kerberos-asrep-artifact": "Kerberos AS-REP material",
+  "kerberos-preauth-artifact": "Kerberos pre-auth material",
+  "kerberos-db-key": "Kerberos KDC database key",
+  "windows-nt-hash": "NTLM hash",
+  "kerberos-rc4-key": "Kerberos RC4 key",
+  "kerberos-aes128-key": "Kerberos AES-128 key",
+  "kerberos-aes256-key": "Kerberos AES-256 key",
+  "kerberos-des-key": "Kerberos DES key",
+  "lm-nt-hash-pair": "LM/NT hash pair",
+  "credential-dump-line": "Account RID/hash record",
+  "netntlmv1-response": "NetNTLMv1 response",
+  "netntlmv2-response": "NetNTLMv2 response",
+  "dcc2-hash": "Cached domain credential",
+  "unix-password-hash": "Unix password hash",
+  "modern-password-hash": "Bcrypt or Argon2 hash",
+  "github-token-prefix": "GitHub access token",
+  "github-fine-grained-token": "GitHub fine-grained token",
+  "gitlab-token-prefix": "GitLab access token",
+  "slack-token-prefix": "Slack token",
+  "stripe-secret-key": "Stripe secret key",
+  "sendgrid-api-key": "SendGrid API key",
+  "google-api-key": "Google API key",
+  "npm-token-prefix": "npm access token",
+  "pypi-token-prefix": "PyPI API token",
+  "huggingface-token-prefix": "Hugging Face token",
+  "vault-token-prefix": "Vault token",
+  "private-token-header": "Private access token header",
+  "cookie-secret-assignment": "Session cookie value",
+  "netrc-credential": "netrc credential",
   "aws-secret-access-key": "AWS secret access key",
+  "docker-registry-auth": "Docker registry credential",
+  "ansible-vault-artifact": "Ansible Vault material",
+  "sops-encrypted-artifact": "SOPS encrypted value",
+  "windows-managed-password": "Windows managed password field",
+  "age-encrypted-file": "Age encrypted file",
+  "kerberos-ccache-file": "Kerberos credential cache file",
+  "kerberos-keytab-file": "Kerberos keytab file",
+  "kerberos-kirbi-file": "Kerberos ticket file",
 };
 const SCAN_STATUS_LABELS = {
   idle: "Tarama yok",
@@ -228,7 +330,7 @@ const EN_STATUS_LABELS = {
   partial_access: "Partial access", completed: "Completed", cancelled: "Cancelled",
   failed: "Failed", high: "High", medium: "Medium", low: "Low",
   allowed: "Allowed", denied: "Denied", unknown: "Unknown", error: "Error",
-  wordlist: "Wordlist match", pattern: "Pattern match",
+  wordlist: "Wordlist match", pattern: "Pattern match", artifact: "File signature",
   security_active_required: "Active · Required", security_active: "Active",
   security_required: "Required", security_supported: "Supported", security_unsupported: "Unsupported",
   share_connected: "Share accessible", share_access_denied: "Share access denied",
@@ -244,6 +346,14 @@ const EN_CATEGORY_LABELS = {
   "Credential artifact": "Credential artifact", "Source control": "Source control",
   "Ödeme servisi": "Payment service", "Developer tooling": "Developer tooling",
   Infrastructure: "Infrastructure", "Container tooling": "Container tooling",
+};
+const TR_CATEGORY_LABELS = {
+  "Cloud / SaaS": "Bulut / SaaS", "Oturum tokenı": "Oturum tokenı",
+  "Kriptografik anahtar": "Kriptografik anahtar", "Kimlik bilgisi": "Kimlik bilgisi",
+  Veritabanı: "Veritabanı", Yapılandırma: "Yapılandırma", "Windows / AD": "Windows / AD",
+  "Credential artifact": "Kimlik doğrulama verisi", "Source control": "Kaynak kod yönetimi",
+  "Ödeme servisi": "Ödeme servisi", "Developer tooling": "Geliştirici araçları",
+  Infrastructure: "Altyapı", "Container tooling": "Konteyner araçları",
 };
 const EN_PHASE_LABELS = {
   preparing_targets: "Preparing targets", connectivity: "TCP/445 check",
@@ -330,7 +440,7 @@ const LANGUAGE_TEXT = {
     "— kayıt": "— entries",
     "Ayrıntı için bir hedef seç.": "Select a target to view details.",
     "Ayrıntı için bir kayıt seç.": "Select an entry to view details.",
-    "Tam satır için bir bulgu seç.": "Select a finding to view the full line.",
+    "Ayrıntı için bir bulgu seç.": "Select a finding to view details.",
     "Henüz tarama başlatılmadı.": "No scan has been started.",
     "Hedef sonuçları bekleniyor.": "Waiting for target results.",
     "Hedef durumları bekleniyor.": "Waiting for target statuses.",
@@ -522,15 +632,18 @@ function findingLabel(value, labels) {
   const raw = String(value);
   if (currentLanguage === "en") {
     const english = labels === FINDING_METHOD_LABELS
-      ? {wordlist: "Search term", pattern: "Automatic detection"}
-      : {
-        "secret-assignment": "Password or token",
-        "connection-string-password": "Database connection password",
-        "aws-secret-access-key": "AWS secret access key",
-      };
+      ? EN_FINDING_METHOD_LABELS
+      : EN_FINDING_RULE_LABELS;
     return english[raw.toLowerCase()] ?? labels[raw.toLowerCase()] ?? raw;
   }
   return labels[raw.toLowerCase()] ?? raw;
+}
+
+function categoryLabel(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const raw = String(value);
+  const labels = currentLanguage === "en" ? EN_CATEGORY_LABELS : TR_CATEGORY_LABELS;
+  return labels[raw] ?? raw;
 }
 
 function confidenceLabel(value) {
@@ -564,17 +677,25 @@ function isPatternFinding(record) {
   return String(record.method).toLowerCase() === "pattern";
 }
 
+function isArtifactFinding(record) {
+  return String(record.method).toLowerCase() === "artifact";
+}
+
+function isStructuredFinding(record) {
+  return isPatternFinding(record) || isArtifactFinding(record);
+}
+
 function findingSignalValue(record) {
   const assignmentKey = findingAssignmentKey(record);
   if (assignmentKey !== null) return assignmentKey;
-  if (isPatternFinding(record) && FINDING_RULE_LABELS[record.ruleId]) {
+  if (isStructuredFinding(record) && FINDING_RULE_LABELS[record.ruleId]) {
     return findingLabel(record.ruleId, FINDING_RULE_LABELS);
   }
   return displayValue(record.term);
 }
 
 function findingHighlightTerm(record) {
-  return findingAssignmentKey(record) ?? (isPatternFinding(record) ? null : record.term);
+  return findingAssignmentKey(record) ?? (isStructuredFinding(record) ? null : record.term);
 }
 
 function firstValue(record, names) {
@@ -950,38 +1071,42 @@ function renderFindingDetail(record) {
   signal.className = "finding-signal";
   const signalLabel = document.createElement("span");
   signalLabel.className = "finding-signal-label";
-  signalLabel.textContent = uiText(isPatternFinding(record) ? "Bulgu" : "Eşleşen terim");
+  signalLabel.textContent = uiText(isStructuredFinding(record) ? "Bulgu" : "Eşleşen terim");
   const signalValue = document.createElement("strong");
   signalValue.className = "finding-signal-value";
   signalValue.textContent = findingSignalValue(record);
   signal.append(signalLabel, signalValue);
 
-  const context = document.createElement("section");
-  context.className = "finding-context";
-  const contextLabel = document.createElement("span");
-  contextLabel.className = "finding-context-label";
-  contextLabel.textContent = uiText("Satır içeriği");
-  const line = document.createElement("code");
-  appendHighlightedText(line, record.fullLine, findingHighlightTerm(record));
-  context.append(contextLabel, line);
+  const detailSections = [header, signal];
+  if (!isArtifactFinding(record)) {
+    const context = document.createElement("section");
+    context.className = "finding-context";
+    const contextLabel = document.createElement("span");
+    contextLabel.className = "finding-context-label";
+    contextLabel.textContent = uiText("Satır içeriği");
+    const line = document.createElement("code");
+    appendHighlightedText(line, record.fullLine, findingHighlightTerm(record));
+    context.append(contextLabel, line);
+    detailSections.push(context);
+  }
 
   const metadataFields = [
     ["Hedef", record.target, "detail-code"],
     ["Share", record.share, "detail-code"],
-    ["Satır no", record.lineNumber, "detail-code"],
-    ["Kaynak", findingLabel(record.method, FINDING_METHOD_LABELS)],
   ];
-  if (isPatternFinding(record)) {
+  if (record.lineNumber !== null && record.lineNumber !== undefined) {
+    metadataFields.push(["Satır no", record.lineNumber, "detail-code"]);
+  }
+  metadataFields.push(["Kaynak", findingLabel(record.method, FINDING_METHOD_LABELS)]);
+  if (isStructuredFinding(record)) {
     metadataFields.push(
-      ["Bulgu sınıfı", currentLanguage === "en"
-      ? EN_CATEGORY_LABELS[record.category] ?? record.category
-      : record.category],
+      ["Bulgu sınıfı", categoryLabel(record.category)],
       ["Eşleşme gücü", confidenceLabel(record.confidence)],
     );
   }
   const metadata = detailList(metadataFields);
   metadata.classList.add("finding-metadata");
-  findingSelectionDetail.replaceChildren(header, signal, context, metadata);
+  findingSelectionDetail.replaceChildren(...detailSections, metadata);
 }
 
 function recordsByTarget(records) {
@@ -1268,7 +1393,7 @@ function renderFindings() {
   if (!visibleRecords.some(([key]) => key === selectedFindingKey)) {
     selectedFindingKey = visibleRecords[0]?.[0] ?? null;
     if (visibleRecords[0]) renderFindingDetail(visibleRecords[0][1]);
-    else setSelectionPlaceholder(findingSelectionDetail, "Tam satır için bir bulgu seç.");
+    else setSelectionPlaceholder(findingSelectionDetail, "Ayrıntı için bir bulgu seç.");
   }
   const groups = recordsByTarget(visibleRecords);
   findingsGroups.replaceChildren();
@@ -1360,7 +1485,7 @@ function replaceFindings(records) {
   }
   if (selectedFindingKey !== null && !findingStore.has(selectedFindingKey)) {
     selectedFindingKey = null;
-    setSelectionPlaceholder(findingSelectionDetail, "Tam satır için bir bulgu seç.");
+    setSelectionPlaceholder(findingSelectionDetail, "Ayrıntı için bir bulgu seç.");
   }
   renderFindings();
   return true;
@@ -1374,7 +1499,7 @@ function clearResults() {
   selectedInventoryKey = null;
   selectedFindingKey = null;
   setSelectionPlaceholder(inventorySelectionDetail, "Ayrıntı için bir kayıt seç.");
-  setSelectionPlaceholder(findingSelectionDetail, "Tam satır için bir bulgu seç.");
+  setSelectionPlaceholder(findingSelectionDetail, "Ayrıntı için bir bulgu seç.");
   renderInventory();
   renderFindings();
 }
