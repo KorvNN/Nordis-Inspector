@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from itertools import chain
 from typing import BinaryIO, Protocol
 
 from nordis_smb_inspector.core.content import (
@@ -20,6 +21,11 @@ from nordis_smb_inspector.core.content import (
     LineMatch,
     MatchOptions,
     scan_text,
+)
+from nordis_smb_inspector.core.credential_artifacts import (
+    CredentialArtifactMatch,
+    credential_artifact_header_bytes,
+    detect_credential_artifact,
 )
 from nordis_smb_inspector.core.credentials import Credential
 from nordis_smb_inspector.core.detection import (
@@ -159,6 +165,7 @@ class InspectionEventKind(StrEnum):
 class FindingMethod(StrEnum):
     WORDLIST = "wordlist"
     PATTERN = "pattern"
+    ARTIFACT = "artifact"
 
 
 class _StageCancelled(ScanCancelled):
@@ -209,14 +216,14 @@ class InspectionTargetEvent:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class ContentFinding:
-    """One matching term on one decoded physical line of a remote file."""
+    """One text match or binary credential artifact in a remote file."""
 
     target: str = field(repr=False)
     share: str = field(repr=False)
     path: str = field(repr=False)
-    line_number: int
+    line_number: int | None
     term: str = field(repr=False)
-    full_line: str = field(repr=False)
+    full_line: str | None = field(repr=False)
     method: FindingMethod = FindingMethod.WORDLIST
     rule_id: str | None = None
     category: str | None = None
@@ -227,14 +234,18 @@ class ContentFinding:
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{name} must be non-empty text.")
-        if isinstance(self.line_number, bool) or not isinstance(self.line_number, int):
-            raise TypeError("line_number must be an integer.")
-        if self.line_number < 1:
-            raise ValueError("line_number must be at least one.")
-        if not isinstance(self.full_line, str):
-            raise TypeError("full_line must be text.")
         if not isinstance(self.method, FindingMethod):
             raise TypeError("method must be a FindingMethod value.")
+        if self.method is FindingMethod.ARTIFACT:
+            if self.line_number is not None or self.full_line is not None:
+                raise ValueError("Artifact findings cannot contain decoded line content.")
+        else:
+            if isinstance(self.line_number, bool) or not isinstance(self.line_number, int):
+                raise TypeError("line_number must be an integer.")
+            if self.line_number < 1:
+                raise ValueError("line_number must be at least one.")
+            if not isinstance(self.full_line, str):
+                raise TypeError("full_line must be text.")
         pattern_metadata = (self.rule_id, self.category, self.confidence)
         if self.method is FindingMethod.WORDLIST:
             if any(value is not None for value in pattern_metadata):
@@ -246,7 +257,7 @@ class ContentFinding:
             or not self.category
             or not isinstance(self.confidence, DetectionConfidence)
         ):
-            raise ValueError("Pattern findings require rule metadata.")
+            raise ValueError("Structured findings require rule metadata.")
 
     def __repr__(self) -> str:
         return (
@@ -891,6 +902,24 @@ def _scan_file(
             ),
         )
 
+    def publish_artifact_match(match: CredentialArtifactMatch, path: str) -> None:
+        counts.findings += 1
+        _publish(
+            on_finding,
+            ContentFinding(
+                target=target,
+                share=entry.share_name,
+                path=path,
+                line_number=None,
+                term=match.title,
+                full_line=None,
+                method=FindingMethod.ARTIFACT,
+                rule_id=match.rule_id,
+                category=match.category,
+                confidence=match.confidence,
+            ),
+        )
+
     def scan_content(
         content_chunks: Iterable[bytes | bytearray | memoryview],
         *,
@@ -957,10 +986,30 @@ def _scan_file(
         chunk_size = min(_STREAM_CHUNK_SIZE, reader.max_read_size)
         kind = document_kind(entry.relative_path)
         if kind is DocumentKind.PLAIN:
-            status = scan_content(
-                reader.iter_chunks(
-                    chunk_size=chunk_size,
+            header = b""
+            if detect_patterns:
+                header = reader.read_range(
+                    0,
+                    min(
+                        credential_artifact_header_bytes(),
+                        reader.max_read_size,
+                        reader.size,
+                    ),
                     cancellation=cancellation,
+                )
+                artifact = detect_credential_artifact(entry.relative_path, header)
+                if artifact is not None:
+                    publish_artifact_match(artifact, entry.relative_path)
+                    counts.files_scanned += 1
+                    return partial
+            status = scan_content(
+                chain(
+                    (header,),
+                    reader.iter_chunks(
+                        chunk_size=chunk_size,
+                        cancellation=cancellation,
+                        start_offset=len(header),
+                    ),
                 ),
                 finding_path=entry.relative_path,
             )
@@ -993,7 +1042,20 @@ def _scan_file(
                     ),
                 )
                 if member.kind is DocumentKind.PLAIN:
-                    content_chunks = _iter_binary_stream(member.stream, cancellation)
+                    header = b""
+                    if detect_patterns:
+                        header = member.stream.read(credential_artifact_header_bytes())
+                        if not isinstance(header, bytes):
+                            raise TypeError("Archive member reads must return bytes.")
+                        artifact = detect_credential_artifact(member.path, header)
+                        if artifact is not None:
+                            publish_artifact_match(artifact, member.path)
+                            counts.files_scanned += 1
+                            continue
+                    content_chunks = chain(
+                        (header,),
+                        _iter_binary_stream(member.stream, cancellation),
+                    )
                 else:
                     content_chunks = encoded_document_lines(
                         _cancelled_lines(

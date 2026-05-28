@@ -9,6 +9,11 @@ from .content import (
     MatchSpan,
     scan_text,
 )
+from .credential_artifacts import (
+    CredentialArtifactMatch,
+    credential_artifact_header_bytes,
+    detect_credential_artifact,
+)
 from .credentials import AuthMode, Credential, CredentialKind, CredentialValidationError
 from .detection import (
     DEFAULT_DETECTION_RULES,
@@ -54,6 +59,7 @@ __all__ = [
     "ActiveWork",
     "AuthMode",
     "Credential",
+    "CredentialArtifactMatch",
     "CredentialKind",
     "CredentialValidationError",
     "DEFAULT_DETECTION_RULES",
@@ -90,6 +96,8 @@ __all__ = [
     "TargetPlan",
     "TerminalReason",
     "parse_targets",
+    "credential_artifact_header_bytes",
+    "detect_credential_artifact",
     "detect_patterns",
     "resolve_kerberos_hostname",
     "scan_text",

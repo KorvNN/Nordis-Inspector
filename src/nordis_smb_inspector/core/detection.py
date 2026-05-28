@@ -150,23 +150,36 @@ def detect_patterns(
                     end=match.end(),
                 )
             )
-    return _without_redundant_secret_assignments(findings)
+    return _without_redundant_matches(findings)
 
 
-def _without_redundant_secret_assignments(
+def _without_redundant_matches(
     findings: list[PatternMatch],
 ) -> tuple[PatternMatch, ...]:
-    specific_matches = tuple(
-        match for match in findings if match.rule_id != "secret-assignment"
-    )
+    def is_redundant(match: PatternMatch) -> bool:
+        if match.rule_id == "secret-assignment":
+            suppressors = (
+                candidate
+                for candidate in findings
+                if candidate.rule_id != "secret-assignment"
+            )
+        elif match.rule_id == "lm-nt-hash-pair":
+            suppressors = (
+                candidate
+                for candidate in findings
+                if candidate.rule_id == "credential-dump-line"
+            )
+        else:
+            return False
+        return any(
+            match.start < candidate.end and candidate.start < match.end
+            for candidate in suppressors
+        )
+
     return tuple(
         match
         for match in findings
-        if match.rule_id != "secret-assignment"
-        or not any(
-            match.start < specific.end and specific.start < match.end
-            for specific in specific_matches
-        )
+        if not is_redundant(match)
     )
 
 
@@ -288,6 +301,92 @@ DEFAULT_DETECTION_RULES = (
         keywords=("$krb5pa$",),
     ),
     DetectionRule(
+        rule_id="kerberos-db-key",
+        title="Kerberos KDC database key",
+        category="Windows / AD",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"\$krb5db\$(?:"
+            r"17\$[^\s$]{1,256}\$[^\s$]{1,256}\$[0-9A-Fa-f]{32}|"
+            r"18\$[^\s$]{1,256}\$[^\s$]{1,256}\$[0-9A-Fa-f]{64}"
+            r")(?![0-9A-Fa-f])"
+        ),
+        keywords=("$krb5db$",),
+    ),
+    DetectionRule(
+        rule_id="windows-nt-hash",
+        title="Etiketli NTLM hash",
+        category="Windows / AD",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"(?:\$NT\$|\b(?:NTLM(?:[ \t]+Hash)?|NT[ _-]*Hash|NTHash|"
+            r"Hash[ _-]*NTLM)[ \t]*[:=][ \t]*)"
+            r"(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
+        ),
+        keywords=("$nt$", "ntlm", "nt hash", "nt_hash", "nt-hash", "nthash"),
+        secret_group="secret",
+    ),
+    DetectionRule(
+        rule_id="kerberos-rc4-key",
+        title="Kerberos RC4 key",
+        category="Windows / AD",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"\b(?:rc4[_-](?:hmac(?:[_-](?:nt|old)(?:[_-]exp)?)?|md4)|"
+            r"arcfour[_-]hmac)\b"
+            r"(?:[ \t]+\([0-9]{1,5}\))?[ \t]*(?:[:=][ \t]*|[ \t]+)"
+            r"(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
+        ),
+        keywords=(
+            "rc4_hmac",
+            "rc4-hmac",
+            "rc4_md4",
+            "rc4-md4",
+            "arcfour_hmac",
+            "arcfour-hmac",
+        ),
+        secret_group="secret",
+    ),
+    DetectionRule(
+        rule_id="kerberos-aes128-key",
+        title="Kerberos AES-128 key",
+        category="Windows / AD",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"\baes128(?:[_-]hmac|[_-]cts[_-]hmac[_-]sha1(?:[_-]96)?)?\b"
+            r"(?:[ \t]+\([0-9]{1,5}\))?[ \t]*(?:[:=][ \t]*|[ \t]+)"
+            r"(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
+        ),
+        keywords=("aes128",),
+        secret_group="secret",
+    ),
+    DetectionRule(
+        rule_id="kerberos-aes256-key",
+        title="Kerberos AES-256 key",
+        category="Windows / AD",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"\baes256(?:[_-]hmac|[_-]cts[_-]hmac[_-]sha1(?:[_-]96)?)?\b"
+            r"(?:[ \t]+\([0-9]{1,5}\))?[ \t]*(?:[:=][ \t]*|[ \t]+)"
+            r"(?P<secret>[0-9A-Fa-f]{64})(?![0-9A-Fa-f])"
+        ),
+        keywords=("aes256",),
+        secret_group="secret",
+    ),
+    DetectionRule(
+        rule_id="kerberos-des-key",
+        title="Kerberos DES key",
+        category="Windows / AD",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"\bdes[_-]cbc[_-](?:md5|crc)\b"
+            r"(?:[ \t]+\([0-9]{1,5}\))?[ \t]*(?:[:=][ \t]*|[ \t]+)"
+            r"(?P<secret>[0-9A-Fa-f]{16})(?![0-9A-Fa-f])"
+        ),
+        keywords=("des_cbc", "des-cbc"),
+        secret_group="secret",
+    ),
+    DetectionRule(
         rule_id="lm-nt-hash-pair",
         title="LM/NT hash çifti",
         category="Credential artifact",
@@ -312,6 +411,16 @@ DEFAULT_DETECTION_RULES = (
         pattern=(
             r"^[^:\r\n]{1,128}::[^:\r\n]{1,128}:[0-9A-Fa-f]{16}:"
             r"[0-9A-Fa-f]{32}:[0-9A-Fa-f]{32,}$"
+        ),
+    ),
+    DetectionRule(
+        rule_id="netntlmv1-response",
+        title="NetNTLMv1 challenge-response",
+        category="Credential artifact",
+        confidence=DetectionConfidence.HIGH,
+        pattern=(
+            r"^[^:\r\n]{0,128}::[^:\r\n]{1,128}:"
+            r"[0-9A-Fa-f]{48}:[0-9A-Fa-f]{48}:[0-9A-Fa-f]{16}$"
         ),
     ),
     DetectionRule(

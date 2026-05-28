@@ -472,6 +472,77 @@ class InspectionTests(unittest.TestCase):
         self.assertEqual("medium", findings[0].confidence.value)
         self.assertNotIn("n0t-a-placeholder-value", repr(findings[0]))
 
+    def test_binary_credential_artifact_is_reported_without_text_decode_error(self) -> None:
+        share, share_inventory = _connected_share()
+        file_entry = _file("tickets/admin.ccache")
+        reader = _Reader(b"\x05\x04\x00\x00\x00\x00\x00\x00")
+        adapter = _FileAdapter(
+            probes=(_Probe(share, share_inventory),),
+            entries={"Data": (file_entry,)},
+            readers={file_entry.relative_path: reader},
+        )
+        findings: list[ContentFinding] = []
+        connection = _Connection()
+
+        result = inspect_target(
+            target="192.0.2.10",
+            connect_request=_request(),
+            credential=_credential(),
+            kerberos_hostname=None,
+            share_discoverer=_ShareDiscoverer(names=("Data",)),
+            search_terms=("not-present",),
+            max_depth=8,
+            connector=_Connector((connection,)),
+            authenticator=_Authenticator(session=_Session(connection)),
+            file_adapter=adapter,
+            cancellation=NEVER_CANCELLED,
+            on_finding=findings.append,
+        )
+
+        self.assertEqual(TargetStatus.COMPLETED, result.status)
+        self.assertEqual(1, result.files_scanned)
+        self.assertEqual(1, result.findings)
+        self.assertEqual(1, len(findings))
+        self.assertEqual(FindingMethod.ARTIFACT, findings[0].method)
+        self.assertEqual("kerberos-ccache-file", findings[0].rule_id)
+        self.assertIsNone(findings[0].line_number)
+        self.assertIsNone(findings[0].full_line)
+        self.assertTrue(reader.closed)
+
+    def test_binary_credential_artifact_inside_zip_is_reported(self) -> None:
+        output = io.BytesIO()
+        with ZipFile(output, "w") as archive:
+            archive.writestr("tickets/admin.kirbi", b"\x76\x82\x01\x00ticket-data")
+        share, share_inventory = _connected_share()
+        file_entry = _file("archives/tickets.zip")
+        adapter = _FileAdapter(
+            probes=(_Probe(share, share_inventory),),
+            entries={"Data": (file_entry,)},
+            readers={file_entry.relative_path: _Reader(output.getvalue())},
+        )
+        findings: list[ContentFinding] = []
+        connection = _Connection()
+
+        result = inspect_target(
+            target="192.0.2.10",
+            connect_request=_request(),
+            credential=_credential(),
+            kerberos_hostname=None,
+            share_discoverer=_ShareDiscoverer(names=("Data",)),
+            search_terms=("not-present",),
+            max_depth=8,
+            connector=_Connector((connection,)),
+            authenticator=_Authenticator(session=_Session(connection)),
+            file_adapter=adapter,
+            cancellation=NEVER_CANCELLED,
+            on_finding=findings.append,
+        )
+
+        self.assertEqual(TargetStatus.COMPLETED, result.status)
+        self.assertEqual(1, len(findings))
+        self.assertEqual("kerberos-kirbi-file", findings[0].rule_id)
+        self.assertEqual("archives/tickets.zip!/tickets/admin.kirbi", findings[0].path)
+
     def test_docx_is_extracted_over_range_reads_and_scanned(self) -> None:
         output = io.BytesIO()
         with ZipFile(output, "w") as archive:

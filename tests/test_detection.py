@@ -144,8 +144,24 @@ class PatternDetectionTests(unittest.TestCase):
             (f"$krb5tgs$23$alice$REALM$spn$deadbeef{'a' * 30}", "kerberos-tgs-artifact"),
             (f"$krb5asrep$18$alice@REALM:{'a' * 64}", "kerberos-asrep-artifact"),
             (f"$krb5pa$17$alice$REALM${'b' * 40}", "kerberos-preauth-artifact"),
+            (f"$krb5db$17$alice$REALM${'a' * 32}", "kerberos-db-key"),
+            (f"$krb5db$18$alice$REALM${'b' * 64}", "kerberos-db-key"),
+            (f"NTLM: {nt}", "windows-nt-hash"),
+            (f"$NT${nt}", "windows-nt-hash"),
+            (f"rc4_hmac_nt : {nt}", "kerberos-rc4-key"),
+            (f"rc4_hmac_old_exp (24) : {nt}", "kerberos-rc4-key"),
+            (f"rc4_md4 (23) : {nt}", "kerberos-rc4-key"),
+            (f"aes128_hmac {nt}", "kerberos-aes128-key"),
+            (f"aes128_hmac (4096) : {nt}", "kerberos-aes128-key"),
+            (f"aes256_cts_hmac_sha1: {'a' * 64}", "kerberos-aes256-key"),
+            (f"aes256_hmac (4096) : {'a' * 64}", "kerberos-aes256-key"),
+            ("des_cbc_md5 = 0123456789abcdef", "kerberos-des-key"),
             (f"{lm}:{nt}", "lm-nt-hash-pair"),
             (f"alice:1001:{lm}:{nt}:::", "credential-dump-line"),
+            (
+                f"alice::DOMAIN:{'a' * 48}:{'b' * 48}:{'c' * 16}",
+                "netntlmv1-response",
+            ),
             (f"alice::DOMAIN:1122334455667788:{'a' * 32}:{'b' * 64}", "netntlmv2-response"),
             (f"$DCC2$10240#alice#{nt}", "dcc2-hash"),
             ("$6$roundsalt$abcdefghijklmnopqrstuv0123456789", "unix-password-hash"),
@@ -162,11 +178,23 @@ class PatternDetectionTests(unittest.TestCase):
             with self.subTest(rule_id=rule_id):
                 self.assert_rule(line, rule_id)
 
+    def test_account_dump_suppresses_embedded_lm_nt_pair(self) -> None:
+        lm = "aad3b435b51404eeaad3b435b51404ee"
+        nt = "31d6cfe0d16ae931b73c59d7e0c089c0"
+
+        matches = detect_patterns(f"alice:1001:{lm}:{nt}:::", 1)
+
+        self.assertEqual(["credential-dump-line"], [match.rule_id for match in matches])
+
     def test_common_placeholder_values_and_unlabelled_md5_are_ignored(self) -> None:
         cases = (
             "password=changeme",
             "client_secret='placeholder'",
             "d41d8cd98f00b204e9800998ecf8427e",
+            "31d6cfe0d16ae931b73c59d7e0c089c0",
+            "a" * 64,
+            "aes256_hmac: " + "a" * 32,
+            "$krb5db$18$alice$REALM$" + "a" * 32,
             "https://example.test/no-credential",
             "eyJ.short.token",
         )
