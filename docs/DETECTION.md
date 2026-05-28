@@ -2,7 +2,8 @@
 
 Nordis SMB Inspector combines an editable content wordlist with built-in credential
 patterns. Detection is intentionally explainable: every finding identifies the
-method, matched term or rule, source line, and confidence.
+method and matched term or rule. Structured findings also include a category and
+confidence; text findings retain their source line for review.
 
 ## Wordlist matching
 
@@ -42,10 +43,10 @@ text. Current rule families include:
 - netrc, Docker registry auth, Ansible Vault, and SOPS secret artifacts
 - Secret assignments such as passwords, tokens, API keys, and client secrets
 - Group Policy Preferences `cpassword` values
-- Kerberos ticket and credential-cache artifacts
-- LM/NT hash pairs and common hash-dump forms
+- Hashcat-style Kerberos TGS-REP, AS-REP, pre-auth, and KDC database-key material
+- Labelled NTLM hashes and Kerberos RC4, AES-128, AES-256, and DES keys
+- LM/NT hash pairs, account RID/hash records, NetNTLMv1/NetNTLMv2 responses, and DCC2
 - Windows LAPS/managed-password attributes and private access-token headers
-- NetNTLMv2 and DCC2 material
 - Unix password hashes and modern application password hashes
 
 Each rule has a stable identifier and confidence level. Common examples and obvious
@@ -56,6 +57,10 @@ than proof that a live secret exists.
 The scan form can generate literal search-term variants from supplied roots. Generated
 terms are added only to the current scan's additional terms; they do not modify the
 saved default wordlist. The web panel currently exposes one editable content list.
+
+Unlabelled 32- or 64-character hexadecimal strings are not treated as NT or Kerberos
+keys. Those lengths occur in checksums and unrelated identifiers, so the detector
+requires either a recognized export format or a nearby key-type label.
 
 The following matching controls are deliberately not part of the current web
 contract: user-supplied regular expressions, selectable rule-category packs,
@@ -82,20 +87,24 @@ recursion is not performed. Unsupported, encrypted, malformed, or over-limit
 members are represented as inventory diagnostics rather than silently treated as a
 clean scan.
 
+When built-in detection is enabled, plain files and archive members named like
+Kerberos CCache, keytab, or KIRBI files are also checked against their binary header.
+Both the expected name and signature must match. Their contents are not decoded or
+included in a finding.
+
 ## Finding fields
 
 A finding contains:
 
 - Target, share, and remote path
-- Physical or extracted line number
-- Full decoded line
-- Match term and spans
-- Detection method (`wordlist` or `pattern`)
-- Pattern rule identifier and confidence when applicable
+- Detection method (`wordlist`, `pattern`, or `artifact`)
+- Match term for wordlist findings
+- Rule identifier, category, and confidence for structured findings
+- Physical or extracted line number and full decoded line for text findings
 
-The full line is shown because it gives the operator review context. It can also
-contain sensitive material. Do not paste findings into tickets, chat, or logs without
-redaction.
+The full line gives the operator review context, but it can contain sensitive
+material. Binary artifact findings never include decoded content. Do not paste text
+findings into tickets, chat, or logs without redaction.
 
 ## Interpretation
 

@@ -18,6 +18,7 @@ accessible, what was readable, and which lines require review.
 - Builds separate share, directory, and file inventory views
 - Scans readable text and bounded document/archive content without copying files locally
 - Uses an editable literal wordlist plus built-in credential-pattern rules
+- Recognizes common NTLM/Kerberos exports and CCache, keytab, and KIRBI files
 - Streams progress, target states, inventory entries, and findings to the UI
 - Keeps local scan history with safe credential metadata and JSON export
 
