@@ -371,6 +371,7 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="finding-selection-detail"', response.text)
         self.assertIn('id="inventory-groups"', response.text)
         self.assertIn('id="findings-groups"', response.text)
+        self.assertIn('id="history-delete-dialog"', response.text)
         self.assertIn('id="detect-patterns"', response.text)
         self.assertIn('id="toggle-term-generator"', response.text)
         self.assertIn('id="term-generator-roots"', response.text)

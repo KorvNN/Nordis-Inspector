@@ -707,7 +707,8 @@ tbody tr:last-child td { border-bottom: 0; }
   color: var(--text);
   background: #0c1715;
 }
-.wordlist-dialog::backdrop { background: rgb(2 8 7 / 76%); }
+.wordlist-dialog::backdrop,
+.confirm-dialog::backdrop { background: rgb(2 8 7 / 76%); }
 .dialog-heading { align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 .icon-button {
   display: grid;
@@ -742,6 +743,41 @@ tbody tr:last-child td { border-bottom: 0; }
 .wordlist-status { min-height: 1rem; color: var(--muted); font-size: .7rem; font-weight: 700; }
 .wordlist-status.is-ok { color: var(--accent); }
 .wordlist-status.is-error { color: var(--danger); }
+.confirm-dialog {
+  width: min(440px, calc(100vw - 48px));
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  padding: 20px;
+  color: var(--text);
+  background: #0c1715;
+}
+.confirm-dialog .dialog-heading h2 { margin: 0; }
+.confirm-dialog-copy {
+  margin: 17px 0 0;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.55;
+}
+.confirm-dialog-target {
+  display: grid;
+  gap: 5px;
+  margin-top: 17px;
+  border-block: 1px solid var(--line);
+  padding: 13px 0;
+}
+.confirm-dialog-target strong {
+  overflow-wrap: anywhere;
+  font-size: .88rem;
+}
+.confirm-dialog-target span { color: var(--muted); font-size: .74rem; }
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 17px;
+}
+.danger-button { color: #fff; background: #a43d45; }
+.danger-button:focus-visible { outline-color: var(--danger); }
 .visually-hidden {
   position: absolute;
   width: 1px;

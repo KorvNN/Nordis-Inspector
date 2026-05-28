@@ -274,6 +274,26 @@
     </section>
   </main>
 
+  <dialog id="history-delete-dialog" class="confirm-dialog"
+    aria-labelledby="history-delete-heading" aria-describedby="history-delete-description">
+    <div class="dialog-heading">
+      <h2 id="history-delete-heading">Taramayı sil</h2>
+      <button id="close-history-delete" class="icon-button" type="button"
+        aria-label="Kapat">×</button>
+    </div>
+    <p id="history-delete-description" class="confirm-dialog-copy">
+      Bu tarama geçmişten kalıcı olarak silinecek. Bu işlem geri alınamaz.
+    </p>
+    <div class="confirm-dialog-target">
+      <strong id="history-delete-name"></strong>
+      <span id="history-delete-meta"></span>
+    </div>
+    <div class="confirm-dialog-actions">
+      <button id="cancel-history-delete" class="secondary-button" type="button">Vazgeç</button>
+      <button id="confirm-history-delete" class="danger-button" type="button">Geçmişten sil</button>
+    </div>
+  </dialog>
+
   <dialog id="wordlist-dialog" class="wordlist-dialog" aria-labelledby="wordlist-heading">
     <div class="dialog-heading">
       <div>

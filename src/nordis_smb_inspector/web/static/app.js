@@ -33,6 +33,12 @@ const saveContentWordlist = document.querySelector("#save-content-wordlist");
 const openWordlistsButton = document.querySelector("#open-wordlists");
 const closeWordlistsButton = document.querySelector("#close-wordlists");
 const wordlistDialog = document.querySelector("#wordlist-dialog");
+const historyDeleteDialog = document.querySelector("#history-delete-dialog");
+const closeHistoryDeleteButton = document.querySelector("#close-history-delete");
+const cancelHistoryDeleteButton = document.querySelector("#cancel-history-delete");
+const confirmHistoryDeleteButton = document.querySelector("#confirm-history-delete");
+const historyDeleteName = document.querySelector("#history-delete-name");
+const historyDeleteMeta = document.querySelector("#history-delete-meta");
 const startScanButton = document.querySelector("#start-scan-button");
 const cancelScanButton = document.querySelector("#cancel-scan-button");
 const previewErrors = document.querySelector("#preview-errors");
@@ -68,6 +74,7 @@ let selectedTargetKey = null;
 let selectedInventoryKey = null;
 let selectedFindingKey = null;
 let latestGeneration = null;
+let pendingHistoryDeleteKey = null;
 
 const HISTORY_KEY = "nordis.scan-history.v1";
 
@@ -154,6 +161,7 @@ const FINDING_METHOD_LABELS = {
 };
 const FINDING_RULE_LABELS = {
   "secret-assignment": "Parola veya token",
+  "connection-string-password": "Veritabanı bağlantı parolası",
   "aws-secret-access-key": "AWS secret access key",
 };
 const SCAN_STATUS_LABELS = {
@@ -333,7 +341,10 @@ const LANGUAGE_TEXT = {
     "Filtreyle eşleşen bulgu yok.": "No findings match this filter.",
     "Henüz kayıtlı tarama yok.": "No saved scans yet.",
     "Kullanıcı yok": "No username",
-    "Bu tarama geçmişten silinsin mi?": "Delete this scan from history?",
+    "Taramayı sil": "Delete scan",
+    "Bu tarama geçmişten kalıcı olarak silinecek. Bu işlem geri alınamaz.": "This scan will be permanently deleted from history. This action cannot be undone.",
+    "Vazgeç": "Cancel",
+    "Geçmişten sil": "Delete from history",
     "Dosya": "File",
     "Dizin": "Directory",
     "Share": "Share",
@@ -514,6 +525,7 @@ function findingLabel(value, labels) {
       ? {wordlist: "Search term", pattern: "Automatic detection"}
       : {
         "secret-assignment": "Password or token",
+        "connection-string-password": "Database connection password",
         "aws-secret-access-key": "AWS secret access key",
       };
     return english[raw.toLowerCase()] ?? labels[raw.toLowerCase()] ?? raw;
@@ -1733,6 +1745,13 @@ function historyItemKey(item) {
   return item?.scan_id ?? `${item?.targets ?? ""}|${item?.finished_at ?? ""}`;
 }
 
+function historyFinishedAt(item) {
+  const parsedDate = Date.parse(item.finished_at);
+  return Number.isNaN(parsedDate)
+    ? displayValue(item.finished_at)
+    : new Date(parsedDate).toLocaleString(numberLocale());
+}
+
 function writeHistory(history) {
   const candidate = history.slice(0, 20);
   while (candidate.length > 0) {
@@ -1790,10 +1809,7 @@ function renderHistory() {
     const storedStatus = rawStoredStatus === "tamamlandı" ? "completed" : rawStoredStatus;
     const status = localizedMap(SCAN_STATUS_LABELS, EN_SCAN_STATUS_LABELS, storedStatus)
       ?? item.status;
-    const parsedDate = Date.parse(item.finished_at);
-    const finishedAt = Number.isNaN(parsedDate)
-      ? item.finished_at
-      : new Date(parsedDate).toLocaleString(numberLocale());
+    const finishedAt = historyFinishedAt(item);
     summary.textContent = `${status} · ${finishedAt}`;
     const counts = document.createElement("span");
     counts.className = "history-item-counts";
@@ -1831,10 +1847,26 @@ function renderHistory() {
 }
 
 function deleteHistoryItem(item) {
-  if (!window.confirm(uiText("Bu tarama geçmişten silinsin mi?"))) return;
-  const itemKey = historyItemKey(item);
+  pendingHistoryDeleteKey = historyItemKey(item);
+  historyDeleteName.textContent = item.name || item.targets || uiText("Hedefler");
+  const findings = Number(item.findings ?? 0).toLocaleString(numberLocale());
+  const inventory = Number(item.inventory ?? 0).toLocaleString(numberLocale());
+  historyDeleteMeta.textContent = currentLanguage === "en"
+    ? `${historyFinishedAt(item)} · ${findings} findings · ${inventory} inventory entries`
+    : `${historyFinishedAt(item)} · ${findings} bulgu · ${inventory} envanter`;
+  historyDeleteDialog.showModal();
+}
+
+function closeHistoryDeleteDialog() {
+  historyDeleteDialog.close();
+}
+
+function confirmHistoryItemDelete() {
+  if (pendingHistoryDeleteKey === null) return;
+  const itemKey = pendingHistoryDeleteKey;
   const history = storedHistory().filter((entry) => historyItemKey(entry) !== itemKey);
   writeHistory(history);
+  historyDeleteDialog.close();
   renderHistory();
 }
 
@@ -2145,6 +2177,15 @@ openWordlistsButton.addEventListener("click", async () => {
 closeWordlistsButton.addEventListener("click", () => wordlistDialog.close());
 wordlistDialog.addEventListener("click", (event) => {
   if (event.target === wordlistDialog) wordlistDialog.close();
+});
+closeHistoryDeleteButton.addEventListener("click", closeHistoryDeleteDialog);
+cancelHistoryDeleteButton.addEventListener("click", closeHistoryDeleteDialog);
+confirmHistoryDeleteButton.addEventListener("click", confirmHistoryItemDelete);
+historyDeleteDialog.addEventListener("close", () => {
+  pendingHistoryDeleteKey = null;
+});
+historyDeleteDialog.addEventListener("click", (event) => {
+  if (event.target === historyDeleteDialog) closeHistoryDeleteDialog();
 });
 toggleTermGenerator.addEventListener("click", () => {
   termGenerator.hidden = !termGenerator.hidden;
