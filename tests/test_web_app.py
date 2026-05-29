@@ -38,10 +38,19 @@ from nordis_smb_inspector.smb.models import (
     TransportSecurity,
 )
 from nordis_smb_inspector.web.app import create_app
+from nordis_smb_inspector.web.audit import (
+    AuditRunOutcome,
+    AuditRunRequest,
+    AuditRunResult,
+    AuditToolAvailability,
+    CredentialAuditManager,
+)
 
 _PASSWORD = "CorrectHorseBatteryStaple!"
 _NT_HASH = "0123456789ABCDEF0123456789ABCDEF"
 _CCACHE = b"\x05\x04nordis-test-ccache"
+_FOUND_NT_HASH = "8846f7eaee8fb117ad06bdd830b7586c"
+_RECOVERED_PLAINTEXT = "Password1!"
 
 
 def _credential_payload(
@@ -266,6 +275,23 @@ class _FakeAccessInspector:
                         confidence=DetectionConfidence.HIGH,
                     )
                 )
+        elif target.endswith(".6"):
+            result = _completed_result(target)
+            if callable(on_finding):
+                on_finding(
+                    ContentFinding(
+                        target=target,
+                        share="Shared",
+                        path="exports/domain-hashes.txt",
+                        line_number=4,
+                        term="Etiketli NTLM hash",
+                        full_line=f"NTLM: {_FOUND_NT_HASH}",
+                        method=FindingMethod.PATTERN,
+                        rule_id="windows-nt-hash",
+                        category="Windows / AD",
+                        confidence=DetectionConfidence.HIGH,
+                    )
+                )
         elif target.endswith(".4"):
             result = _share_enum_failure_result(target)
         else:
@@ -306,6 +332,30 @@ class _FakeAccessInspector:
         return result
 
 
+class _FakeHashToolRunner:
+    def __init__(self, tool_id: str, display_name: str) -> None:
+        self.tool_id = tool_id
+        self.display_name = display_name
+        self.request: AuditRunRequest | None = None
+
+    def availability(self) -> AuditToolAvailability:
+        return AuditToolAvailability(
+            self.tool_id,
+            self.display_name,
+            True,
+            f"/test/{self.tool_id}",
+        )
+
+    def run(self, request: AuditRunRequest, _cancellation: threading.Event) -> AuditRunResult:
+        self.request = request
+        if _RECOVERED_PLAINTEXT.encode() in request.wordlist_entries:
+            return AuditRunResult(
+                AuditRunOutcome.CRACKED,
+                plaintext=_RECOVERED_PLAINTEXT,
+            )
+        return AuditRunResult(AuditRunOutcome.EXHAUSTED)
+
+
 class WebAppTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.port = 8765
@@ -319,10 +369,15 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
             encoding="utf-8",
         )
         self.wordlists = WordlistStore(content_path=self.content_wordlist_path)
+        self.hashcat_runner = _FakeHashToolRunner("hashcat", "Hashcat")
+        self.john_runner = _FakeHashToolRunner("john", "John the Ripper")
         self.app = create_app(
             port=self.port,
             access_inspector=self.inspector,
             wordlist_store=self.wordlists,
+            hash_tool_manager=CredentialAuditManager(
+                (self.hashcat_runner, self.john_runner)
+            ),
             kerberos_hostname_resolver=lambda target: target.source_hostname,
         )
         self.client = httpx.AsyncClient(
@@ -625,6 +680,72 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(artifact["confidence"], "high")
         self.assertIsNone(artifact["line_number"])
         self.assertIsNone(artifact["full_line"])
+        self.assertEqual(artifact["audit_candidates"], [])
+
+    async def test_hash_tools_receive_only_reclassified_supported_findings(self) -> None:
+        await self._start_and_wait(targets="192.0.2.6")
+        finding = (await self.client.get("/findings")).json()["items"][0]
+
+        self.assertEqual(
+            finding["audit_candidates"],
+            [
+                {
+                    "variant": "nt",
+                    "format": "ntlm",
+                    "tools": [
+                        {"id": "hashcat", "format": "1000"},
+                        {"id": "john", "format": "nt"},
+                    ],
+                }
+            ],
+        )
+        tool_snapshot = (await self.client.get("/hash-tools")).json()
+        self.assertEqual(
+            [(tool["id"], tool["available"]) for tool in tool_snapshot["tools"]],
+            [("hashcat", True), ("john", True)],
+        )
+
+        response = await self.post(
+            "/hash-tools/jobs",
+            json={
+                "rule_id": finding["rule_id"],
+                "full_line": finding["full_line"],
+                "variant": "nt",
+                "tool_id": "hashcat",
+                "wordlist": f"wrong\n{_RECOVERED_PLAINTEXT}",
+                "runtime_seconds": 30,
+            },
+        )
+        self.assertEqual(response.status_code, 202, response.text)
+        worker = self.app.state.runtime.hash_tools.worker
+        worker.join(timeout=1)
+        completed = (await self.client.get("/hash-tools")).json()["job"]
+
+        self.assertEqual(completed["status"], "cracked")
+        self.assertEqual(completed["plaintext"], _RECOVERED_PLAINTEXT)
+        self.assertNotIn(_FOUND_NT_HASH, response.text)
+        self.assertNotIn(_FOUND_NT_HASH, repr(self.hashcat_runner.request))
+
+    async def test_hash_tools_reject_arbitrary_content_and_require_csrf(self) -> None:
+        body = {
+            "rule_id": "windows-nt-hash",
+            "full_line": "password=not-a-hash",
+            "variant": "nt",
+            "tool_id": "hashcat",
+            "wordlist": "candidate",
+            "runtime_seconds": 30,
+        }
+        rejected = await self.post("/hash-tools/jobs", json=body)
+        no_csrf = await self.client.post(
+            "/hash-tools/jobs",
+            headers={"Origin": f"http://127.0.0.1:{self.port}"},
+            json=body,
+        )
+
+        self.assertEqual(rejected.status_code, 422)
+        self.assertEqual(rejected.json()["error"], "UNSUPPORTED_CANDIDATE")
+        self.assertEqual(no_csrf.status_code, 403)
+        self.assertEqual(no_csrf.json()["error"]["code"], "CSRF_REJECTED")
 
     async def test_share_enumeration_failure_remains_visible_in_target_snapshot(self) -> None:
         _response, snapshot = await self._start_and_wait(targets="192.0.2.4")

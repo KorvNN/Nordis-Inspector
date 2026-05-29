@@ -28,6 +28,7 @@ from nordis_smb_inspector.core.access_pipeline import (
     AccessPipelineExecutor,
     AccessPipelineSettings,
 )
+from nordis_smb_inspector.core.credential_audit import classify_audit_material
 from nordis_smb_inspector.core.credentials import (
     AuthMode,
     Credential,
@@ -79,6 +80,13 @@ from nordis_smb_inspector.smb.models import (
 from nordis_smb_inspector.smb.smbprotocol_adapter import SmbProtocolConnector
 from nordis_smb_inspector.smb.smbprotocol_auth_adapter import SmbProtocolAuthenticator
 from nordis_smb_inspector.smb.smbprotocol_files import SmbProtocolFileAdapter
+from nordis_smb_inspector.web.audit import (
+    AuditAlreadyRunning,
+    AuditInvalidTransition,
+    AuditRequestError,
+    AuditToolUnavailable,
+    CredentialAuditManager,
+)
 from nordis_smb_inspector.web.events import InvalidEventCursor, SseEventBroker
 from nordis_smb_inspector.web.security import (
     CSRF_HEADER_NAME,
@@ -117,6 +125,7 @@ class WebRuntime:
     share_discoverer: Any = field(repr=False)
     access_inspector: Any = field(repr=False)
     wordlists: WordlistStore = field(repr=False)
+    hash_tools: CredentialAuditManager = field(repr=False)
     kerberos_hostname_resolver: Callable[[ExpandedTarget], str | None] = field(
         repr=False
     )
@@ -230,6 +239,7 @@ def create_app(
     file_adapter: Any | None = None,
     share_discoverer: Any | None = None,
     wordlist_store: WordlistStore | None = None,
+    hash_tool_manager: CredentialAuditManager | None = None,
     kerberos_hostname_resolver: Callable[
         [ExpandedTarget], str | None
     ] = resolve_kerberos_hostname,
@@ -246,6 +256,7 @@ def create_app(
         share_discoverer=share_discoverer or ImpacketShareDiscoverer(),
         access_inspector=access_inspector,
         wordlists=wordlist_store or WordlistStore(),
+        hash_tools=hash_tool_manager or CredentialAuditManager(),
         kerberos_hostname_resolver=kerberos_hostname_resolver,
     )
     routes = [
@@ -256,6 +267,9 @@ def create_app(
         Route("/scan/events", scan_events, methods=["GET"]),
         Route("/inventory", inventory_results, methods=["GET"]),
         Route("/findings", finding_results, methods=["GET"]),
+        Route("/hash-tools", hash_tools_snapshot, methods=["GET"]),
+        Route("/hash-tools/jobs", hash_tools_start, methods=["POST"]),
+        Route("/hash-tools/jobs/cancel", hash_tools_cancel, methods=["POST"]),
         Route("/wordlists", wordlist_snapshot, methods=["GET"]),
         Route("/wordlists/{wordlist_name}", wordlist_save, methods=["PUT"]),
         Route("/static/{asset_name}", static_asset, methods=["GET"]),
@@ -297,6 +311,52 @@ async def finding_results(request: Request) -> JSONResponse:
     return JSONResponse(_result_page_payload(request, findings=True))
 
 
+async def hash_tools_snapshot(request: Request) -> JSONResponse:
+    return JSONResponse(_hash_tools_payload(_runtime(request)))
+
+
+async def hash_tools_start(request: Request) -> JSONResponse:
+    runtime = _runtime(request)
+    _protect_post(request, runtime)
+    body = await _read_json(request)
+    if runtime.sessions.snapshot.active:
+        return _hash_tools_error("SCAN_IN_PROGRESS", status_code=409)
+    materials = classify_audit_material(body.get("rule_id"), body.get("full_line"))
+    variant = body.get("variant")
+    if not isinstance(variant, str):
+        return _hash_tools_error("INVALID_CANDIDATE")
+    material = next(
+        (candidate for candidate in materials if candidate.variant == variant),
+        None,
+    )
+    if material is None:
+        return _hash_tools_error("UNSUPPORTED_CANDIDATE")
+    try:
+        runtime.hash_tools.start(
+            material=material,
+            tool_id=body.get("tool_id"),
+            wordlist_text=body.get("wordlist"),
+            runtime_seconds=body.get("runtime_seconds"),
+        )
+    except AuditAlreadyRunning:
+        return _hash_tools_error("HASH_TOOL_IN_PROGRESS", status_code=409)
+    except AuditToolUnavailable:
+        return _hash_tools_error("TOOL_UNAVAILABLE", status_code=409)
+    except AuditRequestError as exc:
+        return _hash_tools_error(_safe_hash_tool_error(exc))
+    return JSONResponse(_hash_tools_payload(runtime), status_code=202)
+
+
+async def hash_tools_cancel(request: Request) -> JSONResponse:
+    runtime = _runtime(request)
+    _protect_post(request, runtime)
+    try:
+        runtime.hash_tools.cancel()
+    except AuditInvalidTransition:
+        return _hash_tools_error("HASH_TOOL_NOT_RUNNING", status_code=409)
+    return JSONResponse(_hash_tools_payload(runtime), status_code=202)
+
+
 async def wordlist_snapshot(request: Request) -> JSONResponse:
     runtime = _runtime(request)
     try:
@@ -330,6 +390,16 @@ async def scan_start(request: Request) -> JSONResponse:
     runtime = _runtime(request)
     _protect_post(request, runtime)
     body = await _read_json(request)
+    if runtime.hash_tools.active:
+        return JSONResponse(
+            {
+                "ok": False,
+                "errors": [
+                    {"value": "Hash tools", "reason": "HASH_TOOL_IN_PROGRESS"}
+                ],
+            },
+            status_code=409,
+        )
     target_expression = body.get("targets")
     if not isinstance(target_expression, str):
         raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
@@ -374,6 +444,8 @@ async def scan_start(request: Request) -> JSONResponse:
         handle = runtime.sessions.begin_scan()
     except ScanAlreadyRunning as exc:
         raise SafeHttpError(HttpErrorCode.CONFLICT) from exc
+
+    runtime.hash_tools.clear()
 
     runtime.reset_targets(handle.token.generation)
     phase_total = (
@@ -450,6 +522,40 @@ def _snapshot_payload(runtime: WebRuntime) -> dict[str, object]:
             "message": progress.message,
         },
     }
+
+
+_HASH_TOOL_ERROR_CODES = frozenset(
+    {
+        "INVALID_TOOL",
+        "INVALID_RUNTIME",
+        "INVALID_WORDLIST",
+        "WORDLIST_SIZE_INVALID",
+        "WORDLIST_ENTRY_COUNT_INVALID",
+        "WORDLIST_LINE_TOO_LONG",
+        "INCOMPATIBLE_TOOL",
+    }
+)
+
+
+def _hash_tools_payload(runtime: WebRuntime) -> dict[str, object]:
+    job = runtime.hash_tools.snapshot
+    return {
+        "ok": True,
+        "tools": [tool.public_payload() for tool in runtime.hash_tools.tools()],
+        "job": job.public_payload() if job is not None else None,
+    }
+
+
+def _hash_tools_error(code: str, *, status_code: int = 422) -> JSONResponse:
+    return JSONResponse(
+        {"ok": False, "error": code},
+        status_code=status_code,
+    )
+
+
+def _safe_hash_tool_error(error: AuditRequestError) -> str:
+    code = str(error)
+    return code if code in _HASH_TOOL_ERROR_CODES else "INVALID_REQUEST"
 
 
 def _wordlist_kind(value: object) -> tuple[WordlistKind, str]:
@@ -844,6 +950,10 @@ def _finding_payload(
     *,
     generation: int,
 ) -> dict[str, object]:
+    audit_candidates = tuple(
+        material.public_metadata()
+        for material in classify_audit_material(finding.rule_id, finding.full_line)
+    )
     return {
         "generation": generation,
         "target": finding.target,
@@ -859,6 +969,7 @@ def _finding_payload(
         "confidence": (
             finding.confidence.value if finding.confidence is not None else None
         ),
+        "audit_candidates": audit_candidates,
     }
 
 
