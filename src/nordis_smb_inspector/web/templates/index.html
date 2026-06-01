@@ -10,6 +10,14 @@
 <body data-csrf-token="{{ csrf_token }}" data-origin="{{ app_origin }}">
   <header class="topbar">
     <h1>NordisGlobal SMB Inspector</h1>
+    <nav class="workspace-navigation" aria-label="Çalışma alanları">
+      <button class="workspace-navigation-item is-active" type="button"
+        data-workspace-view="scan" aria-pressed="true">SMB Tarama</button>
+      <button class="workspace-navigation-item" type="button"
+        data-workspace-view="hash-tools" aria-pressed="false">
+        Hash Araçları <strong id="hash-tools-navigation-count">0</strong>
+      </button>
+    </nav>
     <label class="language-switcher" for="language-select">
       <svg class="language-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" stroke-width="1.8">
@@ -24,7 +32,7 @@
     </label>
   </header>
 
-  <main class="app-shell">
+  <main id="scan-workspace" class="app-shell">
     <aside class="panel scan-sidebar" aria-labelledby="scan-form-heading">
       <div class="section-heading">
         <div>
@@ -271,6 +279,86 @@
           </div>
         </section>
       </article>
+    </section>
+  </main>
+
+  <main id="hash-tools-workspace" class="hash-tools-shell" hidden>
+    <section class="hash-tools-heading" aria-labelledby="hash-tools-heading">
+      <div>
+        <h2 id="hash-tools-heading">Hash Araçları</h2>
+        <p>Uygun bulguyu seçtiğin yerel araca aktarır. Bulgu ve wordlist dış servise gönderilmez.</p>
+      </div>
+      <div id="hash-tool-availability" class="hash-tool-availability"
+        aria-label="Yerel araç durumu" aria-live="polite">
+        <span class="hash-tool-checking">Yerel araçlar kontrol ediliyor.</span>
+      </div>
+    </section>
+
+    <section class="hash-tools-layout">
+      <section class="hash-candidates" aria-labelledby="hash-candidates-heading">
+        <header class="hash-column-heading">
+          <div>
+            <h3 id="hash-candidates-heading">Çözülebilir bulgular</h3>
+            <p>Yalnız desteklenen çevrimdışı parola hash’leri gösterilir.</p>
+          </div>
+          <strong id="hash-candidate-count">0</strong>
+        </header>
+        <div id="hash-candidate-list" class="hash-candidate-list">
+          <p class="hash-empty-state">Uygun bulgu yok.</p>
+        </div>
+      </section>
+
+      <section class="hash-runner" aria-labelledby="hash-runner-heading">
+        <header class="hash-column-heading">
+          <div>
+            <h3 id="hash-runner-heading">Çalıştırma</h3>
+            <p id="hash-selection-summary">Önce bir bulgu seç.</p>
+          </div>
+          <span id="hash-job-state" class="status-value">Hazır</span>
+        </header>
+
+        <div class="hash-runner-fields">
+          <div class="form-field">
+            <label for="hash-tool-select">Yerel araç</label>
+            <select id="hash-tool-select" disabled>
+              <option value="">Kullanılabilir araç yok</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="hash-runtime-select">Süre sınırı</label>
+            <select id="hash-runtime-select">
+              <option value="30">30 saniye</option>
+              <option value="120" selected>2 dakika</option>
+              <option value="300">5 dakika</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="hash-wordlist-field">
+          <span class="hash-field-label">Wordlist</span>
+          <div class="hash-wordlist-control">
+            <label class="file-import-button" for="hash-wordlist-file">TXT seç</label>
+            <input id="hash-wordlist-file" class="visually-hidden" type="file"
+              accept=".txt,text/plain">
+            <span id="hash-wordlist-summary">—</span>
+          </div>
+        </div>
+
+        <div class="hash-runner-actions">
+          <button id="start-hash-tool" type="button" disabled>Çalıştır</button>
+          <button id="cancel-hash-tool" class="secondary-button" type="button" disabled>
+            Durdur
+          </button>
+        </div>
+        <p id="hash-tool-message" class="hash-tool-message" aria-live="polite"></p>
+
+        <section id="hash-tool-result" class="hash-tool-result" hidden
+          aria-labelledby="hash-tool-result-label">
+          <span id="hash-tool-result-label">Bulunan parola</span>
+          <code id="hash-tool-plaintext"></code>
+          <p>Sonuç yalnız bu uygulama oturumunda bellekte tutulur.</p>
+        </section>
+      </section>
     </section>
   </main>
 

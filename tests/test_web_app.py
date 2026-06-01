@@ -433,6 +433,13 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("NordisGlobal SMB Inspector", response.text)
+        self.assertIn('data-workspace-view="scan"', response.text)
+        self.assertIn('data-workspace-view="hash-tools"', response.text)
+        self.assertIn('id="hash-tools-workspace"', response.text)
+        self.assertIn('id="hash-tool-availability"', response.text)
+        self.assertIn('id="hash-candidate-list"', response.text)
+        self.assertIn('id="hash-wordlist-file"', response.text)
+        self.assertIn("Hash Araçları", response.text)
         self.assertIn("Taramayı başlat", response.text)
         self.assertIn("Tarama çalışma alanı", response.text)
         self.assertIn("Wordlist yönetimi", response.text)
