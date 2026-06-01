@@ -68,6 +68,18 @@ multiple wordlist selection, case-sensitive matching, and whole-word matching.
 The lower-level text matcher has case and word-boundary options for future use, but
 the scan configuration does not expose them yet.
 
+## Offline recovery candidates
+
+Supported password-hash findings include fixed Hashcat and John the Ripper bindings
+in their web payload. This classification covers NTLM/LM, NetNTLM, DCC2, supported
+Unix password hashes, bcrypt/Argon2, and recognized Kerberos AS-REP, TGS-REP,
+pre-auth, and KDC database formats. Plaintext secrets, API tokens, encryption keys,
+and binary CCache/keytab/KIRBI artifacts are never treated as recovery candidates.
+
+Hash Tools only accepts a candidate reconstructed from a current finding. Selecting
+“Send to Hash Tools” does not start a job; the operator must choose an available
+local tool, upload a wordlist, and start it explicitly.
+
 ## File processing
 
 Plain text is decoded as BOM-declared UTF-16/UTF-32, strict UTF-8, or a supported
@@ -82,10 +94,11 @@ Supported structured formats include:
 - ODT and related OpenDocument containers
 - ZIP, TAR, and GZIP archives
 
-Documents and archive members are read through bounded range adapters. Archive
-recursion is not performed. Unsupported, encrypted, malformed, or over-limit
-members are represented as inventory diagnostics rather than silently treated as a
-clean scan.
+Documents and archive members are read through bounded range adapters. Supported
+nested archives are inspected under one controlled budget: depth 3, 10,000 entries,
+and 500 MiB of expanded data by default. Unsupported, encrypted, malformed, or
+over-limit members are represented as inventory diagnostics rather than silently
+treated as a clean scan.
 
 When built-in detection is enabled, plain files and archive members named like
 Kerberos CCache, keytab, or KIRBI files are also checked against their binary header.

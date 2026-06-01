@@ -13,6 +13,8 @@ content, and reports sensitive-data matches through a loopback-only web interfac
 5. Probe each discovered disk share with read-only access.
 6. Walk accessible directories and stream supported files through the detectors.
 7. Keep inventory and findings in process memory and publish live progress.
+8. Optionally pass supported offline password hashes to a locally installed recovery
+   tool with an operator-selected wordlist.
 
 The scanner never guesses common share names. A denied, unavailable, or failed
 SRVSVC request is reported explicitly and ends share discovery for that target.
@@ -26,8 +28,11 @@ SRVSVC request is reported explicitly and ends share discovery for that target.
 - Streaming text scans without downloading whole remote files
 - Wordlist and built-in credential-pattern detection
 - PDF, Office Open XML, OpenDocument, ZIP, TAR, and GZIP inspection
+- Controlled nested-archive inspection with explicit depth, entry, and expanded-size
+  limits
 - In-memory pagination for inventory and findings
 - Packaged default wordlist with an editable source or per-user copy
+- Local Hashcat and John the Ripper integration for supported findings
 
 The web application currently uses 32 target workers and a default directory depth
 limit of 32. These are implementation constants, not selectable load profiles.
@@ -56,6 +61,10 @@ masking a later authorization failure.
 - Reparse points and symbolic links are not followed.
 - Remote files are read in bounded ranges and are not persisted locally.
 - Scan state is memory-only and is discarded when the process exits.
+- Hash recovery never starts automatically and never sends material to an external
+  service.
+- Uploaded Hash Tools wordlists use owner-only temporary files and are removed on a
+  new scan or process exit.
 - Credentials and target/path context are redacted from routine object
   representations.
 - One scan may run at a time.
@@ -70,10 +79,12 @@ targets first and obtain authorization before scanning.
 
 - SMB1 scanning
 - Share-name guessing or brute force
-- Credential discovery, password attacks, exploitation, or persistence
+- Online password guessing, spraying, brute force, hash extraction, exploitation,
+  or persistence
+- Arbitrary local command execution or user-supplied hash modes
 - Remote file modification, quarantine, or remediation
 - Following DFS referrals to additional servers
-- Recursive inspection of nested archives
+- Archive nesting beyond the controlled inspection depth
 - Distributed workers, scheduled scans, multi-user access, or durable result storage
 - A guarantee that every binary or proprietary format can be inspected
 

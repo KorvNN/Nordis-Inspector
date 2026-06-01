@@ -19,11 +19,17 @@ accessible, what was readable, and which lines require review.
 - Scans readable text and bounded document/archive content without copying files locally
 - Uses an editable literal wordlist plus built-in credential-pattern rules
 - Recognizes common NTLM/Kerberos exports and CCache, keytab, and KIRBI files
+- Sends supported offline password-hash findings to locally installed Hashcat or
+  John the Ripper with an operator-selected TXT wordlist
 - Streams progress, target states, inventory entries, and findings to the UI
 - Keeps local scan history with safe credential metadata and JSON export
 
 Nordis is intentionally read-only. It does not modify remote files, test write
 permissions, or expose a non-loopback web bind.
+
+Hash Tools is an explicit local post-processing step. Findings and wordlists are
+never sent to an external service; large lists are streamed to private temporary
+storage and discarded on the next scan or when the process exits.
 
 ## Quick start
 
