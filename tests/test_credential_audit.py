@@ -20,6 +20,7 @@ class CredentialAuditClassificationTests(unittest.TestCase):
         self.assertEqual("ntlm", candidate.format_id)
         self.assertEqual("1000", candidate.binding_for("hashcat").format_name)
         self.assertEqual("nt", candidate.binding_for("john").format_name)
+        self.assertEqual(64, len(candidate.candidate_id))
         self.assertNotIn(secret_hash, repr(candidate))
         self.assertNotIn(secret_hash, str(candidate.public_metadata()))
 

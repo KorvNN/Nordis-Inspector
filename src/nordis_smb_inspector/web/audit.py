@@ -7,24 +7,24 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterable
+from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from threading import Event, RLock, Thread
+from threading import Event, Lock, RLock, Thread
 from time import monotonic
 from typing import Protocol
 from uuid import uuid4
 
 from nordis_smb_inspector.core.credential_audit import AuditMaterial, AuditToolBinding
 
-_MAX_WORDLIST_BYTES = 512 * 1024
-_MAX_WORDLIST_LINE_BYTES = 4096
-_MAX_WORDLIST_ENTRIES = 100_000
+MAX_WORDLIST_UPLOAD_BYTES = 256 * 1024 * 1024
+MAX_WORDLIST_LINE_BYTES = 64 * 1024
 _ALLOWED_RUNTIME_SECONDS = frozenset({30, 120, 300})
 _PROCESS_GRACE_SECONDS = 5
 _TERMINATE_GRACE_SECONDS = 2
-_MAX_RESULT_FILE_BYTES = _MAX_WORDLIST_BYTES + _MAX_WORDLIST_ENTRIES
+_MAX_RESULT_FILE_BYTES = 128 * 1024
 
 
 class AuditJobStatus(StrEnum):
@@ -75,13 +75,14 @@ class AuditToolAvailability:
     tool_id: str
     display_name: str
     available: bool
+    reason: str | None = None
     executable_path: str | None = field(default=None, repr=False)
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}(tool_id={self.tool_id!r}, "
             f"display_name={self.display_name!r}, available={self.available!r}, "
-            "executable_path=<redacted>)"
+            f"reason={self.reason!r}, executable_path=<redacted>)"
         )
 
     def public_payload(self) -> dict[str, object]:
@@ -89,6 +90,7 @@ class AuditToolAvailability:
             "id": self.tool_id,
             "name": self.display_name,
             "available": self.available,
+            "reason": self.reason,
         }
 
 
@@ -97,17 +99,89 @@ class AuditRunRequest:
     executable_path: str = field(repr=False)
     binding: AuditToolBinding
     material: str = field(repr=False)
-    wordlist: bytes = field(repr=False)
-    wordlist_entries: tuple[bytes, ...] = field(repr=False)
+    wordlist_path: Path = field(repr=False)
+    wordlist_size: int
     runtime_seconds: int
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}(executable_path=<redacted>, "
-            f"binding={self.binding!r}, material=<redacted>, wordlist=<redacted>, "
-            f"wordlist_entries={len(self.wordlist_entries)!r}, "
+            f"binding={self.binding!r}, material=<redacted>, "
+            f"wordlist_path=<redacted>, wordlist_size={self.wordlist_size!r}, "
             f"runtime_seconds={self.runtime_seconds!r})"
         )
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class WordlistUploadHandle:
+    upload_id: str
+    path: Path = field(repr=False)
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}(upload_id={self.upload_id!r}, path=<redacted>)"
+        )
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class UploadedWordlist:
+    upload_id: str
+    path: Path = field(repr=False)
+    size_bytes: int
+    entry_count: int
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}(upload_id={self.upload_id!r}, path=<redacted>, "
+            f"size_bytes={self.size_bytes!r}, entry_count={self.entry_count!r})"
+        )
+
+    def public_payload(self) -> dict[str, object]:
+        return {
+            "upload_id": self.upload_id,
+            "size_bytes": self.size_bytes,
+            "entry_count": self.entry_count,
+        }
+
+
+@dataclass(slots=True)
+class WordlistUploadValidator:
+    """Incrementally validate a large newline-delimited wordlist."""
+
+    size_bytes: int = 0
+    entry_count: int = 0
+    _line_bytes: int = 0
+    _line_has_content: bool = False
+
+    def consume(self, chunk: bytes) -> None:
+        if not isinstance(chunk, bytes):
+            raise TypeError("wordlist chunks must be bytes.")
+        self.size_bytes += len(chunk)
+        if self.size_bytes > MAX_WORDLIST_UPLOAD_BYTES:
+            raise AuditRequestError("WORDLIST_TOO_LARGE")
+        parts = chunk.split(b"\n")
+        for index, part in enumerate(parts):
+            self._line_bytes += len(part)
+            if self._line_bytes > MAX_WORDLIST_LINE_BYTES:
+                raise AuditRequestError("WORDLIST_LINE_TOO_LONG")
+            self._line_has_content = self._line_has_content or any(
+                value != 0x0D for value in part
+            )
+            if index < len(parts) - 1:
+                if self._line_has_content:
+                    self.entry_count += 1
+                self._line_bytes = 0
+                self._line_has_content = False
+
+    def finish(self) -> tuple[int, int]:
+        if self._line_has_content:
+            self.entry_count += 1
+            self._line_has_content = False
+        if self.size_bytes == 0:
+            raise AuditRequestError("WORDLIST_SIZE_INVALID")
+        if self.entry_count == 0:
+            raise AuditRequestError("WORDLIST_ENTRY_COUNT_INVALID")
+        return self.size_bytes, self.entry_count
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -139,6 +213,7 @@ class AuditRunResult:
 @dataclass(frozen=True, slots=True, repr=False)
 class AuditJobSnapshot:
     job_id: str
+    candidate_id: str
     tool_id: str
     format_id: str
     variant: str
@@ -156,7 +231,8 @@ class AuditJobSnapshot:
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}(job_id={self.job_id!r}, "
-            f"tool_id={self.tool_id!r}, format_id={self.format_id!r}, "
+            f"candidate_id={self.candidate_id!r}, tool_id={self.tool_id!r}, "
+            f"format_id={self.format_id!r}, "
             f"variant={self.variant!r}, status={self.status.value!r}, "
             f"runtime_seconds={self.runtime_seconds!r}, "
             f"started_at={self.started_at!r}, finished_at={self.finished_at!r}, "
@@ -167,6 +243,7 @@ class AuditJobSnapshot:
     def public_payload(self) -> dict[str, object]:
         return {
             "job_id": self.job_id,
+            "candidate_id": self.candidate_id,
             "tool_id": self.tool_id,
             "format": self.format_id,
             "variant": self.variant,
@@ -203,6 +280,11 @@ class CredentialAuditManager:
         self._lock = RLock()
         self._job: AuditJobSnapshot | None = None
         self._cancellation: Event | None = None
+        self._wordlist_directory = tempfile.TemporaryDirectory(prefix="nordis-wordlists-")
+        self._wordlist_root = Path(self._wordlist_directory.name)
+        self._wordlist_root.chmod(0o700)
+        self._pending_upload: WordlistUploadHandle | None = None
+        self._wordlist: UploadedWordlist | None = None
         self.worker: Thread | None = None
 
     @property
@@ -212,18 +294,83 @@ class CredentialAuditManager:
 
     @property
     def active(self) -> bool:
-        current = self.snapshot
-        return current is not None and current.active
+        with self._lock:
+            return (
+                (self._job is not None and self._job.active)
+                or self._pending_upload is not None
+            )
+
+    @property
+    def wordlist(self) -> UploadedWordlist | None:
+        with self._lock:
+            return self._wordlist
 
     def tools(self) -> tuple[AuditToolAvailability, ...]:
         return tuple(runner.availability() for runner in self._runners.values())
+
+    def begin_wordlist_upload(self) -> WordlistUploadHandle:
+        with self._lock:
+            if self._job is not None and self._job.active:
+                raise AuditAlreadyRunning("AUDIT_ALREADY_RUNNING")
+            if self._pending_upload is not None:
+                raise AuditAlreadyRunning("WORDLIST_UPLOAD_IN_PROGRESS")
+            upload_id = str(uuid4())
+            handle = WordlistUploadHandle(
+                upload_id=upload_id,
+                path=self._wordlist_root / f"{upload_id}.txt",
+            )
+            self._pending_upload = handle
+            return handle
+
+    def complete_wordlist_upload(
+        self,
+        handle: WordlistUploadHandle,
+        *,
+        size_bytes: int,
+        entry_count: int,
+    ) -> UploadedWordlist:
+        if not isinstance(handle, WordlistUploadHandle):
+            raise TypeError("handle must be a WordlistUploadHandle.")
+        if size_bytes <= 0 or size_bytes > MAX_WORDLIST_UPLOAD_BYTES:
+            raise AuditRequestError("WORDLIST_SIZE_INVALID")
+        if entry_count <= 0:
+            raise AuditRequestError("WORDLIST_ENTRY_COUNT_INVALID")
+        try:
+            actual_size = handle.path.stat().st_size
+        except OSError as exc:
+            raise AuditRequestError("INVALID_WORDLIST") from exc
+        if actual_size != size_bytes:
+            raise AuditRequestError("INVALID_WORDLIST")
+        with self._lock:
+            if self._pending_upload != handle:
+                raise AuditInvalidTransition("STALE_WORDLIST_UPLOAD")
+            previous = self._wordlist
+            uploaded = UploadedWordlist(
+                upload_id=handle.upload_id,
+                path=handle.path,
+                size_bytes=size_bytes,
+                entry_count=entry_count,
+            )
+            self._wordlist = uploaded
+            self._pending_upload = None
+        if previous is not None and previous.path != uploaded.path:
+            _discard_private_file(previous.path)
+        return uploaded
+
+    def abort_wordlist_upload(self, handle: WordlistUploadHandle) -> None:
+        if not isinstance(handle, WordlistUploadHandle):
+            raise TypeError("handle must be a WordlistUploadHandle.")
+        with self._lock:
+            if self._pending_upload == handle:
+                self._pending_upload = None
+        _discard_private_file(handle.path)
 
     def start(
         self,
         *,
         material: AuditMaterial,
         tool_id: object,
-        wordlist_text: object,
+        wordlist_upload_id: object,
         runtime_seconds: object,
     ) -> AuditJobSnapshot:
         if not isinstance(material, AuditMaterial):
@@ -236,7 +383,8 @@ class CredentialAuditManager:
             or runtime_seconds not in _ALLOWED_RUNTIME_SECONDS
         ):
             raise AuditRequestError("INVALID_RUNTIME")
-        wordlist, entries = normalize_wordlist(wordlist_text)
+        if not isinstance(wordlist_upload_id, str):
+            raise AuditRequestError("INVALID_WORDLIST")
         binding = material.binding_for(tool_id)
         if binding is None:
             raise AuditRequestError("INCOMPATIBLE_TOOL")
@@ -247,20 +395,26 @@ class CredentialAuditManager:
         if not availability.available or availability.executable_path is None:
             raise AuditToolUnavailable("TOOL_UNAVAILABLE")
 
-        request = AuditRunRequest(
-            executable_path=availability.executable_path,
-            binding=binding,
-            material=material.material,
-            wordlist=wordlist,
-            wordlist_entries=entries,
-            runtime_seconds=runtime_seconds,
-        )
         now = datetime.now(UTC)
         with self._lock:
             if self._job is not None and self._job.active:
                 raise AuditAlreadyRunning("AUDIT_ALREADY_RUNNING")
+            if self._pending_upload is not None:
+                raise AuditAlreadyRunning("WORDLIST_UPLOAD_IN_PROGRESS")
+            wordlist = self._wordlist
+            if wordlist is None or wordlist.upload_id != wordlist_upload_id:
+                raise AuditRequestError("WORDLIST_NOT_FOUND")
+            request = AuditRunRequest(
+                executable_path=availability.executable_path,
+                binding=binding,
+                material=material.material,
+                wordlist_path=wordlist.path,
+                wordlist_size=wordlist.size_bytes,
+                runtime_seconds=runtime_seconds,
+            )
             job = AuditJobSnapshot(
                 job_id=str(uuid4()),
+                candidate_id=material.candidate_id,
                 tool_id=tool_id,
                 format_id=material.format_id,
                 variant=material.variant,
@@ -290,13 +444,26 @@ class CredentialAuditManager:
             return self._job
 
     def clear(self) -> None:
-        """Discard a terminal result, including any recovered plaintext."""
+        """Discard terminal results and the staged private wordlist."""
 
         with self._lock:
-            if self._job is not None and self._job.active:
+            if (self._job is not None and self._job.active) or self._pending_upload:
                 raise AuditInvalidTransition("AUDIT_STILL_RUNNING")
+            wordlist = self._wordlist
             self._job = None
+            self._wordlist = None
             self.worker = None
+        if wordlist is not None:
+            _discard_private_file(wordlist.path)
+
+    def close(self) -> None:
+        """Release private temporary storage after all work has stopped."""
+
+        with self._lock:
+            if (self._job is not None and self._job.active) or self._pending_upload:
+                raise AuditInvalidTransition("AUDIT_STILL_RUNNING")
+            self._wordlist = None
+        self._wordlist_directory.cleanup()
 
     def _run(
         self,
@@ -328,30 +495,6 @@ class CredentialAuditManager:
             )
             self._cancellation = None
 
-
-def normalize_wordlist(value: object) -> tuple[bytes, tuple[bytes, ...]]:
-    """Validate a UTF-8 browser wordlist and preserve each candidate exactly."""
-
-    if not isinstance(value, str):
-        raise AuditRequestError("INVALID_WORDLIST")
-    if "\x00" in value:
-        raise AuditRequestError("INVALID_WORDLIST")
-    try:
-        encoded = value.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        raise AuditRequestError("INVALID_WORDLIST") from exc
-    if not encoded or len(encoded) > _MAX_WORDLIST_BYTES:
-        raise AuditRequestError("WORDLIST_SIZE_INVALID")
-
-    entries = tuple(line.removesuffix(b"\r") for line in encoded.split(b"\n"))
-    entries = tuple(line for line in entries if line)
-    if not entries or len(entries) > _MAX_WORDLIST_ENTRIES:
-        raise AuditRequestError("WORDLIST_ENTRY_COUNT_INVALID")
-    if any(len(line) > _MAX_WORDLIST_LINE_BYTES for line in entries):
-        raise AuditRequestError("WORDLIST_LINE_TOO_LONG")
-    return b"\n".join(entries) + b"\n", entries
-
-
 class _ExecutableRunner:
     tool_id: str
     display_name: str
@@ -363,6 +506,7 @@ class _ExecutableRunner:
             tool_id=self.tool_id,
             display_name=self.display_name,
             available=executable is not None,
+            reason=None if executable is not None else "not_installed",
             executable_path=executable,
         )
 
@@ -372,6 +516,34 @@ class HashcatRunner(_ExecutableRunner):
     display_name = "Hashcat"
     executable_name = "hashcat"
 
+    def __init__(self) -> None:
+        self._availability_lock = Lock()
+        self._cached_availability: AuditToolAvailability | None = None
+
+    def availability(self) -> AuditToolAvailability:
+        with self._availability_lock:
+            if self._cached_availability is not None:
+                return self._cached_availability
+            executable = shutil.which(self.executable_name)
+            if executable is None:
+                availability = AuditToolAvailability(
+                    self.tool_id,
+                    self.display_name,
+                    False,
+                    "not_installed",
+                )
+            else:
+                backend_available = _hashcat_backend_available(executable)
+                availability = AuditToolAvailability(
+                    self.tool_id,
+                    self.display_name,
+                    backend_available,
+                    None if backend_available else "backend_unavailable",
+                    executable,
+                )
+            self._cached_availability = availability
+            return availability
+
     def run(self, request: AuditRunRequest, cancellation: Event) -> AuditRunResult:
         if request.binding.tool_id != self.tool_id:
             return AuditRunResult(AuditRunOutcome.FAILED, error_code="FORMAT_MISMATCH")
@@ -379,10 +551,8 @@ class HashcatRunner(_ExecutableRunner):
             root = Path(directory)
             root.chmod(0o700)
             hash_path = root / "target.hash"
-            wordlist_path = root / "candidates.txt"
             result_path = root / "recovered.txt"
             _write_private(hash_path, request.material.encode("utf-8") + b"\n")
-            _write_private(wordlist_path, request.wordlist)
             data_home = root / "data"
             cache_home = root / "cache"
             config_home = root / "config"
@@ -418,7 +588,7 @@ class HashcatRunner(_ExecutableRunner):
                 "--outfile-format",
                 "2",
                 str(hash_path),
-                str(wordlist_path),
+                str(request.wordlist_path),
             )
             process_result = _run_process(
                 command,
@@ -429,7 +599,7 @@ class HashcatRunner(_ExecutableRunner):
             )
             if process_result.cancelled:
                 return AuditRunResult(AuditRunOutcome.CANCELLED)
-            plaintext = _read_hashcat_result(result_path, request.wordlist_entries)
+            plaintext = _read_hashcat_result(result_path)
             if plaintext is not None:
                 return AuditRunResult(AuditRunOutcome.CRACKED, plaintext=plaintext)
             if process_result.timed_out or process_result.return_code in {2, 3, 4}:
@@ -447,6 +617,34 @@ class JohnRunner(_ExecutableRunner):
     display_name = "John the Ripper"
     executable_name = "john"
 
+    def __init__(self) -> None:
+        self._availability_lock = Lock()
+        self._cached_availability: AuditToolAvailability | None = None
+
+    def availability(self) -> AuditToolAvailability:
+        with self._availability_lock:
+            if self._cached_availability is not None:
+                return self._cached_availability
+            executable = shutil.which(self.executable_name)
+            if executable is None:
+                availability = AuditToolAvailability(
+                    self.tool_id,
+                    self.display_name,
+                    False,
+                    "not_installed",
+                )
+            else:
+                initialized = _john_initializes(executable)
+                availability = AuditToolAvailability(
+                    self.tool_id,
+                    self.display_name,
+                    initialized,
+                    None if initialized else "initialization_failed",
+                    executable,
+                )
+            self._cached_availability = availability
+            return availability
+
     def run(self, request: AuditRunRequest, cancellation: Event) -> AuditRunResult:
         if request.binding.tool_id != self.tool_id:
             return AuditRunResult(AuditRunOutcome.FAILED, error_code="FORMAT_MISMATCH")
@@ -454,17 +652,15 @@ class JohnRunner(_ExecutableRunner):
             root = Path(directory)
             root.chmod(0o700)
             hash_path = root / "target.hash"
-            wordlist_path = root / "candidates.txt"
             pot_path = root / "audit.pot"
             session_path = root / "audit-session"
-            _write_private(hash_path, request.material.encode("utf-8") + b"\n")
-            _write_private(wordlist_path, request.wordlist)
-            environment = os.environ.copy()
-            environment["OMP_NUM_THREADS"] = "2"
+            john_material = _john_material(request.binding, request.material)
+            _write_private(hash_path, john_material.encode("utf-8") + b"\n")
+            environment = _john_environment(root)
             command = (
                 request.executable_path,
                 f"--format={request.binding.format_name}",
-                f"--wordlist={wordlist_path}",
+                f"--wordlist={request.wordlist_path}",
                 f"--pot={pot_path}",
                 f"--session={session_path}",
                 f"--max-run-time={request.runtime_seconds}",
@@ -481,7 +677,7 @@ class JohnRunner(_ExecutableRunner):
             )
             if process_result.cancelled:
                 return AuditRunResult(AuditRunOutcome.CANCELLED)
-            plaintext = _read_john_result(pot_path, request.wordlist_entries)
+            plaintext = _read_john_result(pot_path, john_material)
             if plaintext is not None:
                 return AuditRunResult(AuditRunOutcome.CRACKED, plaintext=plaintext)
             if process_result.timed_out:
@@ -499,6 +695,87 @@ class _ProcessResult:
     return_code: int
     cancelled: bool = False
     timed_out: bool = False
+
+
+def _hashcat_backend_available(executable_path: str) -> bool:
+    try:
+        with tempfile.TemporaryDirectory(prefix="nordis-hashcat-check-") as directory:
+            root = Path(directory)
+            root.chmod(0o700)
+            data_home = root / "data"
+            cache_home = root / "cache"
+            config_home = root / "config"
+            (data_home / "hashcat" / "sessions").mkdir(parents=True, mode=0o700)
+            cache_home.mkdir(mode=0o700)
+            config_home.mkdir(mode=0o700)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "XDG_DATA_HOME": str(data_home),
+                    "XDG_CACHE_HOME": str(cache_home),
+                    "XDG_CONFIG_HOME": str(config_home),
+                }
+            )
+            result = subprocess.run(  # noqa: S603 - fixed executable and flag
+                (executable_path, "--backend-info"),
+                cwd=root,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                timeout=5,
+                check=False,
+                umask=0o077,
+            )
+            return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _john_initializes(executable_path: str) -> bool:
+    try:
+        with tempfile.TemporaryDirectory(prefix="nordis-john-check-") as directory:
+            root = Path(directory)
+            result = subprocess.run(  # noqa: S603 - fixed executable and flag
+                (executable_path, "--list=build-info"),
+                cwd=root,
+                env=_john_environment(root),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                timeout=5,
+                check=False,
+                umask=0o077,
+            )
+            return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _john_environment(root: Path) -> dict[str, str]:
+    private_home = root / "home"
+    private_home.mkdir(mode=0o700)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "HOME": str(private_home),
+            "XDG_CACHE_HOME": str(private_home / ".cache"),
+            "XDG_CONFIG_HOME": str(private_home / ".config"),
+            "XDG_DATA_HOME": str(private_home / ".local" / "share"),
+            "OMP_NUM_THREADS": "2",
+        }
+    )
+    return environment
+
+
+def _john_material(binding: AuditToolBinding, material: str) -> str:
+    prefixes = {"nt": "$NT$", "lm": "$LM$"}
+    prefix = prefixes.get(binding.format_name)
+    if prefix is None or material.startswith(prefix):
+        return material
+    return f"{prefix}{material}"
 
 
 def _run_process(
@@ -548,6 +825,18 @@ def _write_private(path: Path, content: bytes) -> None:
         target.write(content)
 
 
+def create_private_upload_file(path: Path) -> None:
+    """Create an empty upload target with owner-only permissions."""
+
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    os.close(descriptor)
+
+
+def _discard_private_file(path: Path) -> None:
+    with suppress(OSError):
+        path.unlink()
+
+
 def _bounded_file_lines(path: Path) -> tuple[bytes, ...]:
     try:
         if path.stat().st_size > _MAX_RESULT_FILE_BYTES:
@@ -557,24 +846,26 @@ def _bounded_file_lines(path: Path) -> tuple[bytes, ...]:
         return ()
 
 
-def _read_hashcat_result(path: Path, candidates: tuple[bytes, ...]) -> str | None:
-    allowed = frozenset(candidates)
+def _display_plaintext(value: bytes) -> str | None:
+    if not value or len(value) > MAX_WORDLIST_LINE_BYTES:
+        return None
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return value.decode("latin-1")
+
+
+def _read_hashcat_result(path: Path) -> str | None:
     for line in _bounded_file_lines(path):
-        if line in allowed:
-            try:
-                return line.decode("utf-8")
-            except UnicodeDecodeError:
-                return None
+        plaintext = _display_plaintext(line)
+        if plaintext is not None:
+            return plaintext
     return None
 
 
-def _read_john_result(path: Path, candidates: tuple[bytes, ...]) -> str | None:
-    by_length = sorted(candidates, key=len, reverse=True)
+def _read_john_result(path: Path, material: str) -> str | None:
+    prefix = material.encode("utf-8") + b":"
     for line in _bounded_file_lines(path):
-        for candidate in by_length:
-            if line.endswith(b":" + candidate):
-                try:
-                    return candidate.decode("utf-8")
-                except UnicodeDecodeError:
-                    return None
+        if line.startswith(prefix):
+            return _display_plaintext(line[len(prefix) :])
     return None

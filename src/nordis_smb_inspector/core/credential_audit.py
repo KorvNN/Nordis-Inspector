@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from hashlib import sha256
 
 _MAX_SOURCE_LINE_CHARS = 256 * 1024
 _EMPTY_LM_HASH = "aad3b435b51404eeaad3b435b51404ee"
@@ -65,10 +66,16 @@ class AuditMaterial:
             None,
         )
 
+    @property
+    def candidate_id(self) -> str:
+        identity = "\x00".join((self.format_id, self.variant, self.material)).encode("utf-8")
+        return sha256(identity).hexdigest()
+
     def public_metadata(self) -> dict[str, object]:
         """Return browser-safe metadata without the extracted hash value."""
 
         return {
+            "id": self.candidate_id,
             "variant": self.variant,
             "format": self.format_id,
             "tools": [

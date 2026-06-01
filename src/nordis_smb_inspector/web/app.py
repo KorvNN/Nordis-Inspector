@@ -81,11 +81,14 @@ from nordis_smb_inspector.smb.smbprotocol_adapter import SmbProtocolConnector
 from nordis_smb_inspector.smb.smbprotocol_auth_adapter import SmbProtocolAuthenticator
 from nordis_smb_inspector.smb.smbprotocol_files import SmbProtocolFileAdapter
 from nordis_smb_inspector.web.audit import (
+    MAX_WORDLIST_UPLOAD_BYTES,
     AuditAlreadyRunning,
     AuditInvalidTransition,
     AuditRequestError,
     AuditToolUnavailable,
     CredentialAuditManager,
+    WordlistUploadValidator,
+    create_private_upload_file,
 )
 from nordis_smb_inspector.web.events import InvalidEventCursor, SseEventBroker
 from nordis_smb_inspector.web.security import (
@@ -268,6 +271,7 @@ def create_app(
         Route("/inventory", inventory_results, methods=["GET"]),
         Route("/findings", finding_results, methods=["GET"]),
         Route("/hash-tools", hash_tools_snapshot, methods=["GET"]),
+        Route("/hash-tools/wordlist", hash_wordlist_upload, methods=["PUT"]),
         Route("/hash-tools/jobs", hash_tools_start, methods=["POST"]),
         Route("/hash-tools/jobs/cancel", hash_tools_cancel, methods=["POST"]),
         Route("/wordlists", wordlist_snapshot, methods=["GET"]),
@@ -315,6 +319,53 @@ async def hash_tools_snapshot(request: Request) -> JSONResponse:
     return JSONResponse(_hash_tools_payload(_runtime(request)))
 
 
+async def hash_wordlist_upload(request: Request) -> JSONResponse:
+    runtime = _runtime(request)
+    _protect_post(request, runtime)
+    if runtime.sessions.snapshot.active:
+        return _hash_tools_error("SCAN_IN_PROGRESS", status_code=409)
+    content_type = request.headers.get("content-type", "").partition(";")[0].strip()
+    if content_type.casefold() not in {"application/octet-stream", "text/plain"}:
+        return _hash_tools_error("INVALID_WORDLIST")
+    raw_length = request.headers.get("content-length")
+    if raw_length is not None:
+        try:
+            content_length = int(raw_length)
+        except ValueError:
+            return _hash_tools_error("INVALID_WORDLIST")
+        if content_length > MAX_WORDLIST_UPLOAD_BYTES:
+            return _hash_tools_error("WORDLIST_TOO_LARGE", status_code=413)
+
+    try:
+        handle = runtime.hash_tools.begin_wordlist_upload()
+    except AuditAlreadyRunning:
+        return _hash_tools_error("HASH_TOOL_IN_PROGRESS", status_code=409)
+    validator = WordlistUploadValidator()
+    try:
+        create_private_upload_file(handle.path)
+        with handle.path.open("wb") as target:
+            async for chunk in request.stream():
+                validator.consume(chunk)
+                target.write(chunk)
+        size_bytes, entry_count = validator.finish()
+        runtime.hash_tools.complete_wordlist_upload(
+            handle,
+            size_bytes=size_bytes,
+            entry_count=entry_count,
+        )
+    except AuditRequestError as exc:
+        runtime.hash_tools.abort_wordlist_upload(handle)
+        code = _safe_hash_tool_error(exc)
+        return _hash_tools_error(
+            code,
+            status_code=413 if code == "WORDLIST_TOO_LARGE" else 422,
+        )
+    except Exception:
+        runtime.hash_tools.abort_wordlist_upload(handle)
+        return _hash_tools_error("WORDLIST_UPLOAD_FAILED", status_code=500)
+    return JSONResponse(_hash_tools_payload(runtime), status_code=201)
+
+
 async def hash_tools_start(request: Request) -> JSONResponse:
     runtime = _runtime(request)
     _protect_post(request, runtime)
@@ -335,7 +386,7 @@ async def hash_tools_start(request: Request) -> JSONResponse:
         runtime.hash_tools.start(
             material=material,
             tool_id=body.get("tool_id"),
-            wordlist_text=body.get("wordlist"),
+            wordlist_upload_id=body.get("wordlist_upload_id"),
             runtime_seconds=body.get("runtime_seconds"),
         )
     except AuditAlreadyRunning:
@@ -532,6 +583,9 @@ _HASH_TOOL_ERROR_CODES = frozenset(
         "WORDLIST_SIZE_INVALID",
         "WORDLIST_ENTRY_COUNT_INVALID",
         "WORDLIST_LINE_TOO_LONG",
+        "WORDLIST_TOO_LARGE",
+        "WORDLIST_NOT_FOUND",
+        "WORDLIST_UPLOAD_IN_PROGRESS",
         "INCOMPATIBLE_TOOL",
     }
 )
@@ -539,10 +593,12 @@ _HASH_TOOL_ERROR_CODES = frozenset(
 
 def _hash_tools_payload(runtime: WebRuntime) -> dict[str, object]:
     job = runtime.hash_tools.snapshot
+    wordlist = runtime.hash_tools.wordlist
     return {
         "ok": True,
         "tools": [tool.public_payload() for tool in runtime.hash_tools.tools()],
         "job": job.public_payload() if job is not None else None,
+        "wordlist": wordlist.public_payload() if wordlist is not None else None,
     }
 
 

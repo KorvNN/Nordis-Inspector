@@ -340,15 +340,15 @@ class _FakeHashToolRunner:
 
     def availability(self) -> AuditToolAvailability:
         return AuditToolAvailability(
-            self.tool_id,
-            self.display_name,
-            True,
-            f"/test/{self.tool_id}",
+            tool_id=self.tool_id,
+            display_name=self.display_name,
+            available=True,
+            executable_path=f"/test/{self.tool_id}",
         )
 
     def run(self, request: AuditRunRequest, _cancellation: threading.Event) -> AuditRunResult:
         self.request = request
-        if _RECOVERED_PLAINTEXT.encode() in request.wordlist_entries:
+        if _RECOVERED_PLAINTEXT.encode() in request.wordlist_path.read_bytes().splitlines():
             return AuditRunResult(
                 AuditRunOutcome.CRACKED,
                 plaintext=_RECOVERED_PLAINTEXT,
@@ -388,6 +388,7 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.client.aclose()
+        self.app.state.runtime.hash_tools.close()
 
     async def _cleanup_temporary_directory(self) -> None:
         self.temporary_directory.cleanup()
@@ -686,24 +687,36 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         await self._start_and_wait(targets="192.0.2.6")
         finding = (await self.client.get("/findings")).json()["items"][0]
 
+        self.assertEqual(len(finding["audit_candidates"]), 1)
+        audit_candidate = finding["audit_candidates"][0]
+        self.assertEqual(len(audit_candidate.pop("id")), 64)
         self.assertEqual(
-            finding["audit_candidates"],
-            [
-                {
-                    "variant": "nt",
-                    "format": "ntlm",
-                    "tools": [
-                        {"id": "hashcat", "format": "1000"},
-                        {"id": "john", "format": "nt"},
-                    ],
-                }
-            ],
+            audit_candidate,
+            {
+                "variant": "nt",
+                "format": "ntlm",
+                "tools": [
+                    {"id": "hashcat", "format": "1000"},
+                    {"id": "john", "format": "nt"},
+                ],
+            },
         )
         tool_snapshot = (await self.client.get("/hash-tools")).json()
         self.assertEqual(
             [(tool["id"], tool["available"]) for tool in tool_snapshot["tools"]],
             [("hashcat", True), ("john", True)],
         )
+
+        wordlist = f"wrong\n{_RECOVERED_PLAINTEXT}\n".encode()
+        uploaded = await self.put(
+            "/hash-tools/wordlist",
+            content=wordlist,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+        uploaded_wordlist = uploaded.json()["wordlist"]
+        self.assertEqual(uploaded_wordlist["size_bytes"], len(wordlist))
+        self.assertEqual(uploaded_wordlist["entry_count"], 2)
 
         response = await self.post(
             "/hash-tools/jobs",
@@ -712,7 +725,7 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
                 "full_line": finding["full_line"],
                 "variant": "nt",
                 "tool_id": "hashcat",
-                "wordlist": f"wrong\n{_RECOVERED_PLAINTEXT}",
+                "wordlist_upload_id": uploaded_wordlist["upload_id"],
                 "runtime_seconds": 30,
             },
         )
@@ -732,7 +745,7 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
             "full_line": "password=not-a-hash",
             "variant": "nt",
             "tool_id": "hashcat",
-            "wordlist": "candidate",
+            "wordlist_upload_id": "missing",
             "runtime_seconds": 30,
         }
         rejected = await self.post("/hash-tools/jobs", json=body)
@@ -746,6 +759,38 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rejected.json()["error"], "UNSUPPORTED_CANDIDATE")
         self.assertEqual(no_csrf.status_code, 403)
         self.assertEqual(no_csrf.json()["error"]["code"], "CSRF_REJECTED")
+
+    async def test_hash_wordlist_upload_accepts_raw_bytes_and_rejects_empty_files(
+        self,
+    ) -> None:
+        raw_wordlist = b"password\ncaf\xe9\n"
+        accepted = await self.put(
+            "/hash-tools/wordlist",
+            content=raw_wordlist,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+
+        self.assertEqual(accepted.status_code, 201, accepted.text)
+        self.assertEqual(accepted.json()["wordlist"]["size_bytes"], len(raw_wordlist))
+        self.assertEqual(accepted.json()["wordlist"]["entry_count"], 2)
+        self.assertNotIn("password", accepted.text)
+        self.assertEqual(
+            self.app.state.runtime.hash_tools.wordlist.path.read_bytes(),
+            raw_wordlist,
+        )
+
+        empty = await self.put(
+            "/hash-tools/wordlist",
+            content=b"",
+            headers={"Content-Type": "application/octet-stream"},
+        )
+
+        self.assertEqual(empty.status_code, 422)
+        self.assertEqual(empty.json()["error"], "WORDLIST_SIZE_INVALID")
+        self.assertEqual(
+            self.app.state.runtime.hash_tools.wordlist.path.read_bytes(),
+            raw_wordlist,
+        )
 
     async def test_share_enumeration_failure_remains_visible_in_target_snapshot(self) -> None:
         _response, snapshot = await self._start_and_wait(targets="192.0.2.4")

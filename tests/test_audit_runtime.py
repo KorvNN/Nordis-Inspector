@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import threading
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from nordis_smb_inspector.core.credential_audit import classify_audit_material
 from nordis_smb_inspector.web.audit import (
+    MAX_WORDLIST_UPLOAD_BYTES,
     AuditAlreadyRunning,
     AuditInvalidTransition,
     AuditJobStatus,
@@ -15,7 +18,9 @@ from nordis_smb_inspector.web.audit import (
     AuditToolAvailability,
     AuditToolUnavailable,
     CredentialAuditManager,
-    normalize_wordlist,
+    JohnRunner,
+    WordlistUploadValidator,
+    create_private_upload_file,
 )
 
 
@@ -37,10 +42,11 @@ class _FakeRunner:
 
     def availability(self) -> AuditToolAvailability:
         return AuditToolAvailability(
-            self.tool_id,
-            self.display_name,
-            self.available,
-            "/test/hashcat" if self.available else None,
+            tool_id=self.tool_id,
+            display_name=self.display_name,
+            available=self.available,
+            reason=None if self.available else "not_installed",
+            executable_path="/test/hashcat" if self.available else None,
         )
 
     def run(self, request: AuditRunRequest, cancellation: threading.Event) -> AuditRunResult:
@@ -59,23 +65,69 @@ def _nt_material():
     )[0]
 
 
+def _stage_wordlist(manager: CredentialAuditManager, content: bytes) -> str:
+    handle = manager.begin_wordlist_upload()
+    create_private_upload_file(handle.path)
+    handle.path.write_bytes(content)
+    entries = sum(bool(line.rstrip(b"\r")) for line in content.split(b"\n"))
+    uploaded = manager.complete_wordlist_upload(
+        handle,
+        size_bytes=len(content),
+        entry_count=entries,
+    )
+    return uploaded.upload_id
+
+
 class WordlistValidationTests(unittest.TestCase):
-    def test_normalizes_line_endings_without_trimming_candidates(self) -> None:
-        payload, entries = normalize_wordlist("first\r\n two words \n\nthird")
+    def test_accepts_rockyou_scale_uploads(self) -> None:
+        self.assertEqual(MAX_WORDLIST_UPLOAD_BYTES, 256 * 1024 * 1024)
 
-        self.assertEqual(b"first\n two words \nthird\n", payload)
-        self.assertEqual((b"first", b" two words ", b"third"), entries)
+    def test_validates_chunked_wordlists_without_loading_the_file(self) -> None:
+        validator = WordlistUploadValidator()
+        validator.consume(b"first\r\n two")
+        validator.consume(b" words \n\nthird")
 
-    def test_rejects_empty_oversized_and_nul_wordlists(self) -> None:
-        values = ("", "\n\n", "contains\x00nul", "x" * (512 * 1024 + 1))
+        self.assertEqual((25, 3), validator.finish())
 
-        for value in values:
-            with self.subTest(length=len(value)), self.assertRaises(AuditRequestError):
-                normalize_wordlist(value)
+    def test_rejects_empty_and_oversized_wordlists(self) -> None:
+        empty = WordlistUploadValidator()
+        empty.consume(b"\n\r\n")
+        with self.assertRaisesRegex(AuditRequestError, "ENTRY_COUNT"):
+            empty.finish()
+
+        oversized = WordlistUploadValidator()
+        with (
+            patch("nordis_smb_inspector.web.audit.MAX_WORDLIST_UPLOAD_BYTES", 4),
+            self.assertRaisesRegex(AuditRequestError, "WORDLIST_TOO_LARGE"),
+        ):
+            oversized.consume(b"12345")
 
     def test_rejects_an_oversized_candidate_line(self) -> None:
-        with self.assertRaisesRegex(AuditRequestError, "WORDLIST_LINE_TOO_LONG"):
-            normalize_wordlist("x" * 4097)
+        validator = WordlistUploadValidator()
+        with (
+            patch("nordis_smb_inspector.web.audit.MAX_WORDLIST_LINE_BYTES", 4),
+            self.assertRaisesRegex(AuditRequestError, "WORDLIST_LINE_TOO_LONG"),
+        ):
+            validator.consume(b"12345")
+
+
+class ToolAvailabilityTests(unittest.TestCase):
+    def test_john_probe_uses_private_runtime_directories(self) -> None:
+        with (
+            patch(
+                "nordis_smb_inspector.web.audit.shutil.which",
+                return_value="/usr/bin/john",
+            ),
+            patch("nordis_smb_inspector.web.audit.subprocess.run") as run,
+        ):
+            run.return_value.returncode = 0
+
+            availability = JohnRunner().availability()
+
+        self.assertTrue(availability.available)
+        environment = run.call_args.kwargs["env"]
+        self.assertIn("nordis-john-check-", environment["HOME"])
+        self.assertNotEqual(environment["HOME"], str(Path.home()))
 
 
 class CredentialAuditManagerTests(unittest.TestCase):
@@ -85,12 +137,14 @@ class CredentialAuditManagerTests(unittest.TestCase):
             result=AuditRunResult(AuditRunOutcome.CRACKED, plaintext=known_plaintext)
         )
         manager = CredentialAuditManager((runner,))
+        self.addCleanup(manager.close)
+        upload_id = _stage_wordlist(manager, f"wrong\n{known_plaintext}".encode())
 
         tool = manager.tools()[0]
         started = manager.start(
             material=_nt_material(),
             tool_id="hashcat",
-            wordlist_text=f"wrong\n{known_plaintext}",
+            wordlist_upload_id=upload_id,
             runtime_seconds=30,
         )
         manager.worker.join(timeout=1)
@@ -100,6 +154,7 @@ class CredentialAuditManagerTests(unittest.TestCase):
         self.assertNotIn("/test/hashcat", str(tool.public_payload()))
         self.assertEqual(AuditJobStatus.RUNNING, started.status)
         self.assertEqual(AuditJobStatus.CRACKED, finished.status)
+        self.assertEqual(_nt_material().candidate_id, finished.candidate_id)
         self.assertEqual(known_plaintext, finished.plaintext)
         self.assertNotIn(known_plaintext, repr(finished))
         self.assertNotIn("8846f7eaee8fb117ad06bdd830b7586c", repr(runner.request))
@@ -108,10 +163,12 @@ class CredentialAuditManagerTests(unittest.TestCase):
         gate = threading.Event()
         runner = _FakeRunner(gate=gate)
         manager = CredentialAuditManager((runner,))
+        self.addCleanup(manager.close)
+        upload_id = _stage_wordlist(manager, b"candidate\n")
         manager.start(
             material=_nt_material(),
             tool_id="hashcat",
-            wordlist_text="candidate",
+            wordlist_upload_id=upload_id,
             runtime_seconds=30,
         )
 
@@ -119,7 +176,7 @@ class CredentialAuditManagerTests(unittest.TestCase):
             manager.start(
                 material=_nt_material(),
                 tool_id="hashcat",
-                wordlist_text="candidate",
+                wordlist_upload_id=upload_id,
                 runtime_seconds=30,
             )
         cancelling = manager.cancel()
@@ -132,15 +189,17 @@ class CredentialAuditManagerTests(unittest.TestCase):
 
     def test_rejects_unavailable_incompatible_and_invalid_requests(self) -> None:
         unavailable = CredentialAuditManager((_FakeRunner(available=False),))
+        self.addCleanup(unavailable.close)
         with self.assertRaises(AuditToolUnavailable):
             unavailable.start(
                 material=_nt_material(),
                 tool_id="hashcat",
-                wordlist_text="candidate",
+                wordlist_upload_id="missing",
                 runtime_seconds=30,
             )
 
         available = CredentialAuditManager((_FakeRunner(),))
+        self.addCleanup(available.close)
         for tool_id, runtime in (("john", 30), ("hashcat", 31)):
             with self.subTest(tool_id=tool_id, runtime=runtime), self.assertRaises(
                 AuditRequestError
@@ -148,7 +207,7 @@ class CredentialAuditManagerTests(unittest.TestCase):
                 available.start(
                     material=_nt_material(),
                     tool_id=tool_id,
-                    wordlist_text="candidate",
+                    wordlist_upload_id="missing",
                     runtime_seconds=runtime,
                 )
 
