@@ -47,6 +47,7 @@ cleanup() {
     rm -f \
         "$lab_tmp/smb.conf" \
         "$lab_tmp/readable-match.txt" \
+        "$lab_tmp/offline-hash-sample.txt" \
         "$lab_tmp/readable-no-match.txt" \
         "$lab_tmp/deep-secret.txt" \
         "$lab_tmp/large-stream.txt" \
@@ -112,6 +113,10 @@ printf '%s\n' \
     > "$lab_tmp/readable-no-match.txt"
 
 printf '%s\n' \
+    "NTLM: 8846f7eaee8fb117ad06bdd830b7586c" \
+    > "$lab_tmp/offline-hash-sample.txt"
+
+printf '%s\n' \
     "client_secret = NORDIS_DEEP_CANARY" \
     > "$lab_tmp/deep-secret.txt"
 
@@ -125,6 +130,8 @@ install -m 0640 -o "$lab_user" -g "$lab_group" \
     "$lab_tmp/readable-match.txt" "$lab_root/public/readable-match.txt"
 install -m 0640 -o "$lab_user" -g "$lab_group" \
     "$lab_tmp/readable-no-match.txt" "$lab_root/public/readable-no-match.txt"
+install -m 0640 -o "$lab_user" -g "$lab_group" \
+    "$lab_tmp/offline-hash-sample.txt" "$lab_root/public/offline-hash-sample.txt"
 install -m 0640 -o "$lab_user" -g "$lab_group" \
     "$lab_tmp/deep-secret.txt" \
     "$lab_root/public/level-1/level-2/level-3/deep-secret.txt"
@@ -153,3 +160,4 @@ echo "Domain: WORKGROUP"
 echo "Kullanıcı: $lab_user"
 echo "Parola: $lab_password"
 echo "Share'ler: Public (okunabilir), Finance (erişim reddi)"
+echo "Hash örneği: Public/offline-hash-sample.txt (NTLM parola: password)"

@@ -119,7 +119,7 @@ marker. It creates:
 - Readable share `Public`
 - Enumerated but denied share `Finance`
 - Nested directories and an unreadable file
-- Plain-text, large streamed, PDF, DOCX, XLSX, PPTX, and ZIP fixtures
+- Plain-text, synthetic NTLM, large streamed, PDF, DOCX, XLSX, PPTX, and ZIP fixtures
 
 Verify from the host:
 
@@ -172,6 +172,8 @@ New-Item -ItemType Directory -Force C:\NordisLab\Public
 New-Item -ItemType Directory -Force C:\NordisLab\Finance
 Set-Content C:\NordisLab\Public\readable-match.txt `
   -Value "password = NORDIS_WINDOWS_CANARY"
+Set-Content C:\NordisLab\Public\offline-hash-sample.txt `
+  -Value "NTLM: 8846f7eaee8fb117ad06bdd830b7586c"
 Set-Content C:\NordisLab\Public\unreadable-secret.txt `
   -Value "client_secret = NORDIS_DENIED_CANARY"
 
