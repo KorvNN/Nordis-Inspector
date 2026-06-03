@@ -471,7 +471,7 @@ const DETAIL_LABELS = {
   "Değiştirilme": "Modified", "Eşleşme": "Match", "Satır içeriği": "Line content",
   "Satır no": "Line number", "Yöntem": "Method", "Kural": "Rule",
   "Kategori": "Category", "Güven": "Confidence",
-  "Kaynak": "Source", "Bulgu": "Finding", "Eşleşen terim": "Matched term",
+  "Kaynak": "Source", "Bulgu": "Finding",
   "Bulgu sınıfı": "Finding class", "Eşleşme gücü": "Match strength",
 };
 
@@ -846,8 +846,6 @@ function isStructuredFinding(record) {
 }
 
 function findingSignalValue(record) {
-  const assignmentKey = findingAssignmentKey(record);
-  if (assignmentKey !== null) return assignmentKey;
   if (isStructuredFinding(record) && FINDING_RULE_LABELS[record.ruleId]) {
     return findingLabel(record.ruleId, FINDING_RULE_LABELS);
   }
@@ -1277,17 +1275,7 @@ function renderFindingDetail(record) {
     header.append(forward);
   }
 
-  const signal = document.createElement("section");
-  signal.className = "finding-signal";
-  const signalLabel = document.createElement("span");
-  signalLabel.className = "finding-signal-label";
-  signalLabel.textContent = uiText(isStructuredFinding(record) ? "Bulgu" : "Eşleşen terim");
-  const signalValue = document.createElement("strong");
-  signalValue.className = "finding-signal-value";
-  signalValue.textContent = findingSignalValue(record);
-  signal.append(signalLabel, signalValue);
-
-  const detailSections = [header, signal];
+  const detailSections = [header];
   if (!isArtifactFinding(record)) {
     const context = document.createElement("section");
     context.className = "finding-context";
@@ -1298,6 +1286,18 @@ function renderFindingDetail(record) {
     appendHighlightedText(line, record.fullLine, findingHighlightTerm(record));
     context.append(contextLabel, line);
     detailSections.push(context);
+  }
+  if (isStructuredFinding(record)) {
+    const signal = document.createElement("section");
+    signal.className = "finding-signal";
+    const signalLabel = document.createElement("span");
+    signalLabel.className = "finding-signal-label";
+    signalLabel.textContent = uiText("Bulgu");
+    const signalValue = document.createElement("strong");
+    signalValue.className = "finding-signal-value";
+    signalValue.textContent = findingSignalValue(record);
+    signal.append(signalLabel, signalValue);
+    detailSections.push(signal);
   }
 
   const metadataFields = [
