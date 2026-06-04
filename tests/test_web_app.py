@@ -339,10 +339,12 @@ class _FakeHashToolRunner:
         self.request: AuditRunRequest | None = None
 
     def availability(self) -> AuditToolAvailability:
+        supported_formats = ("1000",) if self.tool_id == "hashcat" else ("nt",)
         return AuditToolAvailability(
             tool_id=self.tool_id,
             display_name=self.display_name,
             available=True,
+            supported_formats=supported_formats,
             executable_path=f"/test/{self.tool_id}",
         )
 
@@ -712,6 +714,10 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [(tool["id"], tool["available"]) for tool in tool_snapshot["tools"]],
             [("hashcat", True), ("john", True)],
+        )
+        self.assertEqual(
+            [tool["formats"] for tool in tool_snapshot["tools"]],
+            [["1000"], ["nt"]],
         )
 
         wordlist = f"wrong\n{_RECOVERED_PLAINTEXT}\n".encode()

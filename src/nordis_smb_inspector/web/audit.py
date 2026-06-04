@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -17,7 +18,11 @@ from time import monotonic
 from typing import Protocol
 from uuid import uuid4
 
-from nordis_smb_inspector.core.credential_audit import AuditMaterial, AuditToolBinding
+from nordis_smb_inspector.core.credential_audit import (
+    AuditMaterial,
+    AuditToolBinding,
+    audit_tool_formats,
+)
 
 MAX_WORDLIST_UPLOAD_BYTES = 256 * 1024 * 1024
 MAX_WORDLIST_LINE_BYTES = 64 * 1024
@@ -76,14 +81,35 @@ class AuditToolAvailability:
     display_name: str
     available: bool
     reason: str | None = None
+    supported_formats: tuple[str, ...] = ()
     executable_path: str | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        formats = tuple(
+            sorted(
+                {
+                    value.casefold()
+                    for value in self.supported_formats
+                    if isinstance(value, str) and value and value.isascii()
+                }
+            )
+        )
+        if len(formats) != len(self.supported_formats):
+            raise ValueError("Tool formats must be unique non-empty ASCII text.")
+        if self.available and not formats:
+            raise ValueError("An available audit tool must expose supported formats.")
+        object.__setattr__(self, "supported_formats", formats)
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}(tool_id={self.tool_id!r}, "
             f"display_name={self.display_name!r}, available={self.available!r}, "
-            f"reason={self.reason!r}, executable_path=<redacted>)"
+            f"reason={self.reason!r}, supported_formats={self.supported_formats!r}, "
+            f"executable_path=<redacted>)"
         )
+
+    def supports_format(self, format_name: str) -> bool:
+        return self.available and format_name.casefold() in self.supported_formats
 
     def public_payload(self) -> dict[str, object]:
         return {
@@ -91,6 +117,7 @@ class AuditToolAvailability:
             "name": self.display_name,
             "available": self.available,
             "reason": self.reason,
+            "formats": list(self.supported_formats),
         }
 
 
@@ -394,6 +421,8 @@ class CredentialAuditManager:
         availability = runner.availability()
         if not availability.available or availability.executable_path is None:
             raise AuditToolUnavailable("TOOL_UNAVAILABLE")
+        if not availability.supports_format(binding.format_name):
+            raise AuditRequestError("INCOMPATIBLE_TOOL")
 
         now = datetime.now(UTC)
         with self._lock:
@@ -500,17 +529,6 @@ class _ExecutableRunner:
     display_name: str
     executable_name: str
 
-    def availability(self) -> AuditToolAvailability:
-        executable = shutil.which(self.executable_name)
-        return AuditToolAvailability(
-            tool_id=self.tool_id,
-            display_name=self.display_name,
-            available=executable is not None,
-            reason=None if executable is not None else "not_installed",
-            executable_path=executable,
-        )
-
-
 class HashcatRunner(_ExecutableRunner):
     tool_id = "hashcat"
     display_name = "Hashcat"
@@ -534,12 +552,27 @@ class HashcatRunner(_ExecutableRunner):
                 )
             else:
                 backend_available = _hashcat_backend_available(executable)
+                catalog = (
+                    _hashcat_format_catalog(executable) if backend_available else None
+                )
+                supported_formats = _supported_formats("hashcat", catalog)
+                available = backend_available and catalog is not None and bool(
+                    supported_formats
+                )
+                reason = None
+                if not backend_available:
+                    reason = "backend_unavailable"
+                elif catalog is None:
+                    reason = "format_catalog_unavailable"
+                elif not supported_formats:
+                    reason = "no_supported_formats"
                 availability = AuditToolAvailability(
                     self.tool_id,
                     self.display_name,
-                    backend_available,
-                    None if backend_available else "backend_unavailable",
-                    executable,
+                    available,
+                    reason,
+                    supported_formats,
+                    executable if available else None,
                 )
             self._cached_availability = availability
             return availability
@@ -553,20 +586,7 @@ class HashcatRunner(_ExecutableRunner):
             hash_path = root / "target.hash"
             result_path = root / "recovered.txt"
             _write_private(hash_path, request.material.encode("utf-8") + b"\n")
-            data_home = root / "data"
-            cache_home = root / "cache"
-            config_home = root / "config"
-            (data_home / "hashcat" / "sessions").mkdir(parents=True, mode=0o700)
-            cache_home.mkdir(mode=0o700)
-            config_home.mkdir(mode=0o700)
-            environment = os.environ.copy()
-            environment.update(
-                {
-                    "XDG_DATA_HOME": str(data_home),
-                    "XDG_CACHE_HOME": str(cache_home),
-                    "XDG_CONFIG_HOME": str(config_home),
-                }
-            )
+            environment = _hashcat_environment(root)
             command = (
                 request.executable_path,
                 "--hash-type",
@@ -634,13 +654,21 @@ class JohnRunner(_ExecutableRunner):
                     "not_installed",
                 )
             else:
-                initialized = _john_initializes(executable)
+                catalog = _john_format_catalog(executable)
+                supported_formats = _supported_formats("john", catalog)
+                available = catalog is not None and bool(supported_formats)
+                reason = None
+                if catalog is None:
+                    reason = "initialization_failed"
+                elif not supported_formats:
+                    reason = "no_supported_formats"
                 availability = AuditToolAvailability(
                     self.tool_id,
                     self.display_name,
-                    initialized,
-                    None if initialized else "initialization_failed",
-                    executable,
+                    available,
+                    reason,
+                    supported_formats,
+                    executable if available else None,
                 )
             self._cached_availability = availability
             return availability
@@ -702,24 +730,10 @@ def _hashcat_backend_available(executable_path: str) -> bool:
         with tempfile.TemporaryDirectory(prefix="nordis-hashcat-check-") as directory:
             root = Path(directory)
             root.chmod(0o700)
-            data_home = root / "data"
-            cache_home = root / "cache"
-            config_home = root / "config"
-            (data_home / "hashcat" / "sessions").mkdir(parents=True, mode=0o700)
-            cache_home.mkdir(mode=0o700)
-            config_home.mkdir(mode=0o700)
-            environment = os.environ.copy()
-            environment.update(
-                {
-                    "XDG_DATA_HOME": str(data_home),
-                    "XDG_CACHE_HOME": str(cache_home),
-                    "XDG_CONFIG_HOME": str(config_home),
-                }
-            )
             result = subprocess.run(  # noqa: S603 - fixed executable and flag
                 (executable_path, "--backend-info"),
                 cwd=root,
-                env=environment,
+                env=_hashcat_environment(root),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -733,25 +747,99 @@ def _hashcat_backend_available(executable_path: str) -> bool:
         return False
 
 
-def _john_initializes(executable_path: str) -> bool:
+def _hashcat_format_catalog(executable_path: str) -> frozenset[str] | None:
+    try:
+        with tempfile.TemporaryDirectory(prefix="nordis-hashcat-formats-") as directory:
+            root = Path(directory)
+            result = subprocess.run(  # noqa: S603 - fixed executable and flag
+                (executable_path, "-hh"),
+                cwd=root,
+                env=_hashcat_environment(root),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                timeout=5,
+                check=False,
+                umask=0o077,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if result.returncode != 0:
+                return None
+            formats = frozenset(
+                match.group(1)
+                for match in re.finditer(
+                    r"(?m)^\s*([0-9]+)\s+\|",
+                    result.stdout,
+                )
+            )
+            return formats or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _john_format_catalog(executable_path: str) -> frozenset[str] | None:
     try:
         with tempfile.TemporaryDirectory(prefix="nordis-john-check-") as directory:
             root = Path(directory)
             result = subprocess.run(  # noqa: S603 - fixed executable and flag
-                (executable_path, "--list=build-info"),
+                (executable_path, "--list=formats"),
                 cwd=root,
                 env=_john_environment(root),
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 close_fds=True,
                 timeout=5,
                 check=False,
                 umask=0o077,
+                encoding="utf-8",
+                errors="replace",
             )
-            return result.returncode == 0
+            if result.returncode != 0:
+                return None
+            formats = frozenset(
+                value.casefold()
+                for value in re.split(r"[,\s]+", result.stdout)
+                if value
+            )
+            return formats or None
     except (OSError, subprocess.SubprocessError):
-        return False
+        return None
+
+
+def _supported_formats(
+    tool_id: str,
+    catalog: frozenset[str] | None,
+) -> tuple[str, ...]:
+    if catalog is None:
+        return ()
+    return tuple(
+        sorted(
+            format_name
+            for format_name in audit_tool_formats(tool_id)
+            if format_name.casefold() in catalog
+        )
+    )
+
+
+def _hashcat_environment(root: Path) -> dict[str, str]:
+    data_home = root / "data"
+    cache_home = root / "cache"
+    config_home = root / "config"
+    (data_home / "hashcat" / "sessions").mkdir(parents=True, mode=0o700)
+    cache_home.mkdir(mode=0o700)
+    config_home.mkdir(mode=0o700)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "XDG_DATA_HOME": str(data_home),
+            "XDG_CACHE_HOME": str(cache_home),
+            "XDG_CONFIG_HOME": str(config_home),
+        }
+    )
+    return environment
 
 
 def _john_environment(root: Path) -> dict[str, str]:

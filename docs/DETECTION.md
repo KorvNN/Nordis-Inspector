@@ -76,6 +76,13 @@ Unix password hashes, bcrypt/Argon2, and recognized Kerberos AS-REP, TGS-REP,
 pre-auth, and KDC database formats. Plaintext secrets, API tokens, encryption keys,
 and binary CCache/keytab/KIRBI artifacts are never treated as recovery candidates.
 
+Bindings are tool-specific: a candidate may map to a Hashcat numeric mode and a
+different John `--format` name. At startup, each adapter intersects these bindings
+with the formats reported by the installed tool version. Operators cannot assign an
+arbitrary mode to a finding. Container formats such as VeraCrypt require binary
+header extraction and a dedicated adapter; they are not interchangeable with a
+line-based NTLM or Kerberos candidate.
+
 Hash Tools only accepts a candidate reconstructed from a current finding. Selecting
 “Send to Hash Tools” does not start a job; the operator must choose an available
 local tool, upload a wordlist, and start it explicitly.

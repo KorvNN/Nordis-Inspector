@@ -1683,7 +1683,13 @@ function compatibleInstalledHashTools(entry) {
       .map((tool) => [tool.id, tool]),
   );
   return entry.candidate.tools
-    .filter((binding) => installed.has(binding.id))
+    .filter((binding) => {
+      const tool = installed.get(binding.id);
+      return tool && (
+        tool.formats === null
+        || tool.formats.includes(String(binding.format).toLowerCase())
+      );
+    })
     .map((binding) => ({...installed.get(binding.id), bindingFormat: binding.format}));
 }
 
@@ -1837,6 +1843,10 @@ function renderHashToolAvailability() {
         ? currentLanguage === "en" ? "Compute backend unavailable" : "Hesaplama backend’i yok"
         : tool.reason === "initialization_failed"
           ? currentLanguage === "en" ? "Could not initialize" : "Başlatılamıyor"
+          : tool.reason === "format_catalog_unavailable"
+            ? currentLanguage === "en" ? "Format catalog unavailable" : "Format kataloğu okunamadı"
+            : tool.reason === "no_supported_formats"
+              ? currentLanguage === "en" ? "No compatible formats" : "Uyumlu format yok"
         : uiText("Bulunamadı");
     item.append(name, status);
     hashToolAvailability.append(item);
@@ -1973,6 +1983,11 @@ function normalizedHashToolsPayload(payload) {
         name: tool.name,
         available: tool.available,
         reason: typeof tool.reason === "string" ? tool.reason : null,
+        formats: Array.isArray(tool.formats)
+          ? [...new Set(tool.formats
+            .filter((format) => typeof format === "string" && format !== "")
+            .map((format) => format.toLowerCase()))]
+          : null,
       }))
     : [];
   const job = payload.job && typeof payload.job === "object" && !Array.isArray(payload.job)

@@ -5,7 +5,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from nordis_smb_inspector.core.credential_audit import classify_audit_material
+from nordis_smb_inspector.core.credential_audit import (
+    audit_tool_formats,
+    classify_audit_material,
+)
 from nordis_smb_inspector.web.audit import (
     MAX_WORDLIST_UPLOAD_BYTES,
     AuditAlreadyRunning,
@@ -18,6 +21,7 @@ from nordis_smb_inspector.web.audit import (
     AuditToolAvailability,
     AuditToolUnavailable,
     CredentialAuditManager,
+    HashcatRunner,
     JohnRunner,
     WordlistUploadValidator,
     create_private_upload_file,
@@ -34,10 +38,12 @@ class _FakeRunner:
         available: bool = True,
         result: AuditRunResult | None = None,
         gate: threading.Event | None = None,
+        supported_formats: tuple[str, ...] = ("1000",),
     ) -> None:
         self.available = available
         self.result = result or AuditRunResult(AuditRunOutcome.EXHAUSTED)
         self.gate = gate
+        self.supported_formats = supported_formats
         self.request: AuditRunRequest | None = None
 
     def availability(self) -> AuditToolAvailability:
@@ -46,6 +52,7 @@ class _FakeRunner:
             display_name=self.display_name,
             available=self.available,
             reason=None if self.available else "not_installed",
+            supported_formats=self.supported_formats if self.available else (),
             executable_path="/test/hashcat" if self.available else None,
         )
 
@@ -112,6 +119,33 @@ class WordlistValidationTests(unittest.TestCase):
 
 
 class ToolAvailabilityTests(unittest.TestCase):
+    def test_hashcat_probe_intersects_the_installed_mode_catalog(self) -> None:
+        with (
+            patch(
+                "nordis_smb_inspector.web.audit.shutil.which",
+                return_value="/usr/bin/hashcat",
+            ),
+            patch(
+                "nordis_smb_inspector.web.audit._hashcat_backend_available",
+                return_value=True,
+            ),
+            patch("nordis_smb_inspector.web.audit.subprocess.run") as run,
+        ):
+            run.return_value.returncode = 0
+            run.return_value.stdout = (
+                "   1000 | NTLM | Operating System\n"
+                "  13100 | Kerberos 5, etype 23, TGS-REP | Network Protocol\n"
+                "  13700 | VeraCrypt | Full-Disk Encryption\n"
+            )
+
+            availability = HashcatRunner().availability()
+
+        self.assertTrue(availability.available)
+        self.assertEqual(("1000", "13100"), availability.supported_formats)
+        self.assertNotIn("13700", availability.supported_formats)
+        environment = run.call_args.kwargs["env"]
+        self.assertIn("nordis-hashcat-formats-", environment["XDG_DATA_HOME"])
+
     def test_john_probe_uses_private_runtime_directories(self) -> None:
         with (
             patch(
@@ -121,13 +155,21 @@ class ToolAvailabilityTests(unittest.TestCase):
             patch("nordis_smb_inspector.web.audit.subprocess.run") as run,
         ):
             run.return_value.returncode = 0
+            run.return_value.stdout = "NT, netntlmv2, krb5tgs, raw-md5\n"
 
             availability = JohnRunner().availability()
 
         self.assertTrue(availability.available)
+        self.assertEqual(("krb5tgs", "netntlmv2", "nt"), availability.supported_formats)
         environment = run.call_args.kwargs["env"]
         self.assertIn("nordis-john-check-", environment["HOME"])
         self.assertNotEqual(environment["HOME"], str(Path.home()))
+
+    def test_allow_list_keeps_tool_specific_formats_separate(self) -> None:
+        self.assertIn("13100", audit_tool_formats("hashcat"))
+        self.assertNotIn("krb5tgs", audit_tool_formats("hashcat"))
+        self.assertIn("krb5tgs", audit_tool_formats("john"))
+        self.assertNotIn("13100", audit_tool_formats("john"))
 
 
 class CredentialAuditManagerTests(unittest.TestCase):
@@ -210,6 +252,18 @@ class CredentialAuditManagerTests(unittest.TestCase):
                     wordlist_upload_id="missing",
                     runtime_seconds=runtime,
                 )
+
+        unsupported_format = CredentialAuditManager(
+            (_FakeRunner(supported_formats=("5600",)),)
+        )
+        self.addCleanup(unsupported_format.close)
+        with self.assertRaisesRegex(AuditRequestError, "INCOMPATIBLE_TOOL"):
+            unsupported_format.start(
+                material=_nt_material(),
+                tool_id="hashcat",
+                wordlist_upload_id="missing",
+                runtime_seconds=30,
+            )
 
 
 if __name__ == "__main__":

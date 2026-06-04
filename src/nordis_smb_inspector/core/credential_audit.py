@@ -93,8 +93,46 @@ def _john(format_name: str) -> AuditToolBinding:
     return AuditToolBinding("john", format_name)
 
 
-_NT_BINDINGS = (_hashcat(1000), _john("nt"))
-_LM_BINDINGS = (_hashcat(3000), _john("lm"))
+_FORMAT_BINDINGS: dict[str, tuple[AuditToolBinding, ...]] = {
+    "ntlm": (_hashcat(1000), _john("nt")),
+    "lm": (_hashcat(3000), _john("lm")),
+    "netntlmv1": (_hashcat(5500), _john("netntlm")),
+    "netntlmv2": (_hashcat(5600), _john("netntlmv2")),
+    "dcc2": (_hashcat(2100), _john("mscash2")),
+    "md5crypt": (_hashcat(500), _john("md5crypt")),
+    "sha256crypt": (_hashcat(7400), _john("sha256crypt")),
+    "sha512crypt": (_hashcat(1800), _john("sha512crypt")),
+    "bcrypt": (_hashcat(3200), _john("bcrypt")),
+    "argon2": (_hashcat(34000), _john("argon2")),
+    "kerberos_tgs_etype17": (_hashcat(19600), _john("krb5tgs")),
+    "kerberos_tgs_etype18": (_hashcat(19700), _john("krb5tgs")),
+    "kerberos_tgs_etype23": (_hashcat(13100), _john("krb5tgs")),
+    "kerberos_asrep_etype17": (_hashcat(32100), _john("krb5asrep")),
+    "kerberos_asrep_etype18": (_hashcat(32200), _john("krb5asrep")),
+    "kerberos_asrep_etype23": (_hashcat(18200), _john("krb5asrep")),
+    "kerberos_preauth_etype17": (_hashcat(19800), _john("krb5pa-sha1")),
+    "kerberos_preauth_etype18": (_hashcat(19900), _john("krb5pa-sha1")),
+    "kerberos_preauth_etype23": (_hashcat(7500), _john("krb5pa-md5")),
+    "kerberos_db_etype17": (_hashcat(28800), _john("krb5-17")),
+    "kerberos_db_etype18": (_hashcat(28900), _john("krb5-18")),
+}
+
+
+def audit_tool_formats(tool_id: str) -> frozenset[str]:
+    """Return every allow-listed format binding for one local audit adapter."""
+
+    if tool_id not in {"hashcat", "john"}:
+        raise ValueError("Unsupported audit tool ID.")
+    return frozenset(
+        binding.format_name
+        for bindings in _FORMAT_BINDINGS.values()
+        for binding in bindings
+        if binding.tool_id == tool_id
+    )
+
+
+def _bindings(format_id: str) -> tuple[AuditToolBinding, ...]:
+    return _FORMAT_BINDINGS[format_id]
 
 _NT_LABEL = re.compile(
     rf"(?:\$NT\$|\b(?:NTLM(?:[ \t]+Hash)?|NT[ _-]*Hash|NTHash|"
@@ -156,30 +194,18 @@ _KERBEROS = {
     ),
 }
 
-_KERBEROS_BINDINGS: dict[tuple[str, str], tuple[str, int, str]] = {
-    ("kerberos-tgs-artifact", "17"): ("kerberos_tgs_etype17", 19600, "krb5tgs"),
-    ("kerberos-tgs-artifact", "18"): ("kerberos_tgs_etype18", 19700, "krb5tgs"),
-    ("kerberos-tgs-artifact", "23"): ("kerberos_tgs_etype23", 13100, "krb5tgs"),
-    ("kerberos-asrep-artifact", "17"): ("kerberos_asrep_etype17", 32100, "krb5asrep"),
-    ("kerberos-asrep-artifact", "18"): ("kerberos_asrep_etype18", 32200, "krb5asrep"),
-    ("kerberos-asrep-artifact", "23"): ("kerberos_asrep_etype23", 18200, "krb5asrep"),
-    ("kerberos-preauth-artifact", "17"): (
-        "kerberos_preauth_etype17",
-        19800,
-        "krb5pa-sha1",
-    ),
-    ("kerberos-preauth-artifact", "18"): (
-        "kerberos_preauth_etype18",
-        19900,
-        "krb5pa-sha1",
-    ),
-    ("kerberos-preauth-artifact", "23"): (
-        "kerberos_preauth_etype23",
-        7500,
-        "krb5pa-md5",
-    ),
-    ("kerberos-db-key", "17"): ("kerberos_db_etype17", 28800, "krb5-17"),
-    ("kerberos-db-key", "18"): ("kerberos_db_etype18", 28900, "krb5-18"),
+_KERBEROS_FORMATS: dict[tuple[str, str], str] = {
+    ("kerberos-tgs-artifact", "17"): "kerberos_tgs_etype17",
+    ("kerberos-tgs-artifact", "18"): "kerberos_tgs_etype18",
+    ("kerberos-tgs-artifact", "23"): "kerberos_tgs_etype23",
+    ("kerberos-asrep-artifact", "17"): "kerberos_asrep_etype17",
+    ("kerberos-asrep-artifact", "18"): "kerberos_asrep_etype18",
+    ("kerberos-asrep-artifact", "23"): "kerberos_asrep_etype23",
+    ("kerberos-preauth-artifact", "17"): "kerberos_preauth_etype17",
+    ("kerberos-preauth-artifact", "18"): "kerberos_preauth_etype18",
+    ("kerberos-preauth-artifact", "23"): "kerberos_preauth_etype23",
+    ("kerberos-db-key", "17"): "kerberos_db_etype17",
+    ("kerberos-db-key", "18"): "kerberos_db_etype18",
 }
 
 
@@ -203,7 +229,7 @@ def classify_audit_material(
         match = pattern.search(source_line)
         if match is None:
             return ()
-        return (_material("nt", "ntlm", match.group("hash"), _NT_BINDINGS),)
+        return (_material("nt", "ntlm", match.group("hash"), _bindings("ntlm")),)
 
     if rule_id in {"lm-nt-hash-pair", "credential-dump-line"}:
         pattern = _LM_NT_PAIR if rule_id == "lm-nt-hash-pair" else _CREDENTIAL_DUMP
@@ -211,11 +237,11 @@ def classify_audit_material(
         if match is None:
             return ()
         materials = [
-            _material("nt", "ntlm", match.group("nt"), _NT_BINDINGS),
+            _material("nt", "ntlm", match.group("nt"), _bindings("ntlm")),
         ]
         lm_hash = match.group("lm")
         if lm_hash.casefold() != _EMPTY_LM_HASH:
-            materials.append(_material("lm", "lm", lm_hash, _LM_BINDINGS))
+            materials.append(_material("lm", "lm", lm_hash, _bindings("lm")))
         return tuple(materials)
 
     if rule_id == "netntlmv1-response" and _NETNTLMV1.fullmatch(source_line):
@@ -224,7 +250,7 @@ def classify_audit_material(
                 "response",
                 "netntlmv1",
                 source_line,
-                (_hashcat(5500), _john("netntlm")),
+                _bindings("netntlmv1"),
             ),
         )
 
@@ -234,7 +260,7 @@ def classify_audit_material(
                 "response",
                 "netntlmv2",
                 source_line,
-                (_hashcat(5600), _john("netntlmv2")),
+                _bindings("netntlmv2"),
             ),
         )
 
@@ -246,24 +272,24 @@ def classify_audit_material(
                     "hash",
                     "dcc2",
                     match.group(0),
-                    (_hashcat(2100), _john("mscash2")),
+                    _bindings("dcc2"),
                 ),
             )
 
     if rule_id == "unix-password-hash":
         match = _UNIX_HASH.search(source_line)
         if match is not None:
-            format_id, hashcat_mode, john_format = {
-                "1": ("md5crypt", 500, "md5crypt"),
-                "5": ("sha256crypt", 7400, "sha256crypt"),
-                "6": ("sha512crypt", 1800, "sha512crypt"),
+            format_id = {
+                "1": "md5crypt",
+                "5": "sha256crypt",
+                "6": "sha512crypt",
             }[match.group("type")]
             return (
                 _material(
                     "hash",
                     format_id,
                     match.group(0),
-                    (_hashcat(hashcat_mode), _john(john_format)),
+                    _bindings(format_id),
                 ),
             )
 
@@ -275,7 +301,7 @@ def classify_audit_material(
                     "hash",
                     "bcrypt",
                     bcrypt_match.group(0),
-                    (_hashcat(3200), _john("bcrypt")),
+                    _bindings("bcrypt"),
                 ),
             )
         argon2_match = _ARGON2.search(source_line)
@@ -285,7 +311,7 @@ def classify_audit_material(
                     "hash",
                     "argon2",
                     argon2_match.group(0),
-                    (_hashcat(34000), _john("argon2")),
+                    _bindings("argon2"),
                 ),
             )
 
@@ -294,14 +320,13 @@ def classify_audit_material(
         match = kerberos_pattern.search(source_line)
         if match is None:
             return ()
-        mapping = _KERBEROS_BINDINGS[(rule_id, match.group("etype"))]
-        format_id, hashcat_mode, john_format = mapping
+        format_id = _KERBEROS_FORMATS[(rule_id, match.group("etype"))]
         return (
             _material(
                 "artifact",
                 format_id,
                 match.group(0).rstrip(",;"),
-                (_hashcat(hashcat_mode), _john(john_format)),
+                _bindings(format_id),
             ),
         )
 

@@ -91,9 +91,10 @@ wordlist snapshot it started with.
 ## Local Hash Tools
 
 The panel probes locally installed Hashcat and John the Ripper before offering
-them. A job can only use a supported format derived from an existing finding; the
-request cannot supply a command, executable path, mode, or arbitrary hash value.
-Commands use fixed argument templates and never invoke a shell.
+them, including the formats exposed by the installed version. A job can only use a
+tool-specific format derived from an existing finding and confirmed by that local
+catalog; the request cannot supply a command, executable path, mode, or arbitrary
+hash value. Commands use fixed argument templates and never invoke a shell.
 
 Wordlists are uploaded as raw bytes so common non-UTF-8 lists remain usable. The
 request is processed incrementally and written to an owner-only temporary file
