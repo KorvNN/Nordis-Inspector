@@ -8,7 +8,7 @@ confidence; text findings retain their source line for review.
 ## Wordlist matching
 
 The source-checkout wordlist is
-[`wordlists/content/default-sensitive.txt`](../wordlists/content/default-sensitive.txt).
+[`wordlists/default-sensitive.txt`](../wordlists/default-sensitive.txt).
 The web editor reads and saves this file atomically.
 
 Wheel and `pipx` installations bundle the same default and create an editable copy

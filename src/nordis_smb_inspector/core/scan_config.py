@@ -21,7 +21,7 @@ from typing import Any
 MIN_MAX_DEPTH = 1
 MAX_MAX_DEPTH = 256
 
-_CONTENT_WORDLIST = Path("wordlists/content/default-sensitive.txt")
+_CONTENT_WORDLIST = Path("wordlists/default-sensitive.txt")
 _PACKAGED_WORDLIST_MODULE = "nordis_smb_inspector.wordlists"
 _PACKAGED_WORDLIST_NAME = "default-sensitive.txt"
 _USER_WORDLIST = Path("nordis-smb-inspector/wordlists/default-sensitive.txt")

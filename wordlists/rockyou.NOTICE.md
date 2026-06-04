@@ -13,6 +13,5 @@ The web interface accepts an uncompressed TXT file. Create the ignored local cop
 with:
 
 ```bash
-mkdir -p data/wordlists
-gzip -dc wordlists/rockyou.txt.gz > data/wordlists/rockyou.txt
+gzip -dk wordlists/rockyou.txt.gz
 ```

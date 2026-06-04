@@ -22,6 +22,7 @@ dist/
 data/
 reports/
 uploads/
+wordlists/rockyou.txt
 
 # Editors and operating systems
 .idea/
