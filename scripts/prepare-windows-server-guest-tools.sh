@@ -6,7 +6,7 @@ version=0.1.285
 release=1
 installer_name="virtio-win-guest-tools-$version.exe"
 installer_path="$vm_root/$installer_name"
-image_path="$vm_root/virtio-win-guest-tools.img"
+image_path="$vm_root/virtio-win-guest-tools.iso"
 image_staging_path="$image_path.part"
 installer_url="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-$version-$release/virtio-win-guest-tools.exe"
 installer_sha256=c8b4a9fe87e1fc5d8e843495e082dea53420587fe04740b1084d85089343f04d
@@ -28,10 +28,8 @@ verify_installer() {
 }
 
 require_command curl
-require_command mkfs.fat
-require_command mcopy
+require_command mkisofs
 require_command sha256sum
-require_command truncate
 
 mkdir -p "$vm_root"
 
@@ -46,10 +44,14 @@ if ! verify_installer; then
     fi
 fi
 
-truncate -s 64M "$image_staging_path"
-mkfs.fat -F 32 -n GUESTTOOLS "$image_staging_path" >/dev/null
-mcopy -o -i "$image_staging_path" "$installer_path" ::/virtio-tools.exe
+mkisofs \
+    -quiet \
+    -J \
+    -R \
+    -V GUESTTOOLS \
+    -o "$image_staging_path" \
+    -graft-points "virtio-tools.exe=$installer_path"
 mv -f "$image_staging_path" "$image_path"
 
-printf 'Guest tools imajı hazır: %s\n' "$image_path"
+printf 'Guest tools ISO’su hazır: %s\n' "$image_path"
 echo 'Windows içinde GUESTTOOLS sürücüsünü açıp virtio-tools.exe dosyasını çalıştır.'
