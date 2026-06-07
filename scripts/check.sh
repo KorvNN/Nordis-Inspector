@@ -31,5 +31,7 @@ sh -n setup.sh
 sh -n run.sh
 sh -n scripts/check.sh
 sh -n scripts/setup-local-samba-lab.sh
+bash -n scripts/prepare-windows-server-guest-tools.sh
+bash -n scripts/run-windows-server-lab.sh
 
 echo "All local checks passed."
