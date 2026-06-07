@@ -6,6 +6,7 @@ iso_path=${NORDIS_WINDOWS_ISO:-/home/kroven/İndirilenler/Windows_Server_2025_EV
 disk_path="$vm_root/disk.qcow2"
 vars_path="$vm_root/OVMF_VARS.4m.fd"
 guest_tools_image=${NORDIS_WINDOWS_GUEST_TOOLS_IMAGE:-$vm_root/virtio-win-guest-tools.iso}
+lab_bridge=${NORDIS_WINDOWS_LAB_BRIDGE:-virbr77}
 code_path=/usr/share/edk2/x64/OVMF_CODE.4m.fd
 
 require_file() {
@@ -36,6 +37,17 @@ require_file "$code_path"
 require_file "$iso_path"
 require_file "$guest_tools_image"
 
+if [ ! -d "/sys/class/net/$lab_bridge" ]; then
+    echo "İzole lab bridge'i hazır değil: $lab_bridge" >&2
+    echo 'Ağı başlat: sudo virsh -c qemu:///system net-start efelab' >&2
+    exit 1
+fi
+
+if ! grep -Fqx "allow $lab_bridge" /etc/qemu/bridge.conf 2>/dev/null; then
+    echo "QEMU bridge izni eksik: /etc/qemu/bridge.conf dosyasına 'allow $lab_bridge' ekle." >&2
+    exit 1
+fi
+
 exec qemu-system-x86_64 \
     -name ws2025 \
     -enable-kvm \
@@ -50,6 +62,8 @@ exec qemu-system-x86_64 \
     -drive "file=$iso_path,media=cdrom,readonly=on,if=ide" \
     -boot once=d,menu=on \
     -nic user,model=e1000,mac=52:54:00:77:00:30 \
+    -netdev "bridge,id=efelab,br=$lab_bridge" \
+    -device e1000,netdev=efelab,mac=52:54:00:77:00:31 \
     -device qemu-xhci,id=xhci \
     -device usb-tablet,bus=xhci.0 \
     -drive "file=$guest_tools_image,format=raw,media=cdrom,readonly=on,if=ide" \
