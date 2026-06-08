@@ -78,6 +78,7 @@ const inventoryTabCount = document.querySelector("#inventory-tab-count");
 const findingsTabCount = document.querySelector("#findings-tab-count");
 const historyTabCount = document.querySelector("#history-tab-count");
 const scanHistory = document.querySelector("#scan-history");
+const historySelectionDetail = document.querySelector("#history-selection-detail");
 const exportResultsButton = document.querySelector("#export-results");
 const targetSelectionDetail = document.querySelector("#target-selection-detail");
 const inventorySelectionDetail = document.querySelector("#inventory-selection-detail");
@@ -93,6 +94,9 @@ let selectedInventoryKey = null;
 let selectedFindingKey = null;
 let latestGeneration = null;
 let pendingHistoryDeleteKey = null;
+let selectedHistoryKey = null;
+let pendingScanInputs = null;
+const scanInputSnapshots = new Map();
 let selectedHashCandidateKey = null;
 let hashWordlistUpload = null;
 let hashWordlistName = "";
@@ -523,7 +527,30 @@ const LANGUAGE_TEXT = {
     "Dosyalar": "Files",
     "Filtre": "Filter",
     "Son durum": "Final status",
-    "Tamamlanan taramalar bu tarayıcıda saklanır.": "Completed scans are stored in this browser.",
+    "Tarama girdileri ve tamamlanan sonuçlar bu tarayıcıda saklanır.": "Scan inputs and completed results are stored in this browser.",
+    "Tarama girdileri": "Scan inputs",
+    "Girdileri görmek için bir tarama seç.": "Select a scan to view its inputs.",
+    "Sonuçları aç": "Open results",
+    "Tarama ayarlarını göster": "Show scan settings",
+    "Hedef listesi": "Target list",
+    "Kimlik türü": "Credential type",
+    "Kimlik doğrulama modu": "Authentication mode",
+    "Girilen parola": "Submitted password",
+    "Girilen NT hash": "Submitted NT hash",
+    "CCache dosya adı": "CCache file name",
+    "CCache dosya boyutu": "CCache file size",
+    "Dosya yolu": "File path",
+    "Tarayıcı tam dosya yolunu paylaşmaz.": "The browser does not expose the full file path.",
+    "Dahili wordlist": "Built-in wordlist",
+    "Ek terimler": "Additional terms",
+    "Veri kalıpları": "Data patterns",
+    "Kullanıldı": "Used",
+    "Dahil edildi": "Included",
+    "Dahil edilmedi": "Not included",
+    "Bu kayıtta saklanmadı.": "Not retained in this record.",
+    "Göster": "Show",
+    "Gizle": "Hide",
+    "Parola ve hash bu tarayıcı geçmişinde yerel olarak saklanır.": "Passwords and hashes are stored locally in this browser history.",
     "İçerik arama terimleri": "Content search terms",
     "TXT içe aktar": "Import TXT",
     "Kaydet": "Save",
@@ -2527,6 +2554,50 @@ function additionalSearchTerms() {
   return [...new Set(terms)];
 }
 
+function scanSearchOptions() {
+  return {
+    use_default: true,
+    additional_terms: additionalSearchTerms(),
+    detect_patterns: detectPatternsInput.checked,
+  };
+}
+
+function scanTargetInputs(value) {
+  return value
+    .split(/[\n,]+/u)
+    .map((target) => target.trim())
+    .filter(Boolean);
+}
+
+function captureScanInputs(credential, search) {
+  const storedCredential = {
+    domain: credential.domain,
+    username: credential.username,
+    kind: credential.kind,
+    auth_mode: credential.auth_mode,
+  };
+  if (credential.kind === "password") storedCredential.password = credential.password;
+  if (credential.kind === "nt_hash") storedCredential.nt_hash = credential.nt_hash;
+  if (credential.kind === "ccache") {
+    const file = credentialCcache.files?.[0];
+    storedCredential.ccache_name = credential.ccache_name;
+    storedCredential.ccache_size = file?.size ?? null;
+  }
+
+  return {
+    name: scanName.value.trim(),
+    targets: targets.value.trim(),
+    target_list: scanTargetInputs(targets.value),
+    credential: storedCredential,
+    search: {
+      use_default: search.use_default,
+      additional_terms: [...search.additional_terms],
+      additional_terms_input: additionalTermsInput.value.trim(),
+      detect_patterns: search.detect_patterns,
+    },
+  };
+}
+
 function generatorRoots() {
   return [...new Set(
     termGeneratorRoots.value
@@ -2675,6 +2746,144 @@ function writeHistory(history) {
   return true;
 }
 
+function credentialKindLabel(kind) {
+  if (kind === "password") return uiText("Parola");
+  if (kind === "nt_hash") return "NT hash";
+  if (kind === "ccache") return "CCache";
+  return displayValue(kind);
+}
+
+function authModeLabel(mode) {
+  const labels = {
+    auto: "Auto (Kerberos öncelikli)",
+    kerberos_only: "Yalnız Kerberos",
+    ntlm_only: "Yalnız NTLM",
+  };
+  return labels[mode] ? uiText(labels[mode]) : displayValue(mode);
+}
+
+function retainedHistoryValue(value) {
+  return value === null || value === undefined
+    ? uiText("Bu kayıtta saklanmadı.")
+    : value;
+}
+
+function historyDetailSection(title, fields) {
+  const section = document.createElement("section");
+  section.className = "history-detail-section";
+  const heading = document.createElement("h4");
+  heading.textContent = uiText(title);
+  section.append(heading, detailList(fields));
+  return section;
+}
+
+function appendHistorySecret(list, label, value) {
+  const group = document.createElement("div");
+  const term = document.createElement("dt");
+  const description = document.createElement("dd");
+  term.textContent = uiText(label);
+
+  if (typeof value !== "string" || value === "") {
+    description.textContent = uiText("Bu kayıtta saklanmadı.");
+  } else {
+    const secret = document.createElement("code");
+    secret.className = "history-secret-code";
+    secret.textContent = "••••••••••••";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "secondary-button history-secret-toggle";
+    toggle.textContent = uiText("Göster");
+    toggle.setAttribute("aria-pressed", "false");
+    toggle.addEventListener("click", () => {
+      const visible = toggle.getAttribute("aria-pressed") !== "true";
+      toggle.setAttribute("aria-pressed", String(visible));
+      toggle.textContent = uiText(visible ? "Gizle" : "Göster");
+      secret.textContent = visible ? value : "••••••••••••";
+    });
+    description.className = "history-secret-value";
+    description.append(secret, toggle);
+  }
+
+  group.append(term, description);
+  list.append(group);
+}
+
+function renderHistoryDetail(item) {
+  const credential = item.credential ?? {};
+  const search = item.search;
+  const searchRetained = search !== null && search !== undefined;
+  const heading = document.createElement("h3");
+  heading.className = "detail-heading";
+  heading.textContent = item.name || item.targets || uiText("Hedefler");
+
+  const counts = document.createElement("p");
+  counts.className = "history-detail-meta";
+  counts.textContent = currentLanguage === "en"
+    ? `${historyFinishedAt(item)} · ${item.findings ?? 0} findings · ${item.inventory ?? 0} inventory entries`
+    : `${historyFinishedAt(item)} · ${item.findings ?? 0} bulgu · ${item.inventory ?? 0} envanter`;
+
+  const targetList = item.targets || (Array.isArray(item.target_list)
+    ? item.target_list.join("\n")
+    : item.targets);
+  const scanSection = historyDetailSection("Hedefler", [
+    ["Tarama adı", displayValue(item.name), "detail-code"],
+    ["Hedef listesi", retainedHistoryValue(targetList), "detail-code"],
+  ]);
+
+  const credentialSection = historyDetailSection("Kimlik bilgisi", [
+    ["Domain", displayValue(credential.domain), "detail-code"],
+    ["Kullanıcı", displayValue(credential.username), "detail-code"],
+    ["Kimlik türü", credentialKindLabel(credential.kind)],
+    ["Kimlik doğrulama modu", authModeLabel(credential.auth_mode)],
+  ]);
+  const credentialList = credentialSection.querySelector(".detail-list");
+  if (credential.kind === "password") {
+    appendHistorySecret(credentialList, "Girilen parola", credential.password);
+  } else if (credential.kind === "nt_hash") {
+    appendHistorySecret(credentialList, "Girilen NT hash", credential.nt_hash);
+  } else if (credential.kind === "ccache") {
+    credentialList.append(...detailList([
+      ["CCache dosya adı", retainedHistoryValue(credential.ccache_name), "detail-code"],
+      ["CCache dosya boyutu", credential.ccache_size === null || credential.ccache_size === undefined
+        ? uiText("Bu kayıtta saklanmadı.")
+        : formatFileSize(credential.ccache_size)],
+      ["Dosya yolu", uiText("Tarayıcı tam dosya yolunu paylaşmaz.")],
+    ]).children);
+  }
+
+  const terms = typeof search?.additional_terms_input === "string"
+    ? search.additional_terms_input || "—"
+    : Array.isArray(search?.additional_terms)
+      ? search.additional_terms.join("\n") || "—"
+      : uiText("Bu kayıtta saklanmadı.");
+  const searchSection = historyDetailSection("İçerik arama", [
+    ["Dahili wordlist", !searchRetained
+      ? uiText("Bu kayıtta saklanmadı.")
+      : uiText(search.use_default ? "Kullanıldı" : "Dahil edilmedi")],
+    ["Ek terimler", terms, "detail-code"],
+    ["Veri kalıpları", !searchRetained
+      ? uiText("Bu kayıtta saklanmadı.")
+      : uiText(search.detect_patterns ? "Dahil edildi" : "Dahil edilmedi")],
+  ]);
+
+  const content = [heading, counts, scanSection, credentialSection, searchSection];
+  if (credential.kind === "password" || credential.kind === "nt_hash") {
+    const note = document.createElement("p");
+    note.className = "history-detail-note";
+    note.textContent = uiText("Parola ve hash bu tarayıcı geçmişinde yerel olarak saklanır.");
+    content.push(note);
+  }
+  historySelectionDetail.replaceChildren(...content);
+}
+
+function selectHistoryItem(item) {
+  selectedHistoryKey = historyItemKey(item);
+  renderHistoryDetail(item);
+  for (const row of scanHistory.querySelectorAll(".history-item")) {
+    row.classList.toggle("is-selected", row.dataset.historyKey === selectedHistoryKey);
+  }
+}
+
 function renderHistory() {
   const history = storedHistory();
   historyTabCount.textContent = history.length;
@@ -2684,11 +2893,18 @@ function renderHistory() {
     empty.className = "group-empty-state";
     empty.textContent = uiText("Henüz kayıtlı tarama yok.");
     scanHistory.append(empty);
+    selectedHistoryKey = null;
+    setSelectionPlaceholder(historySelectionDetail, "Girdileri görmek için bir tarama seç.");
     return;
   }
   for (const item of history) {
     const row = document.createElement("div");
     row.className = "history-item";
+    row.dataset.historyKey = historyItemKey(item);
+    row.classList.toggle("is-selected", row.dataset.historyKey === selectedHistoryKey);
+    const selection = document.createElement("button");
+    selection.type = "button";
+    selection.className = "history-item-selection";
     const title = document.createElement("strong");
     title.className = "history-item-title";
     title.textContent = item.name || item.targets || "Hedefler";
@@ -2705,24 +2921,28 @@ function renderHistory() {
     const credential = item.credential ?? {};
     const identity = credential.username || uiText("Kullanıcı yok");
     const domain = credential.domain ? `${credential.domain}\\${identity}` : identity;
-    const kind = credential.kind === "nt_hash"
-      ? "NT hash"
-      : credential.kind === "ccache" ? "CCache" : uiText("Parola");
-    const auth = credential.auth_mode ? ` · ${credential.auth_mode}` : "";
+    const kind = credentialKindLabel(credential.kind);
+    const auth = credential.auth_mode ? ` · ${authModeLabel(credential.auth_mode)}` : "";
     counts.textContent = currentLanguage === "en"
       ? `${domain} · ${kind}${auth} · ${item.findings} findings · ${item.inventory} inventory entries`
       : `${domain} · ${kind}${auth} · ${item.findings} bulgu · ${item.inventory} envanter`;
+    selection.setAttribute(
+      "aria-label",
+      `${uiText("Tarama ayarlarını göster")}: ${title.textContent}`,
+    );
+    selection.addEventListener("click", () => selectHistoryItem(item));
+    selection.append(title, summary, counts);
     const view = document.createElement("button");
     view.type = "button";
     view.className = "secondary-button";
-    view.textContent = uiText("Görüntüle");
+    view.textContent = uiText("Sonuçları aç");
     view.addEventListener("click", () => loadHistoryItem(item));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "secondary-button history-delete";
     remove.textContent = uiText("Sil");
     remove.addEventListener("click", () => deleteHistoryItem(item));
-    row.append(title, summary, counts, view, remove);
+    row.append(selection, view, remove);
     if (item.history_incomplete) {
       const warning = document.createElement("span");
       warning.className = "history-item-warning";
@@ -2732,6 +2952,13 @@ function renderHistory() {
       row.append(warning);
     }
     scanHistory.append(row);
+  }
+  const selected = history.find((item) => historyItemKey(item) === selectedHistoryKey);
+  if (selected) {
+    renderHistoryDetail(selected);
+  } else {
+    selectedHistoryKey = null;
+    setSelectionPlaceholder(historySelectionDetail, "Girdileri görmek için bir tarama seç.");
   }
 }
 
@@ -2754,12 +2981,14 @@ function confirmHistoryItemDelete() {
   if (pendingHistoryDeleteKey === null) return;
   const itemKey = pendingHistoryDeleteKey;
   const history = storedHistory().filter((entry) => historyItemKey(entry) !== itemKey);
+  if (selectedHistoryKey === itemKey) selectedHistoryKey = null;
   writeHistory(history);
   historyDeleteDialog.close();
   renderHistory();
 }
 
 function loadHistoryItem(item) {
+  selectHistoryItem(item);
   replaceTargets(item.targets_snapshot ?? []);
   replaceInventory(item.inventory_items ?? []);
   replaceFindings(item.finding_items ?? []);
@@ -2770,43 +2999,64 @@ function saveCompletedScan(state) {
   if (state.status !== "completed" || !state.scan_id) return;
   const history = storedHistory();
   const existing = history.find((item) => item.scan_id === state.scan_id);
+  const capturedInputs = scanInputSnapshots.get(state.scan_id) ?? pendingScanInputs;
   const snapshot = {
     targets_snapshot: [...targetStore.values()],
     inventory_items: [...inventoryStore.values()],
     finding_items: [...findingStore.values()],
   };
   if (existing) {
-    const unchanged = JSON.stringify({
+    const resultsUnchanged = JSON.stringify({
       targets_snapshot: existing.targets_snapshot ?? [],
       inventory_items: existing.inventory_items ?? [],
       finding_items: existing.finding_items ?? [],
     }) === JSON.stringify(snapshot);
-    if (unchanged) return;
+    const inputsUnchanged = capturedInputs === null || capturedInputs === undefined || JSON.stringify({
+      name: existing.name ?? "",
+      targets: existing.targets ?? "",
+      target_list: existing.target_list ?? [],
+      credential: existing.credential ?? {},
+      search: existing.search,
+    }) === JSON.stringify(capturedInputs);
+    if (resultsUnchanged && inputsUnchanged) {
+      scanInputSnapshots.delete(state.scan_id);
+      return;
+    }
     Object.assign(existing, {
       findings: state.finding_count ?? findingStore.size,
       inventory: state.inventory_count ?? inventoryStore.size,
+      ...(capturedInputs ?? {}),
       ...snapshot,
     });
     writeHistory(history);
     renderHistory();
+    scanInputSnapshots.delete(state.scan_id);
     return;
   }
-  history.unshift({
-    scan_id: state.scan_id,
-    name: scanName.value.trim() || targets.value.trim() || "Hedefler",
-    targets: targets.value.trim() || "Hedefler",
+  const inputs = capturedInputs ?? {
+    name: scanName.value.trim(),
+    targets: targets.value.trim(),
+    target_list: scanTargetInputs(targets.value),
     credential: {
       domain: credentialDomain.value.trim() || null,
       username: credentialUsername.value.trim() || null,
       kind: credentialKind.value,
       auth_mode: authMode.value,
     },
+    search: scanSearchOptions(),
+  };
+  history.unshift({
+    scan_id: state.scan_id,
+    ...inputs,
     status: "completed",
     findings: state.finding_count ?? findingStore.size,
     inventory: state.inventory_count ?? inventoryStore.size,
     ...snapshot,
     finished_at: new Date().toISOString(),
   });
+  selectedHistoryKey = state.scan_id;
+  scanInputSnapshots.delete(state.scan_id);
+  if (pendingScanInputs === capturedInputs) pendingScanInputs = null;
   writeHistory(history);
   renderHistory();
 }
@@ -2830,9 +3080,14 @@ async function startScan() {
   if (!scanFormIsValid()) return;
   startScanButton.disabled = true;
   showErrors([]);
+  let inputSnapshot = null;
 
   try {
     const credential = await credentialPayload();
+    const search = scanSearchOptions();
+    inputSnapshot = captureScanInputs(credential, search);
+    scanInputSnapshots.clear();
+    pendingScanInputs = inputSnapshot;
     const response = await fetch("/scan", {
       method: "POST",
       credentials: "omit",
@@ -2841,11 +3096,7 @@ async function startScan() {
       body: JSON.stringify({
         targets: targets.value,
         credential,
-        search: {
-          use_default: true,
-          additional_terms: additionalSearchTerms(),
-          detect_patterns: detectPatternsInput.checked,
-        },
+        search,
       }),
     });
     const payload = await response.json();
@@ -2855,8 +3106,11 @@ async function startScan() {
         value: item.value ?? item.code,
         reason: item.reason ?? item.message,
       })));
+      if (pendingScanInputs === inputSnapshot) pendingScanInputs = null;
       return;
     }
+    scanInputSnapshots.set(payload.scan_id, inputSnapshot);
+    if (pendingScanInputs === inputSnapshot) pendingScanInputs = null;
 
     targetStore.clear();
     selectedTargetKey = null;
@@ -2868,6 +3122,7 @@ async function startScan() {
     await refreshSnapshot();
     await refreshHashTools();
   } catch (error) {
+    if (pendingScanInputs === inputSnapshot) pendingScanInputs = null;
     if (error instanceof CredentialInputError) {
       showErrors([{value: "CCache", reason: error.message}]);
     } else {

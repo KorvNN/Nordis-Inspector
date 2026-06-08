@@ -231,11 +231,17 @@
         <section id="history-panel" class="result-tab-panel" role="tabpanel"
           aria-labelledby="history-tab" data-result-panel="history" hidden>
           <div class="panel-toolbar">
-            <span class="summary">Tamamlanan taramalar bu tarayıcıda saklanır.</span>
+            <span class="summary">Tarama girdileri ve tamamlanan sonuçlar bu tarayıcıda saklanır.</span>
             <button id="export-results" class="secondary-button" type="button">Sonuçları JSON indir</button>
           </div>
-          <div id="scan-history" class="grouped-results">
-            <p class="group-empty-state">Henüz kayıtlı tarama yok.</p>
+          <div class="result-split history-split">
+            <div id="scan-history" class="grouped-results">
+              <p class="group-empty-state">Henüz kayıtlı tarama yok.</p>
+            </div>
+            <aside id="history-selection-detail" class="selection-detail history-detail"
+              aria-label="Tarama girdileri">
+              <p class="selection-placeholder">Girdileri görmek için bir tarama seç.</p>
+            </aside>
           </div>
         </section>
 

@@ -22,10 +22,15 @@ accessible, what was readable, and which lines require review.
 - Sends supported offline password-hash findings to locally installed Hashcat or
   John the Ripper with an operator-selected TXT wordlist
 - Streams progress, target states, inventory entries, and findings to the UI
-- Keeps local scan history with safe credential metadata and JSON export
+- Keeps browser-local scan history with scan inputs, results, and JSON export
 
 Nordis is intentionally read-only. It does not modify remote files, test write
 permissions, or expose a non-loopback web bind.
+
+Scan history includes submitted passwords and NT hashes so prior inputs can be
+reviewed; the UI masks them until explicitly revealed. CCache bytes and full file
+paths are not retained—only the selected file name and size. Delete sensitive
+history entries when they are no longer needed.
 
 Hash Tools is an explicit local post-processing step. Findings and wordlists are
 never sent to an external service; large lists are streamed to private temporary
