@@ -1,0 +1,101 @@
+schema_version = 1
+pack_id = "windows_ad"
+title_tr = "Windows ve Active Directory"
+title_en = "Windows and Active Directory"
+
+[[rules]]
+rule_id = "gpp-cpassword"
+title = "Group Policy Preferences cpassword"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\bcpassword[ \\t]*=[ \\t]*['\"]?(?P<secret>[A-Za-z0-9+/]{16,}={0,2})"
+keywords = ["cpassword"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "kerberos-tgs-artifact"
+title = "Kerberos TGS artifact"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\$krb5tgs\\$(?:17|18|23)\\$[^\\s]{20,}"
+keywords = ["$krb5tgs$"]
+
+[[rules]]
+rule_id = "kerberos-asrep-artifact"
+title = "Kerberos AS-REP artifact"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\$krb5asrep\\$(?:17|18|23)\\$[^\\s]{20,}"
+keywords = ["$krb5asrep$"]
+
+[[rules]]
+rule_id = "kerberos-preauth-artifact"
+title = "Kerberos pre-auth artifact"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\$krb5pa\\$(?:17|18|23)\\$[^\\s]{20,}"
+keywords = ["$krb5pa$"]
+
+[[rules]]
+rule_id = "kerberos-db-key"
+title = "Kerberos KDC database key"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\$krb5db\\$(?:17\\$[^\\s$]{1,256}\\$[^\\s$]{1,256}\\$[0-9A-Fa-f]{32}|18\\$[^\\s$]{1,256}\\$[^\\s$]{1,256}\\$[0-9A-Fa-f]{64})(?![0-9A-Fa-f])"
+keywords = ["$krb5db$"]
+
+[[rules]]
+rule_id = "windows-nt-hash"
+title = "Etiketli NTLM hash"
+category = "Windows / AD"
+confidence = "high"
+pattern = "(?:\\$NT\\$|\\b(?:NTLM(?:[ \\t]+Hash)?|NT[ _-]*Hash|NTHash|Hash[ _-]*NTLM)[ \\t]*[:=][ \\t]*)(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
+keywords = ["$nt$", "ntlm", "nt hash", "nt_hash", "nt-hash", "nthash"]
+secret_group = "secret"
+
+[[rules]]
+rule_id = "kerberos-rc4-key"
+title = "Kerberos RC4 key"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\b(?:rc4[_-](?:hmac(?:[_-](?:nt|old)(?:[_-]exp)?)?|md4)|arcfour[_-]hmac)\\b(?:[ \\t]+\\([0-9]{1,5}\\))?[ \\t]*(?:[:=][ \\t]*|[ \\t]+)(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
+keywords = ["rc4_hmac", "rc4-hmac", "rc4_md4", "rc4-md4", "arcfour_hmac", "arcfour-hmac"]
+secret_group = "secret"
+
+[[rules]]
+rule_id = "kerberos-aes128-key"
+title = "Kerberos AES-128 key"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\baes128(?:[_-]hmac|[_-]cts[_-]hmac[_-]sha1(?:[_-]96)?)?\\b(?:[ \\t]+\\([0-9]{1,5}\\))?[ \\t]*(?:[:=][ \\t]*|[ \\t]+)(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
+keywords = ["aes128"]
+secret_group = "secret"
+
+[[rules]]
+rule_id = "kerberos-aes256-key"
+title = "Kerberos AES-256 key"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\baes256(?:[_-]hmac|[_-]cts[_-]hmac[_-]sha1(?:[_-]96)?)?\\b(?:[ \\t]+\\([0-9]{1,5}\\))?[ \\t]*(?:[:=][ \\t]*|[ \\t]+)(?P<secret>[0-9A-Fa-f]{64})(?![0-9A-Fa-f])"
+keywords = ["aes256"]
+secret_group = "secret"
+
+[[rules]]
+rule_id = "kerberos-des-key"
+title = "Kerberos DES key"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\bdes[_-]cbc[_-](?:md5|crc)\\b(?:[ \\t]+\\([0-9]{1,5}\\))?[ \\t]*(?:[:=][ \\t]*|[ \\t]+)(?P<secret>[0-9A-Fa-f]{16})(?![0-9A-Fa-f])"
+keywords = ["des_cbc", "des-cbc"]
+secret_group = "secret"
+
+[[rules]]
+rule_id = "windows-managed-password"
+title = "Windows managed password attribute"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\b(?:ms-Mcs-AdmPwd|msLAPS-Password|msLAPS-EncryptedPassword)[ \\t]*[:=][ \\t]*(?P<secret>[^\\s,;]+)"
+keywords = ["ms-Mcs-AdmPwd", "msLAPS-Password", "msLAPS-EncryptedPassword"]
+secret_group = "secret"
+ignore_common_values = true

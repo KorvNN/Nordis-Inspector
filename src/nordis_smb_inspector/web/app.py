@@ -35,6 +35,10 @@ from nordis_smb_inspector.core.credentials import (
     CredentialKind,
     CredentialValidationError,
 )
+from nordis_smb_inspector.core.detection import (
+    DetectionRulePack,
+    detection_rules_for_packs,
+)
 from nordis_smb_inspector.core.kerberos import resolve_kerberos_hostname
 from nordis_smb_inspector.core.progress import ScanPhase
 from nordis_smb_inspector.core.scan_config import (
@@ -717,6 +721,10 @@ def _run_access_scan(
             share_discoverer=runtime.share_discoverer,
             cancellation=target_cancellation,
             detect_patterns=options.detect_patterns,
+            pattern_rules=detection_rules_for_packs(options.rule_packs),
+            detect_credential_artifacts=(
+                DetectionRulePack.WINDOWS_AD in options.rule_packs
+            ),
             on_target=publish_target_event,
             on_inventory=publish_inventory,
             on_finding=publish_finding,

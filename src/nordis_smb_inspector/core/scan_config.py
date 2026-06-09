@@ -18,6 +18,11 @@ from os import PathLike
 from pathlib import Path
 from typing import Any
 
+from nordis_smb_inspector.core.detection import (
+    DEFAULT_DETECTION_RULE_PACKS,
+    DetectionRulePack,
+)
+
 MIN_MAX_DEPTH = 1
 MAX_MAX_DEPTH = 256
 
@@ -42,6 +47,7 @@ class ScanOptions:
     terms: tuple[str, ...]
     max_depth: int
     detect_patterns: bool = True
+    rule_packs: tuple[DetectionRulePack, ...] = DEFAULT_DETECTION_RULE_PACKS
 
     def __post_init__(self) -> None:
         terms = _normalize_values(self.terms, "Search terms must be text.")
@@ -50,12 +56,17 @@ class ScanOptions:
         _validate_max_depth(self.max_depth)
         if not isinstance(self.detect_patterns, bool):
             raise ScanConfigError("Pattern detection selection must be a boolean.")
+        rule_packs = _validate_rule_packs(self.rule_packs)
+        if self.detect_patterns and not rule_packs:
+            raise ScanConfigError("At least one detection rule pack is required.")
         object.__setattr__(self, "terms", terms)
+        object.__setattr__(self, "rule_packs", rule_packs)
 
     def __repr__(self) -> str:
         return (
             f"ScanOptions(terms=<redacted {len(self.terms)} entries>, "
-            f"max_depth={self.max_depth!r}, detect_patterns={self.detect_patterns!r})"
+            f"max_depth={self.max_depth!r}, detect_patterns={self.detect_patterns!r}, "
+            f"rule_packs={len(self.rule_packs)} selected)"
         )
 
 
@@ -87,6 +98,20 @@ def parse_scan_options(
     detect_patterns = search.get("detect_patterns", True)
     if not isinstance(detect_patterns, bool):
         raise ScanConfigError("Pattern detection selection must be a boolean.")
+    raw_rule_packs = search.get(
+        "rule_packs",
+        [pack.value for pack in DEFAULT_DETECTION_RULE_PACKS],
+    )
+    if not isinstance(raw_rule_packs, list):
+        raise ScanConfigError("Detection rule packs must be an array.")
+    if not all(isinstance(pack, str) for pack in raw_rule_packs):
+        raise ScanConfigError("Each detection rule pack must be text.")
+    try:
+        rule_packs = tuple(dict.fromkeys(DetectionRulePack(pack) for pack in raw_rule_packs))
+    except ValueError:
+        raise ScanConfigError("Detection rule pack is unknown.") from None
+    if detect_patterns and not rule_packs:
+        raise ScanConfigError("At least one detection rule pack is required.")
 
     depth = _validate_max_depth(max_depth)
 
@@ -105,7 +130,20 @@ def parse_scan_options(
         terms=terms,
         max_depth=depth,
         detect_patterns=detect_patterns,
+        rule_packs=rule_packs,
     )
+
+
+def _validate_rule_packs(
+    values: tuple[DetectionRulePack, ...],
+) -> tuple[DetectionRulePack, ...]:
+    if not isinstance(values, tuple) or not all(
+        isinstance(value, DetectionRulePack) for value in values
+    ):
+        raise ScanConfigError("Detection rule packs are invalid.")
+    if len(values) != len(set(values)):
+        raise ScanConfigError("Detection rule packs must be unique.")
+    return values
 
 
 def editable_wordlist_path(

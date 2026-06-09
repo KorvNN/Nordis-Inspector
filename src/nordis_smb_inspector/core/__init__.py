@@ -16,11 +16,16 @@ from .credential_artifacts import (
 )
 from .credentials import AuthMode, Credential, CredentialKind, CredentialValidationError
 from .detection import (
+    DEFAULT_DETECTION_RULE_PACKS,
     DEFAULT_DETECTION_RULES,
+    DEFAULT_RULE_PACKS,
     DetectionConfidence,
     DetectionRule,
+    DetectionRulePack,
+    DetectionRulePackInfo,
     PatternMatch,
     detect_patterns,
+    detection_rules_for_packs,
 )
 from .kerberos import resolve_kerberos_hostname
 from .progress import (
@@ -62,9 +67,13 @@ __all__ = [
     "CredentialArtifactMatch",
     "CredentialKind",
     "CredentialValidationError",
+    "DEFAULT_DETECTION_RULE_PACKS",
     "DEFAULT_DETECTION_RULES",
+    "DEFAULT_RULE_PACKS",
     "DetectionConfidence",
     "DetectionRule",
+    "DetectionRulePack",
+    "DetectionRulePackInfo",
     "CancellationSignal",
     "CapacityReached",
     "ContentDiagnostic",
@@ -99,6 +108,7 @@ __all__ = [
     "credential_artifact_header_bytes",
     "detect_credential_artifact",
     "detect_patterns",
+    "detection_rules_for_packs",
     "resolve_kerberos_hostname",
     "scan_text",
 ]

@@ -49,6 +49,13 @@ where = ["src"]
 "share/nordis-smb-inspector/wordlists" = [
   "wordlists/default-sensitive.txt",
 ]
+"share/nordis-smb-inspector/rules" = [
+  "rules/cloud-services.toml",
+  "rules/general-secrets.toml",
+  "rules/infrastructure.toml",
+  "rules/password-hashes.toml",
+  "rules/windows-ad.toml",
+]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

@@ -1,0 +1,54 @@
+schema_version = 1
+pack_id = "infrastructure"
+title_tr = "Altyapı ve geliştirici araçları"
+title_en = "Infrastructure and developer tools"
+
+[[rules]]
+rule_id = "npm-token-prefix"
+title = "npm access token"
+category = "Developer tooling"
+confidence = "high"
+pattern = "\\bnpm_[A-Za-z0-9]{20,}\\b"
+keywords = ["npm_"]
+
+[[rules]]
+rule_id = "pypi-token-prefix"
+title = "PyPI API token"
+category = "Developer tooling"
+confidence = "high"
+pattern = "\\bpypi-[A-Za-z0-9_-]{16,}\\b"
+keywords = ["pypi-"]
+
+[[rules]]
+rule_id = "vault-token-prefix"
+title = "Vault token"
+category = "Infrastructure"
+confidence = "high"
+pattern = "\\bhvs\\.[A-Za-z0-9_-]{16,}\\b"
+keywords = ["hvs."]
+
+[[rules]]
+rule_id = "docker-registry-auth"
+title = "Docker registry auth değeri"
+category = "Container tooling"
+confidence = "high"
+pattern = "[\"']auth[\"'][ \\t]*:[ \\t]*[\"'](?P<secret>[A-Za-z0-9+/=]{20,})[\"']"
+keywords = ["auth"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "ansible-vault-artifact"
+title = "Ansible Vault artifact"
+category = "Infrastructure"
+confidence = "high"
+pattern = "\\$ANSIBLE_VAULT;[0-9.]+;AES[0-9]+;[0-9a-f]{20,}"
+keywords = ["$ANSIBLE_VAULT;"]
+
+[[rules]]
+rule_id = "sops-encrypted-artifact"
+title = "SOPS encrypted value"
+category = "Infrastructure"
+confidence = "high"
+pattern = "ENC\\[AES256_GCM,data:[^\\]]{16,}\\]"
+keywords = ["ENC[AES256_GCM,data:"]

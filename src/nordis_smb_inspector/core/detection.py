@@ -1,10 +1,16 @@
-"""Bounded, line-oriented detection of structured credential artifacts."""
+"""Bounded, line-oriented detection backed by versioned built-in rule packs."""
 
 from __future__ import annotations
 
 import re
+import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from importlib.metadata import PackageNotFoundError, distribution
+from pathlib import Path
+from types import MappingProxyType
+from typing import Any
 
 _RULE_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _IGNORED_VALUES = frozenset(
@@ -26,11 +32,40 @@ _IGNORED_VALUES = frozenset(
     }
 )
 _MAX_MATCHES_PER_RULE_LINE = 32
+_RULE_PACK_SCHEMA_VERSION = 1
+_RULES_DIRECTORY = Path("rules")
+_DISTRIBUTION_NAME = "nordis-smb-inspector"
+_PACKAGED_RULES_SUFFIX = "share/nordis-smb-inspector/rules"
 
 
 class DetectionConfidence(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
+
+
+class DetectionRulePack(StrEnum):
+    GENERAL_SECRETS = "general_secrets"
+    WINDOWS_AD = "windows_ad"
+    PASSWORD_HASHES = "password_hashes"
+    CLOUD_SERVICES = "cloud_services"
+    INFRASTRUCTURE = "infrastructure"
+
+
+DEFAULT_DETECTION_RULE_PACKS = tuple(DetectionRulePack)
+
+_RULE_PACK_FILES = MappingProxyType(
+    {
+        DetectionRulePack.GENERAL_SECRETS: "general-secrets.toml",
+        DetectionRulePack.WINDOWS_AD: "windows-ad.toml",
+        DetectionRulePack.PASSWORD_HASHES: "password-hashes.toml",
+        DetectionRulePack.CLOUD_SERVICES: "cloud-services.toml",
+        DetectionRulePack.INFRASTRUCTURE: "infrastructure.toml",
+    }
+)
+
+
+class RulePackError(ValueError):
+    """A safe, content-free built-in rule-pack validation failure."""
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -40,6 +75,7 @@ class DetectionRule:
     category: str
     confidence: DetectionConfidence
     pattern: str
+    pack: DetectionRulePack = DetectionRulePack.GENERAL_SECRETS
     keywords: tuple[str, ...] = ()
     secret_group: str | None = None
     ignore_common_values: bool = False
@@ -54,10 +90,14 @@ class DetectionRule:
                 raise ValueError(f"Detection rule {name} must be non-empty text.")
         if not isinstance(self.confidence, DetectionConfidence):
             raise TypeError("Detection rule confidence is invalid.")
+        if not isinstance(self.pack, DetectionRulePack):
+            raise TypeError("Detection rule pack is invalid.")
         if not isinstance(self.keywords, tuple) or not all(
             isinstance(keyword, str) and keyword for keyword in self.keywords
         ):
             raise ValueError("Detection rule keywords must be non-empty text.")
+        if not isinstance(self.ignore_common_values, bool):
+            raise TypeError("Detection rule ignore selection is invalid.")
         try:
             compiled = re.compile(self.pattern, re.IGNORECASE | re.ASCII)
         except re.error as error:
@@ -70,7 +110,7 @@ class DetectionRule:
         return (
             f"{type(self).__name__}(rule_id={self.rule_id!r}, title={self.title!r}, "
             f"category={self.category!r}, confidence={self.confidence.value!r}, "
-            "pattern=<redacted>)"
+            f"pack={self.pack.value!r}, pattern=<redacted>)"
         )
 
 
@@ -102,6 +142,26 @@ class PatternMatch:
             f"category={self.category!r}, confidence={self.confidence.value!r}, "
             f"start={self.start!r}, end={self.end!r})"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class DetectionRulePackInfo:
+    pack_id: DetectionRulePack
+    title_tr: str
+    title_en: str
+    rules: tuple[DetectionRule, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.pack_id, DetectionRulePack):
+            raise TypeError("Detection rule pack ID is invalid.")
+        if not isinstance(self.title_tr, str) or not self.title_tr.strip():
+            raise ValueError("Detection rule pack Turkish title is invalid.")
+        if not isinstance(self.title_en, str) or not self.title_en.strip():
+            raise ValueError("Detection rule pack English title is invalid.")
+        if not isinstance(self.rules, tuple) or not self.rules:
+            raise ValueError("Detection rule pack must contain rules.")
+        if any(rule.pack is not self.pack_id for rule in self.rules):
+            raise ValueError("Detection rule pack contains a mismatched rule.")
 
 
 def detect_patterns(
@@ -153,6 +213,19 @@ def detect_patterns(
     return _without_redundant_matches(findings)
 
 
+def detection_rules_for_packs(
+    packs: tuple[DetectionRulePack, ...],
+) -> tuple[DetectionRule, ...]:
+    """Return built-in rules belonging to the selected immutable pack tuple."""
+
+    if not isinstance(packs, tuple) or not all(
+        isinstance(pack, DetectionRulePack) for pack in packs
+    ):
+        raise TypeError("packs must be DetectionRulePack values.")
+    selected = frozenset(packs)
+    return tuple(rule for rule in DEFAULT_DETECTION_RULES if rule.pack in selected)
+
+
 def _without_redundant_matches(
     findings: list[PatternMatch],
 ) -> tuple[PatternMatch, ...]:
@@ -176,460 +249,110 @@ def _without_redundant_matches(
             for candidate in suppressors
         )
 
-    return tuple(
-        match
-        for match in findings
-        if not is_redundant(match)
-    )
+    return tuple(match for match in findings if not is_redundant(match))
 
 
-DEFAULT_DETECTION_RULES = (
-    DetectionRule(
-        rule_id="cloud-access-key",
-        title="Cloud access key",
-        category="Cloud / SaaS",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b",
-        keywords=("AKIA", "ASIA"),
-    ),
-    DetectionRule(
-        rule_id="jwt-token",
-        title="JWT token",
-        category="Oturum tokenı",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b",
-        keywords=("eyJ",),
-    ),
-    DetectionRule(
-        rule_id="private-key-header",
-        title="Private key başlangıcı",
-        category="Kriptografik anahtar",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?"
-            r"PRIVATE KEY(?: BLOCK)?-----"
-        ),
-        keywords=("PRIVATE KEY",),
-    ),
-    DetectionRule(
-        rule_id="authorization-bearer",
-        title="Bearer token",
-        category="Oturum tokenı",
-        confidence=DetectionConfidence.MEDIUM,
-        pattern=r"\bBearer[ \t]+[A-Za-z0-9._~+/=-]{16,}",
-        keywords=("Bearer",),
-    ),
-    DetectionRule(
-        rule_id="authorization-basic",
-        title="Basic authentication değeri",
-        category="Kimlik bilgisi",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bBasic[ \t]+[A-Za-z0-9+/]{12,}={0,2}\b",
-        keywords=("Basic",),
-    ),
-    DetectionRule(
-        rule_id="credential-url",
-        title="URL içinde kimlik bilgisi",
-        category="Kimlik bilgisi",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"\b[a-z][a-z0-9+.-]{1,15}://[^\s/:@]+:"
-            r"(?P<secret>[^\s/@]{3,})@[^\s/]+"
-        ),
-        secret_group="secret",
-        ignore_common_values=True,
-    ),
-    DetectionRule(
-        rule_id="connection-string-password",
-        title="Veritabanı bağlantı parolası",
-        category="Veritabanı",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"^(?=[^\r\n]*\b(?:Server|Data[ \t]+Source|Host|Database|"
-            r"Initial[ \t]+Catalog|User[ \t]+Id|UID)[ \t]*=)"
-            r"[^\r\n]*?\b(?:Password|Pwd)[ \t]*=[ \t]*"
-            r"(?P<secret>[^;\s'\"]{3,}|['\"][^'\"\r\n]{3,}['\"])"
-        ),
-        keywords=("password", "pwd"),
-        secret_group="secret",
-        ignore_common_values=True,
-    ),
-    DetectionRule(
-        rule_id="secret-assignment",
-        title="Hassas yapılandırma ataması",
-        category="Yapılandırma",
-        confidence=DetectionConfidence.MEDIUM,
-        pattern=(
-            r"\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password|passwd|pwd|secret|token)"
-            r"[ \t]*[:=][ \t]*(?P<secret>[^\s,;#]{4,}|['\"][^'\"\r\n]{4,}['\"])}?"
-        ),
-        secret_group="secret",
-        ignore_common_values=True,
-    ),
-    DetectionRule(
-        rule_id="gpp-cpassword",
-        title="Group Policy Preferences cpassword",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bcpassword[ \t]*=[ \t]*['\"]?(?P<secret>[A-Za-z0-9+/]{16,}={0,2})",
-        keywords=("cpassword",),
-        secret_group="secret",
-        ignore_common_values=True,
-    ),
-    DetectionRule(
-        rule_id="kerberos-tgs-artifact",
-        title="Kerberos TGS artifact",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\$krb5tgs\$(?:17|18|23)\$[^\s]{20,}",
-        keywords=("$krb5tgs$",),
-    ),
-    DetectionRule(
-        rule_id="kerberos-asrep-artifact",
-        title="Kerberos AS-REP artifact",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\$krb5asrep\$(?:17|18|23)\$[^\s]{20,}",
-        keywords=("$krb5asrep$",),
-    ),
-    DetectionRule(
-        rule_id="kerberos-preauth-artifact",
-        title="Kerberos pre-auth artifact",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\$krb5pa\$(?:17|18|23)\$[^\s]{20,}",
-        keywords=("$krb5pa$",),
-    ),
-    DetectionRule(
-        rule_id="kerberos-db-key",
-        title="Kerberos KDC database key",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"\$krb5db\$(?:"
-            r"17\$[^\s$]{1,256}\$[^\s$]{1,256}\$[0-9A-Fa-f]{32}|"
-            r"18\$[^\s$]{1,256}\$[^\s$]{1,256}\$[0-9A-Fa-f]{64}"
-            r")(?![0-9A-Fa-f])"
-        ),
-        keywords=("$krb5db$",),
-    ),
-    DetectionRule(
-        rule_id="windows-nt-hash",
-        title="Etiketli NTLM hash",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"(?:\$NT\$|\b(?:NTLM(?:[ \t]+Hash)?|NT[ _-]*Hash|NTHash|"
-            r"Hash[ _-]*NTLM)[ \t]*[:=][ \t]*)"
-            r"(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
-        ),
-        keywords=("$nt$", "ntlm", "nt hash", "nt_hash", "nt-hash", "nthash"),
-        secret_group="secret",
-    ),
-    DetectionRule(
-        rule_id="kerberos-rc4-key",
-        title="Kerberos RC4 key",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"\b(?:rc4[_-](?:hmac(?:[_-](?:nt|old)(?:[_-]exp)?)?|md4)|"
-            r"arcfour[_-]hmac)\b"
-            r"(?:[ \t]+\([0-9]{1,5}\))?[ \t]*(?:[:=][ \t]*|[ \t]+)"
-            r"(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
-        ),
-        keywords=(
-            "rc4_hmac",
-            "rc4-hmac",
-            "rc4_md4",
-            "rc4-md4",
-            "arcfour_hmac",
-            "arcfour-hmac",
-        ),
-        secret_group="secret",
-    ),
-    DetectionRule(
-        rule_id="kerberos-aes128-key",
-        title="Kerberos AES-128 key",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"\baes128(?:[_-]hmac|[_-]cts[_-]hmac[_-]sha1(?:[_-]96)?)?\b"
-            r"(?:[ \t]+\([0-9]{1,5}\))?[ \t]*(?:[:=][ \t]*|[ \t]+)"
-            r"(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
-        ),
-        keywords=("aes128",),
-        secret_group="secret",
-    ),
-    DetectionRule(
-        rule_id="kerberos-aes256-key",
-        title="Kerberos AES-256 key",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"\baes256(?:[_-]hmac|[_-]cts[_-]hmac[_-]sha1(?:[_-]96)?)?\b"
-            r"(?:[ \t]+\([0-9]{1,5}\))?[ \t]*(?:[:=][ \t]*|[ \t]+)"
-            r"(?P<secret>[0-9A-Fa-f]{64})(?![0-9A-Fa-f])"
-        ),
-        keywords=("aes256",),
-        secret_group="secret",
-    ),
-    DetectionRule(
-        rule_id="kerberos-des-key",
-        title="Kerberos DES key",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"\bdes[_-]cbc[_-](?:md5|crc)\b"
-            r"(?:[ \t]+\([0-9]{1,5}\))?[ \t]*(?:[:=][ \t]*|[ \t]+)"
-            r"(?P<secret>[0-9A-Fa-f]{16})(?![0-9A-Fa-f])"
-        ),
-        keywords=("des_cbc", "des-cbc"),
-        secret_group="secret",
-    ),
-    DetectionRule(
-        rule_id="lm-nt-hash-pair",
-        title="LM/NT hash çifti",
-        category="Credential artifact",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{32}:[0-9A-Fa-f]{32}(?![0-9A-Fa-f])",
-    ),
-    DetectionRule(
-        rule_id="credential-dump-line",
-        title="Hesap RID ve hash satırı",
-        category="Credential artifact",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"^[^:\r\n]{1,128}:[0-9]{1,10}:[0-9A-Fa-f]{32}:"
-            r"[0-9A-Fa-f]{32}(?:::[^\r\n]*)?$"
-        ),
-    ),
-    DetectionRule(
-        rule_id="netntlmv2-response",
-        title="NetNTLMv2 challenge-response",
-        category="Credential artifact",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"^[^:\r\n]{1,128}::[^:\r\n]{1,128}:[0-9A-Fa-f]{16}:"
-            r"[0-9A-Fa-f]{32}:[0-9A-Fa-f]{32,}$"
-        ),
-    ),
-    DetectionRule(
-        rule_id="netntlmv1-response",
-        title="NetNTLMv1 challenge-response",
-        category="Credential artifact",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"^[^:\r\n]{0,128}::[^:\r\n]{1,128}:"
-            r"[0-9A-Fa-f]{48}:[0-9A-Fa-f]{48}:[0-9A-Fa-f]{16}$"
-        ),
-    ),
-    DetectionRule(
-        rule_id="dcc2-hash",
-        title="Windows cached domain credential",
-        category="Credential artifact",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\$DCC2\$[0-9]+#[^#\s]{1,128}#[0-9A-Fa-f]{32}",
-        keywords=("$DCC2$",),
-    ),
-    DetectionRule(
-        rule_id="unix-password-hash",
-        title="Unix password hash",
-        category="Credential artifact",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\$(?:1|5|6)\$[A-Za-z0-9./]{1,16}\$[A-Za-z0-9./]{16,}",
-    ),
-    DetectionRule(
-        rule_id="modern-password-hash",
-        title="Bcrypt veya Argon2 hash",
-        category="Credential artifact",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"(?:\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}|"
-            r"\$argon2(?:id|i|d)\$v=[0-9]+\$[^\s]{20,})"
-        ),
-    ),
-    DetectionRule(
-        rule_id="github-token-prefix",
-        title="GitHub access token",
-        category="Source control",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b",
-        keywords=("ghp_", "gho_", "ghu_", "ghs_", "ghr_"),
-    ),
-    DetectionRule(
-        rule_id="github-fine-grained-token",
-        title="GitHub fine-grained token",
-        category="Source control",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bgithub_pat_[A-Za-z0-9_]{20,}\b",
-        keywords=("github_pat_",),
-    ),
-    DetectionRule(
-        rule_id="gitlab-token-prefix",
-        title="GitLab access token",
-        category="Source control",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bglpat-[A-Za-z0-9_-]{20,}\b",
-        keywords=("glpat-",),
-    ),
-    DetectionRule(
-        rule_id="slack-token-prefix",
-        title="Slack token",
-        category="Oturum tokenı",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b",
-        keywords=("xox",),
-    ),
-    DetectionRule(
-        rule_id="stripe-secret-key",
-        title="Stripe secret key",
-        category="Ödeme servisi",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b",
-        keywords=("sk_live_", "sk_test_", "rk_live_", "rk_test_"),
-    ),
-    DetectionRule(
-        rule_id="sendgrid-api-key",
-        title="SendGrid API key",
-        category="Cloud / SaaS",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bSG\.[A-Za-z0-9_-]{16,}\b",
-        keywords=("SG.",),
-    ),
-    DetectionRule(
-        rule_id="google-api-key",
-        title="Google API key",
-        category="Cloud / SaaS",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bAIza[0-9A-Za-z_-]{30,}\b",
-        keywords=("AIza",),
-    ),
-    DetectionRule(
-        rule_id="npm-token-prefix",
-        title="npm access token",
-        category="Developer tooling",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bnpm_[A-Za-z0-9]{20,}\b",
-        keywords=("npm_",),
-    ),
-    DetectionRule(
-        rule_id="pypi-token-prefix",
-        title="PyPI API token",
-        category="Developer tooling",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bpypi-[A-Za-z0-9_-]{16,}\b",
-        keywords=("pypi-",),
-    ),
-    DetectionRule(
-        rule_id="huggingface-token-prefix",
-        title="Hugging Face token",
-        category="Cloud / SaaS",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bhf_[A-Za-z0-9]{20,}\b",
-        keywords=("hf_",),
-    ),
-    DetectionRule(
-        rule_id="vault-token-prefix",
-        title="Vault token",
-        category="Infrastructure",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\bhvs\.[A-Za-z0-9_-]{16,}\b",
-        keywords=("hvs.",),
-    ),
-    DetectionRule(
-        rule_id="private-token-header",
-        title="Private access token header",
-        category="Source control",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"\b(?:PRIVATE|JOB|DEPLOY|REGISTRY)-TOKEN:[ \t]*"
-            r"[A-Za-z0-9._~+/=-]{16,}\b"
-        ),
-        keywords=("-TOKEN:",),
-    ),
-    DetectionRule(
-        rule_id="cookie-secret-assignment",
-        title="Session cookie değeri",
-        category="Oturum tokenı",
-        confidence=DetectionConfidence.MEDIUM,
-        pattern=(
-            r"\b(?:session|auth|access)[_-]?cookie[ \t]*=[ \t]*"
-            r"(?P<secret>[^;\s]{16,})"
-        ),
-        secret_group="secret",
-        ignore_common_values=True,
-    ),
-    DetectionRule(
-        rule_id="netrc-credential",
-        title="netrc kimlik bilgisi",
-        category="Kimlik bilgisi",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"\bmachine[ \t]+\S+[ \t]+login[ \t]+\S+[ \t]+"
-            r"password[ \t]+(?P<secret>\S+)"
-        ),
-        keywords=("machine", "login", "password"),
-        secret_group="secret",
-        ignore_common_values=True,
-    ),
-    DetectionRule(
-        rule_id="aws-secret-access-key",
-        title="AWS secret access key assignment",
-        category="Cloud / SaaS",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"\baws[_-]?secret[_-]?access[_-]?key[ \t]*[:=][ \t]*"
-            r"(?P<secret>[A-Za-z0-9/+=]{20,})"
-        ),
-        keywords=("aws", "secret", "access", "key"),
-        secret_group="secret",
-        ignore_common_values=True,
-    ),
-    DetectionRule(
-        rule_id="docker-registry-auth",
-        title="Docker registry auth değeri",
-        category="Container tooling",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"[\"']auth[\"'][ \t]*:[ \t]*[\"'](?P<secret>[A-Za-z0-9+/=]{20,})[\"']",
-        keywords=("auth",),
-        secret_group="secret",
-        ignore_common_values=True,
-    ),
-    DetectionRule(
-        rule_id="ansible-vault-artifact",
-        title="Ansible Vault artifact",
-        category="Infrastructure",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"\$ANSIBLE_VAULT;[0-9.]+;AES[0-9]+;[0-9a-f]{20,}",
-        keywords=("$ANSIBLE_VAULT;",),
-    ),
-    DetectionRule(
-        rule_id="sops-encrypted-artifact",
-        title="SOPS encrypted value",
-        category="Infrastructure",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"ENC\[AES256_GCM,data:[^\]]{16,}\]",
-        keywords=("ENC[AES256_GCM,data:",),
-    ),
-    DetectionRule(
-        rule_id="windows-managed-password",
-        title="Windows managed password attribute",
-        category="Windows / AD",
-        confidence=DetectionConfidence.HIGH,
-        pattern=(
-            r"\b(?:ms-Mcs-AdmPwd|msLAPS-Password|msLAPS-EncryptedPassword)"
-            r"[ \t]*[:=][ \t]*(?P<secret>[^\s,;]+)"
-        ),
-        keywords=("ms-Mcs-AdmPwd", "msLAPS-Password", "msLAPS-EncryptedPassword"),
-        secret_group="secret",
-        ignore_common_values=True,
-    ),
-    DetectionRule(
-        rule_id="age-encrypted-file",
-        title="Age encrypted file",
-        category="Kriptografik anahtar",
-        confidence=DetectionConfidence.HIGH,
-        pattern=r"-----BEGIN AGE ENCRYPTED FILE-----",
-        keywords=("BEGIN AGE ENCRYPTED FILE",),
-    ),
+def _repository_rule_pack_path(filename: str) -> Path | None:
+    try:
+        resolved = Path(__file__).resolve()
+    except OSError:
+        return None
+    for candidate in (resolved.parent, *resolved.parents):
+        rule_path = candidate / _RULES_DIRECTORY / filename
+        if rule_path.is_file():
+            return rule_path
+    return None
+
+
+def _installed_rule_pack_path(filename: str) -> Path:
+    suffix = f"{_PACKAGED_RULES_SUFFIX}/{filename}"
+    try:
+        installed = distribution(_DISTRIBUTION_NAME)
+        matches = [
+            entry
+            for entry in installed.files or ()
+            if str(entry).replace("\\", "/").endswith(suffix)
+        ]
+        if len(matches) != 1:
+            raise RulePackError("Built-in detection rule pack is unavailable.")
+        return Path(installed.locate_file(matches[0]))
+    except PackageNotFoundError:
+        raise RulePackError("Built-in detection rule pack is unavailable.") from None
+    except (OSError, TypeError, ValueError):
+        raise RulePackError("Built-in detection rule pack is unavailable.") from None
+
+
+def _rule_pack_document(pack: DetectionRulePack) -> Mapping[str, Any]:
+    filename = _RULE_PACK_FILES[pack]
+    path = _repository_rule_pack_path(filename) or _installed_rule_pack_path(filename)
+    try:
+        decoded = path.read_text(encoding="utf-8")
+        document = tomllib.loads(decoded)
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError):
+        raise RulePackError("Built-in detection rule pack is invalid.") from None
+    if not isinstance(document, Mapping):
+        raise RulePackError("Built-in detection rule pack is invalid.")
+    return document
+
+
+def _load_rule_pack(pack: DetectionRulePack) -> DetectionRulePackInfo:
+    document = _rule_pack_document(pack)
+    if document.get("schema_version") != _RULE_PACK_SCHEMA_VERSION:
+        raise RulePackError("Built-in detection rule pack schema is unsupported.")
+    if document.get("pack_id") != pack.value:
+        raise RulePackError("Built-in detection rule pack ID is invalid.")
+    title_tr = document.get("title_tr")
+    title_en = document.get("title_en")
+    raw_rules = document.get("rules")
+    if not isinstance(title_tr, str) or not isinstance(title_en, str):
+        raise RulePackError("Built-in detection rule pack title is invalid.")
+    if not isinstance(raw_rules, list) or not raw_rules:
+        raise RulePackError("Built-in detection rule pack rules are invalid.")
+    rules = tuple(_rule_from_document(value, pack) for value in raw_rules)
+    return DetectionRulePackInfo(pack, title_tr, title_en, rules)
+
+
+def _rule_from_document(value: object, pack: DetectionRulePack) -> DetectionRule:
+    if not isinstance(value, Mapping):
+        raise RulePackError("Built-in detection rule is invalid.")
+    keywords = value.get("keywords", [])
+    if not isinstance(keywords, list) or not all(
+        isinstance(keyword, str) for keyword in keywords
+    ):
+        raise RulePackError("Built-in detection rule keywords are invalid.")
+    confidence_value = value.get("confidence")
+    try:
+        confidence = DetectionConfidence(confidence_value)
+    except (TypeError, ValueError):
+        raise RulePackError("Built-in detection rule confidence is invalid.") from None
+    try:
+        return DetectionRule(
+            rule_id=value.get("rule_id"),
+            title=value.get("title"),
+            category=value.get("category"),
+            confidence=confidence,
+            pattern=value.get("pattern"),
+            pack=pack,
+            keywords=tuple(keywords),
+            secret_group=value.get("secret_group"),
+            ignore_common_values=value.get("ignore_common_values", False),
+        )
+    except (TypeError, ValueError):
+        raise RulePackError("Built-in detection rule is invalid.") from None
+
+
+def _load_default_rule_packs() -> tuple[DetectionRulePackInfo, ...]:
+    packs = tuple(_load_rule_pack(pack) for pack in DEFAULT_DETECTION_RULE_PACKS)
+    rule_ids = [rule.rule_id for pack in packs for rule in pack.rules]
+    if len(rule_ids) != len(set(rule_ids)):
+        raise RulePackError("Built-in detection rule IDs must be unique.")
+    return packs
+
+
+DEFAULT_RULE_PACKS = _load_default_rule_packs()
+DEFAULT_DETECTION_RULES = tuple(
+    rule for pack in DEFAULT_RULE_PACKS for rule in pack.rules
+)
+DETECTION_RULE_PACK_TITLES = MappingProxyType(
+    {pack.pack_id: (pack.title_tr, pack.title_en) for pack in DEFAULT_RULE_PACKS}
 )

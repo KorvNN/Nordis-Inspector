@@ -1,9 +1,9 @@
 # Detection Rules
 
-Built-in detection rules are currently implemented in
-[`core/detection.py`](../src/nordis_smb_inspector/core/detection.py). They run
-locally and do not require an external secret-scanning service.
+These five TOML files are the built-in rule packs used by the scanner. Each file
+declares its schema version, stable pack ID, display names, and reviewed regular
+expressions. The application validates and compiles every pack at startup.
 
-This directory is reserved for future versioned rule packs and their source,
-checksum, license, and attribution metadata. Imported rules must be pinned and
-reviewed before release; the application does not update rules automatically.
+The web panel can enable or disable packs per scan. Rules are local, versioned
+with the application, and never downloaded or updated automatically. Arbitrary
+user-supplied regular expressions are not supported.

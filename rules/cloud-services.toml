@@ -1,0 +1,86 @@
+schema_version = 1
+pack_id = "cloud_services"
+title_tr = "Bulut ve kaynak kod servisleri"
+title_en = "Cloud and source services"
+
+[[rules]]
+rule_id = "cloud-access-key"
+title = "Cloud access key"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\b(?:AKIA|ASIA)[A-Z0-9]{16}\\b"
+keywords = ["AKIA", "ASIA"]
+
+[[rules]]
+rule_id = "github-token-prefix"
+title = "GitHub access token"
+category = "Source control"
+confidence = "high"
+pattern = "\\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\\b"
+keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+
+[[rules]]
+rule_id = "github-fine-grained-token"
+title = "GitHub fine-grained token"
+category = "Source control"
+confidence = "high"
+pattern = "\\bgithub_pat_[A-Za-z0-9_]{20,}\\b"
+keywords = ["github_pat_"]
+
+[[rules]]
+rule_id = "gitlab-token-prefix"
+title = "GitLab access token"
+category = "Source control"
+confidence = "high"
+pattern = "\\bglpat-[A-Za-z0-9_-]{20,}\\b"
+keywords = ["glpat-"]
+
+[[rules]]
+rule_id = "stripe-secret-key"
+title = "Stripe secret key"
+category = "Ödeme servisi"
+confidence = "high"
+pattern = "\\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\\b"
+keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"]
+
+[[rules]]
+rule_id = "sendgrid-api-key"
+title = "SendGrid API key"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\bSG\\.[A-Za-z0-9_-]{16,}\\b"
+keywords = ["SG."]
+
+[[rules]]
+rule_id = "google-api-key"
+title = "Google API key"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\bAIza[0-9A-Za-z_-]{30,}\\b"
+keywords = ["AIza"]
+
+[[rules]]
+rule_id = "huggingface-token-prefix"
+title = "Hugging Face token"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\bhf_[A-Za-z0-9]{20,}\\b"
+keywords = ["hf_"]
+
+[[rules]]
+rule_id = "private-token-header"
+title = "Private access token header"
+category = "Source control"
+confidence = "high"
+pattern = "\\b(?:PRIVATE|JOB|DEPLOY|REGISTRY)-TOKEN:[ \\t]*[A-Za-z0-9._~+/=-]{16,}\\b"
+keywords = ["-TOKEN:"]
+
+[[rules]]
+rule_id = "aws-secret-access-key"
+title = "AWS secret access key assignment"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\baws[_-]?secret[_-]?access[_-]?key[ \\t]*[:=][ \\t]*(?P<secret>[A-Za-z0-9/+=]{20,})"
+keywords = ["aws", "secret", "access", "key"]
+secret_group = "secret"
+ignore_common_values = true

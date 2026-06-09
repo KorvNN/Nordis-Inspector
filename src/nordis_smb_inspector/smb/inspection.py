@@ -29,7 +29,9 @@ from nordis_smb_inspector.core.credential_artifacts import (
 )
 from nordis_smb_inspector.core.credentials import Credential
 from nordis_smb_inspector.core.detection import (
+    DEFAULT_DETECTION_RULES,
     DetectionConfidence,
+    DetectionRule,
     PatternMatch,
 )
 from nordis_smb_inspector.core.detection import detect_patterns as detect_line_patterns
@@ -366,6 +368,8 @@ def inspect_target(
     cancellation: CancellationToken,
     share_discoverer: ShareDiscoverer,
     detect_patterns: bool = True,
+    pattern_rules: tuple[DetectionRule, ...] | None = None,
+    detect_credential_artifacts: bool = True,
     on_target: TargetCallback | None = None,
     on_inventory: InventoryCallback | None = None,
     on_finding: FindingCallback | None = None,
@@ -381,6 +385,16 @@ def inspect_target(
     _validate_inputs(target, connect_request, credential, max_depth)
     if not isinstance(detect_patterns, bool):
         raise TypeError("detect_patterns must be a boolean.")
+    if pattern_rules is None:
+        selected_pattern_rules = DEFAULT_DETECTION_RULES
+    elif isinstance(pattern_rules, tuple) and all(
+        isinstance(rule, DetectionRule) for rule in pattern_rules
+    ):
+        selected_pattern_rules = pattern_rules
+    else:
+        raise TypeError("pattern_rules must be DetectionRule values.")
+    if not isinstance(detect_credential_artifacts, bool):
+        raise TypeError("detect_credential_artifacts must be a boolean.")
     normalized_terms = _normalize_search_terms(search_terms)
 
     connections: list[ConnectionHandle] = []
@@ -544,6 +558,8 @@ def inspect_target(
                         share=share,
                         search_terms=normalized_terms,
                         detect_patterns=detect_patterns,
+                        pattern_rules=selected_pattern_rules,
+                        detect_credential_artifacts=detect_credential_artifacts,
                         max_depth=max_depth,
                         file_adapter=file_adapter,
                         cancellation=cancellation,
@@ -740,6 +756,8 @@ def _walk_share(
     share: ShareInfo,
     search_terms: tuple[str, ...],
     detect_patterns: bool,
+    pattern_rules: tuple[DetectionRule, ...],
+    detect_credential_artifacts: bool,
     max_depth: int,
     file_adapter: ReadOnlyFileAdapter,
     cancellation: CancellationToken,
@@ -793,6 +811,8 @@ def _walk_share(
                 entry=entry,
                 search_terms=search_terms,
                 detect_patterns=detect_patterns,
+                pattern_rules=pattern_rules,
+                detect_credential_artifacts=detect_credential_artifacts,
                 file_adapter=file_adapter,
                 cancellation=cancellation,
                 counts=counts,
@@ -837,6 +857,8 @@ def _scan_file(
     entry: InventoryEntry,
     search_terms: tuple[str, ...],
     detect_patterns: bool,
+    pattern_rules: tuple[DetectionRule, ...],
+    detect_credential_artifacts: bool,
     file_adapter: ReadOnlyFileAdapter,
     cancellation: CancellationToken,
     counts: _InspectionCounts,
@@ -881,7 +903,7 @@ def _scan_file(
     def publish_pattern_matches(line_number: int, line: str) -> None:
         if not detect_patterns:
             return
-        for match in detect_line_patterns(line, line_number):
+        for match in detect_line_patterns(line, line_number, rules=pattern_rules):
             publish_pattern_match(match)
 
     def publish_pattern_match(match: PatternMatch) -> None:
@@ -987,7 +1009,7 @@ def _scan_file(
         kind = document_kind(entry.relative_path)
         if kind is DocumentKind.PLAIN:
             header = b""
-            if detect_patterns:
+            if detect_patterns and detect_credential_artifacts:
                 header = reader.read_range(
                     0,
                     min(
@@ -1043,7 +1065,7 @@ def _scan_file(
                 )
                 if member.kind is DocumentKind.PLAIN:
                     header = b""
-                    if detect_patterns:
+                    if detect_patterns and detect_credential_artifacts:
                         header = member.stream.read(credential_artifact_header_bytes())
                         if not isinstance(header, bytes):
                             raise TypeError("Archive member reads must return bytes.")

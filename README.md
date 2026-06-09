@@ -17,7 +17,7 @@ accessible, what was readable, and which lines require review.
 - Enumerates shares through SRVSVC without guessing hidden share names
 - Builds separate share, directory, and file inventory views
 - Scans readable text and bounded document/archive content without copying files locally
-- Uses an editable literal wordlist plus built-in credential-pattern rules
+- Uses an editable literal wordlist plus five selectable built-in rule packs
 - Recognizes common NTLM/Kerberos exports and CCache, keytab, and KIRBI files
 - Sends supported offline password-hash findings to locally installed Hashcat or
   John the Ripper with an operator-selected TXT wordlist
@@ -56,15 +56,14 @@ Use Nordis only against systems and data you are authorized to assess.
 The scanner currently supports:
 
 - Literal, Unicode case-insensitive wordlist matching
-- Built-in credential-pattern rules with rule IDs, categories, and confidence
-- Optional built-in pattern detection
+- Five selectable built-in rule packs with stable rule IDs, categories, and confidence
+- Optional built-in pattern detection, including Windows/AD credential artifacts
 - Additional terms entered per scan, including comma- or newline-separated values
 
-User-supplied regular expressions, user-configurable category rule packs, multiple
-selectable wordlists, case-sensitive matching, and whole-word matching are not
-currently exposed by the web panel. The matching engine has some lower-level
-support for boundary and case options, but those options are not part of the web
-scan contract yet.
+User-supplied regular expressions, custom rule-pack uploads, multiple selectable
+wordlists, case-sensitive matching, and whole-word matching are not currently
+exposed by the web panel. The matching engine has lower-level support for boundary
+and case options, but those options are not part of the web scan contract yet.
 
 ## Documentation
 
