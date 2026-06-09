@@ -24,8 +24,10 @@ reports/
 uploads/
 wordlists/rockyou.txt
 
-# Test suite (excluded from version control)
+# Excluded from version control (kept locally)
 tests/
+docs/
+scripts/
 
 # Editors and operating systems
 .idea/
