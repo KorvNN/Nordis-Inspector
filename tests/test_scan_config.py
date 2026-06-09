@@ -5,13 +5,13 @@ import stat
 import tempfile
 import unittest
 from dataclasses import FrozenInstanceError
-from importlib.resources import files
 from pathlib import Path
 from unittest.mock import patch
 
 from nordis_smb_inspector.core.scan_config import (
     ScanConfigError,
     ScanOptions,
+    _packaged_wordlist_bytes,
     editable_wordlist_path,
     parse_scan_options,
     repository_wordlist_path,
@@ -79,15 +79,9 @@ class ScanConfigTests(unittest.TestCase):
         )
         self.assertIn("password", (term.casefold() for term in options.terms))
 
-    def test_packaged_default_matches_the_repository_source(self) -> None:
+    def test_repository_default_has_unique_normalized_terms(self) -> None:
         source = repository_wordlist_path().read_bytes()
-        packaged = (
-            files("nordis_smb_inspector.wordlists")
-            .joinpath("default-sensitive.txt")
-            .read_bytes()
-        )
 
-        self.assertEqual(packaged, source)
         terms = tuple(
             line.strip()
             for line in source.decode("utf-8").splitlines()
@@ -95,13 +89,39 @@ class ScanConfigTests(unittest.TestCase):
         )
         self.assertEqual(len(terms), len({term.casefold() for term in terms}))
 
+    def test_packaged_default_reads_the_distribution_data_file(self) -> None:
+        expected = repository_wordlist_path().read_bytes()
+
+        class InstalledDistribution:
+            files = (
+                Path(
+                    "../../../share/nordis-smb-inspector/wordlists/"
+                    "default-sensitive.txt"
+                ),
+            )
+
+            def locate_file(self, _entry: Path) -> Path:
+                return repository_wordlist_path()
+
+        with patch(
+            "nordis_smb_inspector.core.scan_config.distribution",
+            return_value=InstalledDistribution(),
+        ):
+            packaged = _packaged_wordlist_bytes()
+
+        self.assertEqual(packaged, expected)
+
     def test_wheel_fallback_initializes_private_editable_user_copy(self) -> None:
         config_home = Path(self.temporary_directory.name) / "xdg-config"
         unavailable = ScanConfigError("Repository wordlist is unavailable.")
+        default_bytes = repository_wordlist_path().read_bytes()
 
         with patch(
             "nordis_smb_inspector.core.scan_config.repository_wordlist_path",
             side_effect=unavailable,
+        ), patch(
+            "nordis_smb_inspector.core.scan_config._packaged_wordlist_bytes",
+            return_value=default_bytes,
         ):
             content_path = editable_wordlist_path(config_home=config_home)
 
@@ -112,12 +132,7 @@ class ScanConfigTests(unittest.TestCase):
             / "wordlists"
             / "default-sensitive.txt",
         )
-        self.assertEqual(
-            content_path.read_bytes(),
-            files("nordis_smb_inspector.wordlists")
-            .joinpath("default-sensitive.txt")
-            .read_bytes(),
-        )
+        self.assertEqual(content_path.read_bytes(), default_bytes)
         self.assertEqual(stat.S_IMODE(content_path.stat().st_mode), 0o600)
 
         content_path.write_text("custom-term\n", encoding="utf-8")

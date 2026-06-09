@@ -39,11 +39,15 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-"nordis_smb_inspector.wordlists" = ["*.txt"]
 "nordis_smb_inspector.web" = [
   "static/*.css",
   "static/*.js",
   "templates/*.html",
+]
+
+[tool.setuptools.data-files]
+"share/nordis-smb-inspector/wordlists" = [
+  "wordlists/default-sensitive.txt",
 ]
 
 [tool.pytest.ini_options]

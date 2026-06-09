@@ -13,7 +13,7 @@ import tempfile
 from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
-from importlib.resources import files
+from importlib.metadata import PackageNotFoundError, distribution
 from os import PathLike
 from pathlib import Path
 from typing import Any
@@ -22,8 +22,8 @@ MIN_MAX_DEPTH = 1
 MAX_MAX_DEPTH = 256
 
 _CONTENT_WORDLIST = Path("wordlists/default-sensitive.txt")
-_PACKAGED_WORDLIST_MODULE = "nordis_smb_inspector.wordlists"
-_PACKAGED_WORDLIST_NAME = "default-sensitive.txt"
+_DISTRIBUTION_NAME = "nordis-smb-inspector"
+_PACKAGED_WORDLIST_SUFFIX = "share/nordis-smb-inspector/wordlists/default-sensitive.txt"
 _USER_WORDLIST = Path("nordis-smb-inspector/wordlists/default-sensitive.txt")
 
 
@@ -163,12 +163,8 @@ def _initialize_user_wordlist(
     unavailable = "Content wordlist is unavailable."
     try:
         destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        default_bytes = (
-            files(_PACKAGED_WORDLIST_MODULE)
-            .joinpath(_PACKAGED_WORDLIST_NAME)
-            .read_bytes()
-        )
-    except (ModuleNotFoundError, OSError, TypeError):
+        default_bytes = _packaged_wordlist_bytes()
+    except (OSError, ScanConfigError):
         raise ScanConfigError(unavailable) from None
 
     temporary_path: Path | None = None
@@ -203,6 +199,25 @@ def _initialize_user_wordlist(
         if temporary_path is not None:
             with suppress(OSError):
                 temporary_path.unlink()
+
+
+def _packaged_wordlist_bytes() -> bytes:
+    """Read the canonical wordlist installed as distribution data."""
+
+    try:
+        installed = distribution(_DISTRIBUTION_NAME)
+        matches = [
+            entry
+            for entry in installed.files or ()
+            if str(entry).replace("\\", "/").endswith(_PACKAGED_WORDLIST_SUFFIX)
+        ]
+        if len(matches) != 1:
+            raise ScanConfigError("Content wordlist is unavailable.")
+        return Path(installed.locate_file(matches[0])).read_bytes()
+    except PackageNotFoundError:
+        raise ScanConfigError("Content wordlist is unavailable.") from None
+    except (OSError, TypeError, ValueError):
+        raise ScanConfigError("Content wordlist is unavailable.") from None
 
 
 def _config_home(value: str | PathLike[str] | None) -> Path:
