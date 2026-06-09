@@ -24,6 +24,9 @@ reports/
 uploads/
 wordlists/rockyou.txt
 
+# Test suite (excluded from version control)
+tests/
+
 # Editors and operating systems
 .idea/
 .vscode/
