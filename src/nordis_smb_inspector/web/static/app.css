@@ -440,6 +440,44 @@ select:disabled { color: var(--muted); opacity: .78; }
   accent-color: var(--accent);
 }
 
+.rule-pack-selector {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--text);
+}
+.rule-pack-selector > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 0 2px;
+  cursor: pointer;
+  font-size: .74rem;
+  font-weight: 750;
+  list-style: none;
+}
+.rule-pack-selector > summary::-webkit-details-marker { display: none; }
+.rule-pack-selector > summary::before {
+  content: "›";
+  color: var(--accent);
+  font-size: .95rem;
+  transition: transform .15s ease;
+}
+.rule-pack-selector[open] > summary::before { transform: rotate(90deg); }
+.rule-pack-selector > summary > :first-child { margin-right: auto; }
+.rule-pack-options {
+  display: grid;
+  grid-template-columns: 1fr;
+  padding: 3px 0 1px 18px;
+}
+.rule-pack-option {
+  margin-top: 7px;
+  font-size: .7rem;
+  font-weight: 650;
+}
+.rule-pack-selector.is-disabled { color: var(--muted); }
+.rule-pack-selector.is-disabled .rule-pack-option { cursor: default; opacity: .58; }
+
 .actions { display: flex; align-items: center; gap: 9px; margin-top: 16px; }
 button {
   border: 0;

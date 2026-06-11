@@ -43,6 +43,9 @@ const generateEnvironmentTerms = document.querySelector("#generate-environment-t
 const generateTermsButton = document.querySelector("#generate-terms");
 const termGeneratorStatus = document.querySelector("#term-generator-status");
 const detectPatternsInput = document.querySelector("#detect-patterns");
+const rulePackSelector = document.querySelector("#rule-pack-selector");
+const rulePackCount = document.querySelector("#rule-pack-count");
+const patternRulePackInputs = [...document.querySelectorAll("[data-rule-pack]")];
 const contentWordlist = document.querySelector("#content-wordlist");
 const contentWordlistFile = document.querySelector("#content-wordlist-file");
 const contentWordlistCount = document.querySelector("#content-wordlist-count");
@@ -123,6 +126,13 @@ const GENERATOR_CREDENTIAL_FIELDS = [
   "connection string",
 ];
 const GENERATOR_ENVIRONMENTS = ["dev", "test", "staging", "prod", "production"];
+const DETECTION_RULE_PACK_LABELS = {
+  general_secrets: "Genel sırlar ve tokenlar",
+  windows_ad: "Windows ve Active Directory",
+  password_hashes: "Parola hashleri",
+  cloud_services: "Bulut ve kaynak kod servisleri",
+  infrastructure: "Altyapı ve geliştirici araçları",
+};
 const WORDLIST_EDITORS = {
   content: {
     count: contentWordlistCount,
@@ -509,6 +519,14 @@ const LANGUAGE_TEXT = {
     "Ortam adları": "Environment names",
     "Ek terimleri üret": "Generate terms",
     "Veri Kalıplarını Aramaya Dahil Et": "Include built-in data patterns",
+    "Kural grupları": "Rule groups",
+    "Genel sırlar ve tokenlar": "General secrets and tokens",
+    "Windows ve Active Directory": "Windows and Active Directory",
+    "Parola hashleri": "Password hashes",
+    "Bulut ve kaynak kod servisleri": "Cloud and source services",
+    "Altyapı ve geliştirici araçları": "Infrastructure and developer tools",
+    "En az bir kural grubu seç.": "Select at least one rule group.",
+    "Tümü": "All",
     "Taramayı başlat": "Start scan",
     "İptal et": "Cancel",
     "Tarama yok": "No scan",
@@ -2554,11 +2572,39 @@ function additionalSearchTerms() {
   return [...new Set(terms)];
 }
 
+function selectedRulePacks() {
+  return patternRulePackInputs
+    .filter((input) => input.checked)
+    .map((input) => input.value);
+}
+
+function rulePacksAreValid({report = false} = {}) {
+  const firstInput = patternRulePackInputs[0];
+  if (!firstInput) return true;
+  const valid = !detectPatternsInput.checked || selectedRulePacks().length > 0;
+  firstInput.setCustomValidity(valid ? "" : uiText("En az bir kural grubu seç."));
+  if (!valid && report) firstInput.reportValidity();
+  return valid;
+}
+
+function syncRulePackControls() {
+  const enabled = detectPatternsInput.checked;
+  for (const input of patternRulePackInputs) input.disabled = !enabled;
+  rulePackSelector.classList.toggle("is-disabled", !enabled);
+  rulePackCount.textContent = `${selectedRulePacks().length}/${patternRulePackInputs.length}`;
+  rulePacksAreValid();
+}
+
+function detectionRulePackLabel(pack) {
+  return uiText(DETECTION_RULE_PACK_LABELS[pack] ?? pack);
+}
+
 function scanSearchOptions() {
   return {
     use_default: true,
     additional_terms: additionalSearchTerms(),
     detect_patterns: detectPatternsInput.checked,
+    rule_packs: selectedRulePacks(),
   };
 }
 
@@ -2594,6 +2640,7 @@ function captureScanInputs(credential, search) {
       additional_terms: [...search.additional_terms],
       additional_terms_input: additionalTermsInput.value.trim(),
       detect_patterns: search.detect_patterns,
+      rule_packs: [...search.rule_packs],
     },
   };
 }
@@ -2678,7 +2725,7 @@ function addGeneratedTerms() {
 }
 
 function scanFormIsValid() {
-  return credentialIsValid();
+  return credentialIsValid() && rulePacksAreValid({report: true});
 }
 
 function storedHistory() {
@@ -2856,6 +2903,13 @@ function renderHistoryDetail(item) {
     : Array.isArray(search?.additional_terms)
       ? search.additional_terms.join("\n") || "—"
       : uiText("Bu kayıtta saklanmadı.");
+  const retainedRulePacks = !searchRetained
+    ? uiText("Bu kayıtta saklanmadı.")
+    : !search.detect_patterns
+      ? uiText("Dahil edilmedi")
+      : Array.isArray(search.rule_packs)
+        ? search.rule_packs.map(detectionRulePackLabel).join(", ") || "—"
+        : uiText("Tümü");
   const searchSection = historyDetailSection("İçerik arama", [
     ["Dahili wordlist", !searchRetained
       ? uiText("Bu kayıtta saklanmadı.")
@@ -2864,6 +2918,7 @@ function renderHistoryDetail(item) {
     ["Veri kalıpları", !searchRetained
       ? uiText("Bu kayıtta saklanmadı.")
       : uiText(search.detect_patterns ? "Dahil edildi" : "Dahil edilmedi")],
+    ["Kural grupları", retainedRulePacks],
   ]);
 
   const content = [heading, counts, scanSection, credentialSection, searchSection];
@@ -3344,6 +3399,10 @@ toggleTermGenerator.addEventListener("click", () => {
   if (!termGenerator.hidden) termGeneratorRoots.focus();
 });
 generateTermsButton.addEventListener("click", addGeneratedTerms);
+detectPatternsInput.addEventListener("change", syncRulePackControls);
+for (const input of patternRulePackInputs) {
+  input.addEventListener("change", syncRulePackControls);
+}
 
 startScanButton.addEventListener("click", startScan);
 cancelScanButton.addEventListener("click", cancelScan);
@@ -3366,6 +3425,7 @@ for (const [kind, controls] of Object.entries(WORDLIST_EDITORS)) {
 languageSelect.value = currentLanguage;
 if (currentLanguage === "en") applyLanguage(currentLanguage);
 syncCredentialControls();
+syncRulePackControls();
 activateWorkspace("scan");
 activateResultTab("targets");
 refreshSnapshot();

@@ -124,6 +124,34 @@
           <input id="detect-patterns" type="checkbox" checked>
           <span>Veri Kalıplarını Aramaya Dahil Et</span>
         </label>
+        <details id="rule-pack-selector" class="rule-pack-selector">
+          <summary>
+            <span>Kural grupları</span>
+            <span id="rule-pack-count" class="summary">5/5</span>
+          </summary>
+          <div class="rule-pack-options">
+            <label class="option-control rule-pack-option">
+              <input type="checkbox" value="general_secrets" data-rule-pack checked>
+              <span>Genel sırlar ve tokenlar</span>
+            </label>
+            <label class="option-control rule-pack-option">
+              <input type="checkbox" value="windows_ad" data-rule-pack checked>
+              <span>Windows ve Active Directory</span>
+            </label>
+            <label class="option-control rule-pack-option">
+              <input type="checkbox" value="password_hashes" data-rule-pack checked>
+              <span>Parola hashleri</span>
+            </label>
+            <label class="option-control rule-pack-option">
+              <input type="checkbox" value="cloud_services" data-rule-pack checked>
+              <span>Bulut ve kaynak kod servisleri</span>
+            </label>
+            <label class="option-control rule-pack-option">
+              <input type="checkbox" value="infrastructure" data-rule-pack checked>
+              <span>Altyapı ve geliştirici araçları</span>
+            </label>
+          </div>
+        </details>
       </fieldset>
 
       <div class="actions">
