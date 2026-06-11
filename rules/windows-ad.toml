@@ -99,3 +99,61 @@ pattern = "\\b(?:ms-Mcs-AdmPwd|msLAPS-Password|msLAPS-EncryptedPassword)[ \\t]*[
 keywords = ["ms-Mcs-AdmPwd", "msLAPS-Password", "msLAPS-EncryptedPassword"]
 secret_group = "secret"
 ignore_common_values = true
+
+[[rules]]
+rule_id = "windows-autologon-password"
+title = "Windows automatic logon password"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\b(?:DefaultPassword|AltDefaultPassword|AutoLogonPassword)[ \\t]*[:=][ \\t]*['\"]?(?P<secret>[^'\"\\s,;]{4,})"
+keywords = ["DefaultPassword", "AltDefaultPassword", "AutoLogonPassword"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "windows-unattend-password"
+title = "Windows unattended setup password"
+category = "Windows / AD"
+confidence = "high"
+pattern = "<(?:AdministratorPassword|AutoLogonPassword|Password)>[ \\t]*(?:<Value>)?[ \\t]*(?P<secret>[^<\\r\\n]{4,})[ \\t]*(?:</Value>)?[ \\t]*</(?:AdministratorPassword|AutoLogonPassword|Password)>"
+keywords = ["<AdministratorPassword>", "<AutoLogonPassword>", "<Password>"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "powershell-plaintext-password"
+title = "PowerShell plaintext secure-string input"
+category = "Windows / AD"
+confidence = "high"
+pattern = "(?=[^\\r\\n]*\\bConvertTo-SecureString\\b)(?=[^\\r\\n]*-AsPlainText\\b)[^\\r\\n]*\\bConvertTo-SecureString\\b(?:[ \\t]+-String)?[ \\t]+(?P<secret>'[^'\\r\\n]{4,}'|\"[^\"\\r\\n]{4,}\"|(?!-)[^\\s|;]{4,})"
+keywords = ["ConvertTo-SecureString", "-AsPlainText"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "windows-lsa-secret"
+title = "Windows LSA or DPAPI secret"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\b(?:DPAPI_(?:MACHINE|USER)KEY|NL\\$KM|plain_password_hex)[ \\t]*[:=][ \\t]*(?P<secret>(?:0x)?[0-9A-Fa-f]{32,})(?![0-9A-Fa-f])"
+keywords = ["DPAPI_MACHINEKEY", "DPAPI_USERKEY", "NL$KM", "plain_password_hex"]
+secret_group = "secret"
+
+[[rules]]
+rule_id = "rdp-password-blob"
+title = "RDP protected password value"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\bpassword[ \\t]+51:b:(?P<secret>[0-9A-Fa-f]{32,})(?![0-9A-Fa-f])"
+keywords = ["password 51:b:"]
+secret_group = "secret"
+
+[[rules]]
+rule_id = "windows-command-password"
+title = "Windows command-line password"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\b(?:cmdkey\\b[^\\r\\n]*?/pass:|schtasks\\b[^\\r\\n]*?/rp[ \\t]+)(?P<secret>'[^'\\r\\n]{4,}'|\"[^\"\\r\\n]{4,}\"|[^\\s|;&]{4,})"
+keywords = ["cmdkey", "/pass:", "schtasks", "/rp"]
+secret_group = "secret"
+ignore_common_values = true

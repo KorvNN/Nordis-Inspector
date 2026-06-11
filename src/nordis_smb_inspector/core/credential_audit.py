@@ -9,6 +9,8 @@ only allow-listed tool formats.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -104,6 +106,23 @@ _FORMAT_BINDINGS: dict[str, tuple[AuditToolBinding, ...]] = {
     "sha512crypt": (_hashcat(1800), _john("sha512crypt")),
     "bcrypt": (_hashcat(3200), _john("bcrypt")),
     "argon2": (_hashcat(34000), _john("argon2")),
+    "phpass": (_hashcat(400),),
+    "drupal7": (_hashcat(7900),),
+    "apr1": (_hashcat(1600),),
+    "django_pbkdf2_sha256": (_hashcat(10000),),
+    "passlib_pbkdf2_sha1": (_hashcat(20400),),
+    "passlib_pbkdf2_sha256": (_hashcat(20300),),
+    "passlib_pbkdf2_sha512": (_hashcat(20200),),
+    "ldap_sha1": (_hashcat(101),),
+    "ldap_ssha1": (_hashcat(111),),
+    "ldap_ssha256": (_hashcat(1411),),
+    "ldap_ssha512": (_hashcat(1711),),
+    "mysql_sha1": (_hashcat(300),),
+    "mssql_2005": (_hashcat(132),),
+    "mssql_2012": (_hashcat(1731),),
+    "postgresql_scram_sha256": (_hashcat(28600),),
+    "cisco_type8": (_hashcat(9200),),
+    "cisco_type9": (_hashcat(9300),),
     "kerberos_tgs_etype17": (_hashcat(19600), _john("krb5tgs")),
     "kerberos_tgs_etype18": (_hashcat(19700), _john("krb5tgs")),
     "kerberos_tgs_etype23": (_hashcat(13100), _john("krb5tgs")),
@@ -174,6 +193,52 @@ _UNIX_HASH = re.compile(
 )
 _BCRYPT = re.compile(r"\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}", re.ASCII)
 _ARGON2 = re.compile(r"\$argon2(?:id|i|d)\$v=[0-9]+\$[^\s'\"]{20,}", re.ASCII)
+_PORTABLE_PHP = re.compile(
+    r"(?:(?P<phpass>\$[PH]\$[./A-Za-z0-9]{31})|"
+    r"(?P<drupal>\$S\$[./A-Za-z0-9]{52}))(?![./A-Za-z0-9])",
+    re.ASCII,
+)
+_APR1 = re.compile(
+    r"\$apr1\$[./A-Za-z0-9]{1,8}\$[./A-Za-z0-9]{22}(?![./A-Za-z0-9])",
+    re.ASCII,
+)
+_DJANGO_PBKDF2 = re.compile(
+    r"pbkdf2_sha256\$[1-9][0-9]{0,8}\$[^\s$]{1,128}\$"
+    r"[A-Za-z0-9+/]{43}=(?![A-Za-z0-9+/=])",
+    re.ASCII,
+)
+_PASSLIB_PBKDF2 = re.compile(
+    r"\$pbkdf2(?P<type>-sha(?:256|512))?\$[1-9][0-9]{0,8}\$"
+    r"[./A-Za-z0-9]{1,256}\$(?P<digest>[./A-Za-z0-9]{27,86})"
+    r"(?![./A-Za-z0-9])",
+    re.ASCII,
+)
+_LDAP_HASH = re.compile(
+    r"\{(?P<type>SHA|SSHA|SSHA256|SSHA512)\}"
+    r"(?P<payload>[A-Za-z0-9+/]{20,256}={0,2})(?![A-Za-z0-9+/=])",
+    re.IGNORECASE | re.ASCII,
+)
+_MYSQL_HASH = re.compile(
+    r"(?<![0-9A-Fa-f])\*(?P<hash>[0-9A-Fa-f]{40})(?![0-9A-Fa-f])",
+    re.ASCII,
+)
+_MSSQL_HASH = re.compile(
+    r"(?<![0-9A-Fa-f])(?P<hash>0x(?P<type>0100|0200)"
+    r"(?:[0-9A-Fa-f]{48}|[0-9A-Fa-f]{136}))(?![0-9A-Fa-f])",
+    re.IGNORECASE | re.ASCII,
+)
+_POSTGRESQL_SCRAM = re.compile(
+    r"SCRAM-SHA-256\$(?P<iterations>[1-9][0-9]{0,8}):"
+    r"(?P<salt>[A-Za-z0-9+/]{2,256}={0,2})\$"
+    r"(?P<stored>[A-Za-z0-9+/]{43}=):(?P<server>[A-Za-z0-9+/]{43}=)"
+    r"(?![A-Za-z0-9+/=])",
+    re.IGNORECASE | re.ASCII,
+)
+_CISCO_HASH = re.compile(
+    r"\$(?P<type>8|9)\$[./A-Za-z0-9]{14}\$[./A-Za-z0-9]{43}"
+    r"(?![./A-Za-z0-9])",
+    re.ASCII,
+)
 _KERBEROS = {
     "kerberos-tgs-artifact": re.compile(
         r"\$krb5tgs\$(?P<etype>17|18|23)\$[^\s'\"]{20,}",
@@ -315,6 +380,148 @@ def classify_audit_material(
                 ),
             )
 
+    if rule_id == "portable-php-password-hash":
+        match = _PORTABLE_PHP.search(source_line)
+        if match is not None:
+            format_id = "phpass" if match.group("phpass") is not None else "drupal7"
+            return (
+                _material(
+                    "hash",
+                    format_id,
+                    match.group(0),
+                    _bindings(format_id),
+                ),
+            )
+
+    if rule_id == "apache-apr1-hash":
+        match = _APR1.search(source_line)
+        if match is not None:
+            return (_material("hash", "apr1", match.group(0), _bindings("apr1")),)
+
+    if rule_id == "pbkdf2-password-hash":
+        django_match = _DJANGO_PBKDF2.search(source_line)
+        if django_match is not None:
+            format_id = "django_pbkdf2_sha256"
+            return (
+                _material(
+                    "hash",
+                    format_id,
+                    django_match.group(0),
+                    _bindings(format_id),
+                ),
+            )
+        passlib_match = _PASSLIB_PBKDF2.search(source_line)
+        if passlib_match is not None:
+            format_id = {
+                None: "passlib_pbkdf2_sha1",
+                "-sha256": "passlib_pbkdf2_sha256",
+                "-sha512": "passlib_pbkdf2_sha512",
+            }[passlib_match.group("type")]
+            expected_digest_length = {
+                "passlib_pbkdf2_sha1": 27,
+                "passlib_pbkdf2_sha256": 43,
+                "passlib_pbkdf2_sha512": 86,
+            }[format_id]
+            if len(passlib_match.group("digest")) != expected_digest_length:
+                return ()
+            return (
+                _material(
+                    "hash",
+                    format_id,
+                    passlib_match.group(0),
+                    _bindings(format_id),
+                ),
+            )
+
+    if rule_id == "ldap-password-hash":
+        match = _LDAP_HASH.search(source_line)
+        if match is not None:
+            hash_type = match.group("type").casefold()
+            format_id, digest_size, salted = {
+                "sha": ("ldap_sha1", 20, False),
+                "ssha": ("ldap_ssha1", 20, True),
+                "ssha256": ("ldap_ssha256", 32, True),
+                "ssha512": ("ldap_ssha512", 64, True),
+            }[hash_type]
+            decoded_size = _decoded_base64_size(match.group("payload"))
+            if decoded_size is None:
+                return ()
+            if salted and decoded_size <= digest_size:
+                return ()
+            if not salted and decoded_size != digest_size:
+                return ()
+            return (
+                _material(
+                    "hash",
+                    format_id,
+                    match.group(0),
+                    _bindings(format_id),
+                ),
+            )
+
+    if rule_id == "mysql-password-hash":
+        match = _MYSQL_HASH.search(source_line)
+        if match is not None:
+            return (
+                _material(
+                    "hash",
+                    "mysql_sha1",
+                    match.group("hash"),
+                    _bindings("mysql_sha1"),
+                ),
+            )
+
+    if rule_id == "mssql-password-hash":
+        match = _MSSQL_HASH.search(source_line)
+        if match is not None:
+            format_id = (
+                "mssql_2005"
+                if match.group("type").casefold() == "0100"
+                else "mssql_2012"
+            )
+            expected_length = 54 if format_id == "mssql_2005" else 142
+            if len(match.group("hash")) == expected_length:
+                return (
+                    _material(
+                        "hash",
+                        format_id,
+                        match.group("hash"),
+                        _bindings(format_id),
+                    ),
+                )
+
+    if rule_id == "postgresql-scram-hash":
+        match = _POSTGRESQL_SCRAM.search(source_line)
+        if match is not None:
+            if (
+                _decoded_base64_size(match.group("salt")) in {None, 0}
+                or _decoded_base64_size(match.group("stored")) != 32
+                or _decoded_base64_size(match.group("server")) != 32
+            ):
+                return ()
+            format_id = "postgresql_scram_sha256"
+            return (
+                _material(
+                    "hash",
+                    format_id,
+                    match.group(0),
+                    _bindings(format_id),
+                ),
+            )
+
+    if rule_id == "cisco-password-hash":
+        match = _CISCO_HASH.search(source_line)
+        if match is not None:
+            format_id = f"cisco_type{match.group('type')}"
+            return (
+                _material(
+                    "hash",
+                    format_id,
+                    match.group(0),
+                    _bindings(format_id),
+                ),
+            )
+
     kerberos_pattern = _KERBEROS.get(rule_id)
     if kerberos_pattern is not None:
         match = kerberos_pattern.search(source_line)
@@ -345,3 +552,10 @@ def _material(
         material=value,
         bindings=bindings,
     )
+
+
+def _decoded_base64_size(value: str) -> int | None:
+    try:
+        return len(base64.b64decode(value, validate=True))
+    except (binascii.Error, ValueError):
+        return None

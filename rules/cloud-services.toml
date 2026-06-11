@@ -32,8 +32,8 @@ rule_id = "gitlab-token-prefix"
 title = "GitLab access token"
 category = "Source control"
 confidence = "high"
-pattern = "\\bglpat-[A-Za-z0-9_-]{20,}\\b"
-keywords = ["glpat-"]
+pattern = "\\b(?:glpat|gloas|gldt|glrt|glrtr|glcbt|glptt|glft|glimt|glagent|glwt|glsoat|glffct)-[A-Za-z0-9_-]{10,}\\b"
+keywords = ["glpat-", "gloas-", "gldt-", "glrt-", "glrtr-", "glcbt-", "glptt-", "glft-", "glimt-", "glagent-", "glwt-", "glsoat-", "glffct-"]
 
 [[rules]]
 rule_id = "stripe-secret-key"
@@ -84,3 +84,78 @@ pattern = "\\baws[_-]?secret[_-]?access[_-]?key[ \\t]*[:=][ \\t]*(?P<secret>[A-Z
 keywords = ["aws", "secret", "access", "key"]
 secret_group = "secret"
 ignore_common_values = true
+
+[[rules]]
+rule_id = "digitalocean-token-prefix"
+title = "DigitalOcean access token"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\b(?:dop|doo|dor)_v1_[A-Za-z0-9_-]{32,}\\b"
+keywords = ["dop_v1_", "doo_v1_", "dor_v1_"]
+
+[[rules]]
+rule_id = "azure-devops-pat"
+title = "Azure DevOps personal access token"
+category = "Source control"
+confidence = "high"
+pattern = "(?<![A-Za-z0-9])[A-Za-z0-9]{76}AZDO[A-Za-z0-9]{4}(?![A-Za-z0-9])"
+keywords = ["AZDO"]
+
+[[rules]]
+rule_id = "azure-storage-account-key"
+title = "Azure Storage account key"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\b(?:AccountKey|azure[_-]?storage[_-]?(?:account[_-]?)?key|storage[_-]?account[_-]?key)[ \\t]*[:=][ \\t]*['\"]?(?P<secret>[A-Za-z0-9+/]{40,}={0,2})"
+keywords = ["AccountKey", "azure_storage", "azure-storage", "storage_account_key", "storage-account-key"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "azure-sas-token"
+title = "Azure shared access signature"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\b(?:SharedAccessSignature|azure[_-]?sas[_-]?token)[ \\t]*[:=][ \\t]*['\"]?(?P<secret>(?=[^'\"\\s]{20,})(?=[^'\"\\s]*sig=)[^'\"\\s]+)"
+keywords = ["SharedAccessSignature", "azure_sas_token", "azure-sas-token"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "google-oauth-client-secret"
+title = "Google OAuth client secret"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\bGOCSPX-[A-Za-z0-9_-]{20,}\\b"
+keywords = ["GOCSPX-"]
+
+[[rules]]
+rule_id = "google-oauth-access-token"
+title = "Google OAuth access token"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\bya29\\.[A-Za-z0-9._-]{20,}\\b"
+keywords = ["ya29."]
+
+[[rules]]
+rule_id = "slack-webhook-url"
+title = "Slack webhook URL"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "https://hooks\\.slack\\.com/services/[A-Z0-9]{8,}/[A-Z0-9]{8,}/[A-Za-z0-9]{20,}"
+keywords = ["hooks.slack.com/services/"]
+
+[[rules]]
+rule_id = "telegram-bot-token"
+title = "Telegram bot token"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\b[0-9]{8,12}:[A-Za-z0-9_-]{30,}\\b"
+
+[[rules]]
+rule_id = "shopify-access-token"
+title = "Shopify access token"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\bshp(?:at|ca|pa|ss)_[A-Fa-f0-9]{24,}\\b"
+keywords = ["shpat_", "shpca_", "shppa_", "shpss_"]

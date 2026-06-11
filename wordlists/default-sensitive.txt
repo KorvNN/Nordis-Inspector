@@ -311,3 +311,196 @@ netntlmv1
 ConvertFrom-SecureString
 runas /savecred
 cmdkey /add
+
+# Extended credential field names
+admin_password
+root_password
+proxy_password
+keystore_password
+truststore_password
+certificate_password
+pkcs12_password
+pfx_password
+wallet_password
+key_password
+key_passphrase
+private_key_passphrase
+service_token
+personal_access_token
+pat_token
+bot_token
+deploy_token
+runner_token
+job_token
+registration_token
+impersonation_token
+workspace_token
+service_credential
+basic_auth_password
+http_password
+proxy_auth_password
+webhook_url
+
+# Database and broker environment variables
+PGPASSWORD
+PGPASSFILE
+MYSQL_PWD
+MARIADB_ROOT_PASSWORD
+MARIADB_PASSWORD
+MSSQL_SA_PASSWORD
+SA_PASSWORD
+ORACLE_PASSWORD
+REDISCLI_AUTH
+MONGO_INITDB_ROOT_PASSWORD
+RABBITMQ_DEFAULT_PASS
+KAFKA_SASL_PASSWORD
+ELASTIC_PASSWORD
+OPENSEARCH_INITIAL_ADMIN_PASSWORD
+NEO4J_AUTH
+INFLUX_TOKEN
+CLICKHOUSE_PASSWORD
+CASSANDRA_PASSWORD
+COUCHDB_PASSWORD
+MINIO_ROOT_PASSWORD
+MINIO_SECRET_KEY
+ME_CONFIG_MONGODB_ADMINPASSWORD
+
+# CI/CD and artifact repositories
+CI_JOB_TOKEN
+CI_DEPLOY_PASSWORD
+CI_RUNNER_TOKEN
+SYSTEM_ACCESSTOKEN
+AZURE_DEVOPS_EXT_PAT
+ADO_PAT
+BITBUCKET_ACCESS_TOKEN
+JENKINS_PASSWORD
+JENKINS_TOKEN
+ARTIFACTORY_API_KEY
+ARTIFACTORY_ACCESS_TOKEN
+JFROG_ACCESS_TOKEN
+NEXUS_PASSWORD
+SONAR_TOKEN
+CODECOV_TOKEN
+CIRCLECI_TOKEN
+TRAVIS_TOKEN
+BUILDKITE_AGENT_TOKEN
+TEAMCITY_TOKEN
+DRONE_TOKEN
+ARGOCD_AUTH_TOKEN
+
+# Additional cloud and AI service credentials
+ARM_CLIENT_SECRET
+ARM_ACCESS_KEY
+AZURE_STORAGE_ACCOUNT_KEY
+GCP_API_KEY
+GOOGLE_API_KEY
+GOOGLE_OAUTH_CLIENT_SECRET
+GOOGLE_OAUTH_ACCESS_TOKEN
+GOCSPX-
+DIGITALOCEAN_ACCESS_TOKEN
+doo_v1_
+dor_v1_
+CLOUDFLARE_GLOBAL_API_KEY
+OCI_PRIVATE_KEY
+ALIBABA_CLOUD_ACCESS_KEY_SECRET
+DOCKERHUB_TOKEN
+dckr_pat_
+DOCKER_ORGANIZATION_ACCESS_TOKEN
+dckr_oat_
+OPENAI_ADMIN_KEY
+OPENAI_SERVICE_ACCOUNT_KEY
+sk-proj-
+sk-svcacct-
+sk-ant-
+GROQ_API_KEY
+COHERE_API_KEY
+MISTRAL_API_KEY
+PINECONE_API_KEY
+LANGCHAIN_API_KEY
+LANGSMITH_API_KEY
+REPLICATE_API_TOKEN
+HUGGING_FACE_HUB_TOKEN
+WANDB_API_KEY
+
+# SaaS and observability credentials
+SHOPIFY_ACCESS_TOKEN
+shpat_
+GRAFANA_SERVICE_ACCOUNT_TOKEN
+glsa_
+NEW_RELIC_LICENSE_KEY
+NEW_RELIC_USER_KEY
+NRAK-
+DATADOG_APP_KEY
+SENTRY_DSN
+SPARKPOST_API_KEY
+MAPBOX_ACCESS_TOKEN
+SUPABASE_SERVICE_ROLE_KEY
+FIREBASE_SERVER_KEY
+
+# Infrastructure automation and cluster credentials
+PULUMI_ACCESS_TOKEN
+TFE_TOKEN
+TF_API_TOKEN
+TF_TOKEN_app
+atlasv1.
+CONSUL_HTTP_TOKEN
+VAULT_CLIENT_KEY
+ANSIBLE_VAULT_PASSWORD_FILE
+ANSIBLE_BECOME_PASSWORD
+BECOME_PASSWORD
+SUDO_PASSWORD
+SSH_PASSWORD
+SSH_PASSPHRASE
+KUBERNETES_SERVICE_ACCOUNT_TOKEN
+BOOTSTRAP_TOKEN
+client_key_data
+imagePullSecrets
+REGISTRY_PASSWORD
+REGISTRY_AUTH
+GRAFANA_TOKEN
+PROMETHEUS_BEARER_TOKEN
+LOKI_BEARER_TOKEN
+TEMPO_BEARER_TOKEN
+SSL_KEY_PASSWORD
+TLS_KEY_PASSWORD
+PKCS8_PASSWORD
+AGE-SECRET-KEY-1
+
+# Additional Windows and directory-service fields
+AdministratorPassword
+AltDefaultPassword
+AutoLogonPassword
+unicodePwd
+userPassword
+supplementalCredentials
+dBCSPwd
+ntPwdHistory
+lmPwdHistory
+msDS-ManagedPasswordId
+plain_password_hex
+dpapi_machinekey
+dpapi_userkey
+MACHINE.ACC
+WDigest
+sekurlsa
+lsadump
+secretsdump
+password 51:b:
+cmdkey /pass:
+schtasks /rp
+-AsPlainText
+
+# Additional Turkish credential terms
+admin şifresi
+yönetici şifresi
+kök parolası
+servis parolası
+proxy parolası
+anahtar parolası
+özel anahtar parolası
+erişim tokenı
+kişisel erişim tokenı
+webhook sırrı
+oturum çerezi
+kurtarma anahtarı
+yedekleme parolası

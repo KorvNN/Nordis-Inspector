@@ -52,3 +52,75 @@ category = "Infrastructure"
 confidence = "high"
 pattern = "ENC\\[AES256_GCM,data:[^\\]]{16,}\\]"
 keywords = ["ENC[AES256_GCM,data:"]
+
+[[rules]]
+rule_id = "grafana-service-account-token"
+title = "Grafana service account token"
+category = "Infrastructure"
+confidence = "high"
+pattern = "\\bglsa_[A-Za-z0-9_-]{20,}\\b"
+keywords = ["glsa_"]
+
+[[rules]]
+rule_id = "npm-auth-token-assignment"
+title = "npm registry auth token"
+category = "Developer tooling"
+confidence = "high"
+pattern = "(?:^|[:/])_authToken[ \\t]*=[ \\t]*(?P<secret>[A-Za-z0-9._~-]{16,})"
+keywords = ["_authToken"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "kubernetes-client-key-data"
+title = "Kubernetes client private key data"
+category = "Container tooling"
+confidence = "high"
+pattern = "\\bclient[-_]key[-_]data[ \\t]*:[ \\t]*(?P<secret>[A-Za-z0-9+/]{40,}={0,2})"
+keywords = ["client-key-data", "client_key_data"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "terraform-cloud-token"
+title = "Terraform Cloud token"
+category = "Infrastructure"
+confidence = "high"
+pattern = "\\b(?:TF_TOKEN_app_[A-Za-z0-9_.-]+|terraform[_-]?cloud[_-]?token|tfe[_-]?token|tf[_-]?api[_-]?token)[ \\t]*[:=][ \\t]*['\"]?(?P<secret>[A-Za-z0-9._-]{20,})"
+keywords = ["TF_TOKEN_app_", "terraform_cloud_token", "terraform-cloud-token", "tfe_token", "tfe-token", "tf_api_token", "tf-api-token"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "jenkins-api-token"
+title = "Jenkins API token"
+category = "Developer tooling"
+confidence = "high"
+pattern = "\\bjenkins[_-]?(?:api[_-]?)?token[ \\t]*[:=][ \\t]*['\"]?(?P<secret>[A-Za-z0-9._-]{16,})"
+keywords = ["jenkins_token", "jenkins-token", "jenkins_api_token", "jenkins-api-token"]
+secret_group = "secret"
+ignore_common_values = true
+
+[[rules]]
+rule_id = "sonarqube-token-prefix"
+title = "SonarQube access token"
+category = "Developer tooling"
+confidence = "high"
+pattern = "\\b(?:sqp|squ|sqa)_[A-Za-z0-9]{20,}\\b"
+keywords = ["sqp_", "squ_", "sqa_"]
+
+[[rules]]
+rule_id = "docker-personal-access-token"
+title = "Docker personal access token"
+category = "Container tooling"
+confidence = "high"
+pattern = "\\bdckr_pat_[A-Za-z0-9_-]{20,}\\b"
+keywords = ["dckr_pat_"]
+
+[[rules]]
+rule_id = "docker-organization-access-token"
+title = "Docker organization access token"
+category = "Container tooling"
+confidence = "high"
+pattern = "\\bdckr_oat_[A-Za-z0-9_-]{20,}\\b"
+keywords = ["dckr_oat_"]
