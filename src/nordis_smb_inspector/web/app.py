@@ -110,6 +110,9 @@ _MAX_TARGET_WORKERS = 32
 _DEFAULT_MAX_DEPTH = 32
 _STATIC_ASSETS: dict[str, str] = {
     "app.css": "text/css; charset=utf-8",
+    "app-hash-tools.js": "text/javascript; charset=utf-8",
+    "app-history.js": "text/javascript; charset=utf-8",
+    "app-i18n.js": "text/javascript; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
 }
 
