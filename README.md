@@ -1,40 +1,17 @@
 # Nordis SMB Inspector
 
-Nordis SMB Inspector is a local, read-only SMB 2/3 assessment tool for finding
-exposed files, weak access boundaries, and credential material across authorized
-Windows and Samba environments.
+Nordis is a local SMB assessment tool for authorized Windows and
+Samba environments. It inventories accessible data and highlights exposed
+credential material in a live web dashboard.
 
-It combines protocol-aware SMB inspection with bounded content scanning. Results
-arrive live in a local web console so operators can see what responded, what was
-accessible, what was readable, and which lines require review.
+## Highlights
 
-## What it does
-
-- Scans IPs, CIDR ranges, and hostnames on SMB/TCP 445
-- Supports password, NT hash, and Kerberos CCache authentication
-- Records Kerberos, NTLM, and fallback authentication outcomes
-- Reports SMB dialect, signing, encryption, share access, and file readability
-- Enumerates shares through SRVSVC without guessing hidden share names
-- Builds separate share, directory, and file inventory views
-- Scans readable text and bounded document/archive content without copying files locally
-- Uses an editable literal wordlist plus five selectable built-in rule packs
-- Recognizes common NTLM/Kerberos exports and CCache, keytab, and KIRBI files
-- Sends supported offline password-hash findings to locally installed Hashcat or
-  John the Ripper with an operator-selected TXT wordlist
-- Streams progress, target states, inventory entries, and findings to the UI
-- Keeps browser-local scan history with scan inputs, results, and JSON export
-
-Nordis is intentionally read-only. It does not modify remote files, test write
-permissions, or expose a non-loopback web bind.
-
-Scan history includes submitted passwords and NT hashes so prior inputs can be
-reviewed; the UI masks them until explicitly revealed. CCache bytes and full file
-paths are not retained—only the selected file name and size. Delete sensitive
-history entries when they are no longer needed.
-
-Hash Tools is an explicit local post-processing step. Findings and wordlists are
-never sent to an external service; large lists are streamed to private temporary
-storage and discarded on the next scan or when the process exits.
+- Scans IPs, CIDR ranges, and hostnames over SMB/TCP 445
+- Supports passwords, NT hashes, and Kerberos CCache files
+- Reports SMB security settings, authentication outcomes, shares, and readable files
+- Searches bounded text, document, and archive content using wordlists and rule packs
+- Streams results live and keeps browser-local history with JSON export
+- Can pass supported offline hashes to local Hashcat or John the Ripper installations
 
 ## Quick start
 
@@ -49,29 +26,12 @@ Open <http://127.0.0.1:8765>. To use another local port:
 ./run.sh --port 9000
 ```
 
-Use Nordis only against systems and data you are authorized to assess.
+## Safety
 
-## Detection model
-
-The scanner currently supports:
-
-- Literal, Unicode case-insensitive wordlist matching
-- Five selectable built-in rule packs with stable rule IDs, categories, and confidence
-- Optional built-in pattern detection, including Windows/AD credential artifacts
-- Additional terms entered per scan, including comma- or newline-separated values
-
-User-supplied regular expressions, custom rule-pack uploads, multiple selectable
-wordlists, case-sensitive matching, and whole-word matching are not currently
-exposed by the web panel. The matching engine has lower-level support for boundary
-and case options, but those options are not part of the web scan contract yet.
-
-## Documentation
-
-- [Detection model](docs/DETECTION.md)
-- [Scope and behavior](docs/SCOPE.md)
-- [SMB architecture](docs/TECH_SMB.md)
-- [Web architecture](docs/TECH_WEB.md)
-- [Isolated integration lab](docs/TEST_LAB.md)
+Use Nordis only against systems and data you are authorized to assess. It never
+tests write access and its dashboard binds only to loopback. Scan history may
+contain submitted passwords or NT hashes; delete sensitive entries after use.
+Hash findings and wordlists stay on the local machine.
 
 ## License
 
