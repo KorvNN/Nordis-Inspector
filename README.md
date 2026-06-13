@@ -29,9 +29,7 @@ Open <http://127.0.0.1:8765>. To use another local port:
 ## Safety
 
 Use Nordis only against systems and data you are authorized to assess. It never
-tests write access and its dashboard binds only to loopback. Scan history may
-contain submitted passwords or NT hashes; delete sensitive entries after use.
-Hash findings and wordlists stay on the local machine.
+tests write access. Scan history may contain submitted passwords or NT hashes.
 
 ## License
 
