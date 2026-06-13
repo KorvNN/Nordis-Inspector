@@ -1,4 +1,4 @@
-"""Read-only SMB adapter contracts and normalized domain models."""
+"""SMB adapter contracts and normalized domain models."""
 
 from .cancellation import (
     NEVER_CANCELLED,
@@ -44,6 +44,7 @@ from .models import (
     TargetStage,
     TargetStatus,
     TransportSecurity,
+    WriteAccessStatus,
 )
 
 __all__ = [
@@ -86,4 +87,5 @@ __all__ = [
     "TransportSecurity",
     "TreeWalkRequest",
     "ValidatedRangeReader",
+    "WriteAccessStatus",
 ]

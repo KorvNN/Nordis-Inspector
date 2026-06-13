@@ -1,9 +1,10 @@
-"""One-session, read-only SMB inspection orchestration.
+"""One-session SMB inspection orchestration with an opt-in write probe.
 
 The orchestration in this module is independent from the web application.  It
 keeps an authenticated SMB session alive while known shares are probed, their
 trees are walked, and readable files are streamed through the content matcher.
-Only bounded byte ranges are read; no remote file is materialized on disk.
+Only bounded byte ranges are read during normal inspection.  When explicitly
+enabled, write access is tested with an empty delete-on-close probe file.
 """
 
 from __future__ import annotations
@@ -67,6 +68,7 @@ from .models import (
     TargetOutcome,
     TargetStage,
     TargetStatus,
+    WriteAccessStatus,
 )
 from .range_io import RemoteRangeIO
 from .smbprotocol_adapter import SmbProtocolConnectError
@@ -126,7 +128,7 @@ class ShareDiscoverer(Protocol):
     ) -> ShareDiscoveryLike: ...
 
 
-class ReadOnlyFileAdapter(Protocol):
+class FileAdapter(Protocol):
     def probe_known_shares(
         self,
         session: SessionHandle,
@@ -134,6 +136,7 @@ class ReadOnlyFileAdapter(Protocol):
         target: str,
         share_names: Iterable[str],
         cancellation: CancellationToken,
+        test_write_access: bool = False,
     ) -> Iterable[KnownShareProbeLike]: ...
 
     def walk_tree(
@@ -346,7 +349,7 @@ class _InspectionCounts:
     unreadable_files: int = 0
     findings: int = 0
     content_incomplete: int = 0
-    reader_cleanup_failed: bool = False
+    operation_cleanup_failed: bool = False
 
 
 TargetCallback = Callable[[InspectionTargetEvent], None]
@@ -364,12 +367,13 @@ def inspect_target(
     max_depth: int,
     connector: Connector,
     authenticator: CredentialAuthenticator,
-    file_adapter: ReadOnlyFileAdapter,
+    file_adapter: FileAdapter,
     cancellation: CancellationToken,
     share_discoverer: ShareDiscoverer,
     detect_patterns: bool = True,
     pattern_rules: tuple[DetectionRule, ...] | None = None,
     detect_credential_artifacts: bool = True,
+    test_write_access: bool = False,
     on_target: TargetCallback | None = None,
     on_inventory: InventoryCallback | None = None,
     on_finding: FindingCallback | None = None,
@@ -395,6 +399,8 @@ def inspect_target(
         raise TypeError("pattern_rules must be DetectionRule values.")
     if not isinstance(detect_credential_artifacts, bool):
         raise TypeError("detect_credential_artifacts must be a boolean.")
+    if not isinstance(test_write_access, bool):
+        raise TypeError("test_write_access must be a boolean.")
     normalized_terms = _normalize_search_terms(search_terms)
 
     connections: list[ConnectionHandle] = []
@@ -530,12 +536,14 @@ def inspect_target(
                 )
             )
             try:
-                probes = file_adapter.probe_known_shares(
-                    session,
-                    target=target,
-                    share_names=shares_to_probe,
-                    cancellation=cancellation,
-                )
+                probe_arguments = {
+                    "target": target,
+                    "share_names": shares_to_probe,
+                    "cancellation": cancellation,
+                }
+                if test_write_access:
+                    probe_arguments["test_write_access"] = True
+                probes = file_adapter.probe_known_shares(session, **probe_arguments)
                 for probe in probes:
                     cancellation.raise_if_cancelled()
                     counts.shares_probed += 1
@@ -550,6 +558,16 @@ def inspect_target(
                         partial = True
                     if probe.inventory is not None:
                         publish_inventory(probe.inventory)
+                        if probe.inventory.write_access in {
+                            WriteAccessStatus.ERROR,
+                            WriteAccessStatus.CLEANUP_FAILED,
+                        }:
+                            partial = True
+                        if (
+                            probe.inventory.write_access
+                            is WriteAccessStatus.CLEANUP_FAILED
+                        ):
+                            counts.operation_cleanup_failed = True
                     if not share.content_walkable:
                         continue
                     if _walk_share(
@@ -705,7 +723,7 @@ def inspect_target(
             counts,
         )
     finally:
-        cleanup_failed = counts.reader_cleanup_failed
+        cleanup_failed = counts.operation_cleanup_failed
         if session is not None:
             cleanup_failed = _close_handle(session) or cleanup_failed
         for owned_connection in reversed(_unique_handles(connections)):
@@ -759,7 +777,7 @@ def _walk_share(
     pattern_rules: tuple[DetectionRule, ...],
     detect_credential_artifacts: bool,
     max_depth: int,
-    file_adapter: ReadOnlyFileAdapter,
+    file_adapter: FileAdapter,
     cancellation: CancellationToken,
     counts: _InspectionCounts,
     on_target: TargetCallback | None,
@@ -859,7 +877,7 @@ def _scan_file(
     detect_patterns: bool,
     pattern_rules: tuple[DetectionRule, ...],
     detect_credential_artifacts: bool,
-    file_adapter: ReadOnlyFileAdapter,
+    file_adapter: FileAdapter,
     cancellation: CancellationToken,
     counts: _InspectionCounts,
     on_target: TargetCallback | None,
@@ -1148,7 +1166,7 @@ def _scan_file(
                 document_stream.close()
         if reader is not None and _close_handle(reader):
             partial = True
-            counts.reader_cleanup_failed = True
+            counts.operation_cleanup_failed = True
             detail = _safe_detail(
                 TargetStage.FILE_READ,
                 TargetStatus.FILE_READ_ERROR,

@@ -211,6 +211,7 @@ function renderHistoryDetail(item) {
   const scanSection = historyDetailSection("Hedefler", [
     ["Tarama adı", displayValue(item.name), "detail-code"],
     ["Hedef listesi", retainedHistoryValue(targetList), "detail-code"],
+    ["Yazma erişimi testi", uiText(item.test_write_access ? "Dahil edildi" : "Dahil edilmedi")],
   ]);
 
   const credentialSection = historyDetailSection("Kimlik bilgisi", [

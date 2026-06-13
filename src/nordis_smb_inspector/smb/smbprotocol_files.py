@@ -1,8 +1,8 @@
-"""Read-only known-share, tree-walk, and range-read smbprotocol adapter.
+"""Known-share, tree-walk, range-read, and opt-in write-probe adapter.
 
-The adapter never creates or mutates remote objects.  Every CREATE request uses
-``FILE_OPEN`` with list/read/attribute access only, and every reparse point is
-inventoried without being traversed.
+Normal inventory operations are read-only.  The explicitly enabled write probe
+creates one uniquely named empty file with delete-on-close semantics on each
+connected disk share.  Existing objects are never opened for mutation.
 """
 
 from __future__ import annotations
@@ -12,13 +12,16 @@ import logging
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
+from secrets import token_hex
 from typing import Any, Protocol
 
 from smbprotocol import Dialects
 from smbprotocol.exceptions import (
     AccessDenied,
     BadNetworkName,
+    CannotDelete,
     NoMoreFiles,
+    ObjectNameCollision,
     ObjectNameNotFound,
     ObjectPathNotFound,
     SharingViolation,
@@ -56,6 +59,7 @@ from .models import (
     SmbErrorDetail,
     TargetStage,
     TargetStatus,
+    WriteAccessStatus,
 )
 from .smbprotocol_auth_adapter import SmbProtocolSessionHandle
 
@@ -82,6 +86,14 @@ _DIRECTORY_OPTIONS = (
 _FILE_OPTIONS = (
     CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_OPEN_REPARSE_POINT
 )
+_WRITE_PROBE_ACCESS = (
+    FilePipePrinterAccessMask.FILE_WRITE_DATA | FilePipePrinterAccessMask.DELETE
+)
+_WRITE_PROBE_OPTIONS = (
+    CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_DELETE_ON_CLOSE
+)
+_WRITE_PROBE_ATTEMPTS = 3
+_WRITE_PROBE_PREFIX = ".nordis-write-probe-"
 
 _SHARE_TYPES: dict[int, ShareKind] = {
     ShareType.SMB2_SHARE_TYPE_DISK: ShareKind.DISK,
@@ -326,11 +338,14 @@ class SmbProtocolFileAdapter:
         target: str,
         share_names: Iterable[str],
         cancellation: CancellationToken,
+        test_write_access: bool = False,
     ) -> tuple[KnownShareProbe, ...]:
-        """Try caller-provided names using one read-only TreeConnect each."""
+        """Probe discovered shares and optionally test disk-share root writes."""
 
         if not isinstance(target, str) or not target.strip():
             raise ValueError("target must be non-empty text.")
+        if not isinstance(test_write_access, bool):
+            raise TypeError("test_write_access must be a boolean.")
         names = _normalize_share_names(share_names)
         native_session = _native_session(session)
         results: list[KnownShareProbe] = []
@@ -348,27 +363,67 @@ class SmbProtocolFileAdapter:
                 results.append(_share_failure(target, name, exception))
                 continue
 
-            kind = _SHARE_TYPES.get(tree.share_type, ShareKind.UNKNOWN)
-            share = ShareInfo(
-                target=target,
-                name=name,
-                kind=kind,
-                access_status=ShareAccessStatus.CONNECTED,
-            )
-            inventory = InventoryEntry(
-                target=target,
-                share_name=name,
-                kind=InventoryEntryKind.SHARE,
-                status=(
-                    InventoryStatus.SHARE_CONNECTED
-                    if kind is ShareKind.DISK
-                    else InventoryStatus.NON_FILE_SHARE
-                ),
-                share_kind=kind,
-            )
-            results.append(KnownShareProbe(share=share, inventory=inventory))
-            _try_disconnect_tree(tree)
+            try:
+                kind = _SHARE_TYPES.get(tree.share_type, ShareKind.UNKNOWN)
+                write_access = WriteAccessStatus.UNKNOWN
+                if test_write_access and kind is ShareKind.DISK:
+                    write_access = self._probe_write_access(
+                        tree,
+                        cancellation=cancellation,
+                    )
+                share = ShareInfo(
+                    target=target,
+                    name=name,
+                    kind=kind,
+                    access_status=ShareAccessStatus.CONNECTED,
+                )
+                inventory = InventoryEntry(
+                    target=target,
+                    share_name=name,
+                    kind=InventoryEntryKind.SHARE,
+                    status=(
+                        InventoryStatus.SHARE_CONNECTED
+                        if kind is ShareKind.DISK
+                        else InventoryStatus.NON_FILE_SHARE
+                    ),
+                    share_kind=kind,
+                    write_access=write_access,
+                )
+                results.append(KnownShareProbe(share=share, inventory=inventory))
+            finally:
+                _try_disconnect_tree(tree)
         return tuple(results)
+
+    def _probe_write_access(
+        self,
+        tree: _NativeTree,
+        *,
+        cancellation: CancellationToken,
+    ) -> WriteAccessStatus:
+        for _attempt in range(_WRITE_PROBE_ATTEMPTS):
+            cancellation.raise_if_cancelled()
+            remote_open = self._open_factory(tree, _write_probe_name())
+            created = False
+            try:
+                _create_write_probe(remote_open)
+                created = True
+                cancellation.raise_if_cancelled()
+            except ScanCancelled:
+                if created:
+                    _try_close_open(remote_open)
+                raise
+            except ObjectNameCollision:
+                continue
+            except (AccessDenied, CannotDelete):
+                return WriteAccessStatus.DENIED
+            except Exception:
+                return WriteAccessStatus.ERROR
+
+            if _try_close_open(remote_open):
+                return WriteAccessStatus.CLEANUP_FAILED
+            cancellation.raise_if_cancelled()
+            return WriteAccessStatus.ALLOWED
+        return WriteAccessStatus.ERROR
 
     def walk_tree(
         self,
@@ -715,6 +770,23 @@ def _open_file(remote_open: _NativeOpen) -> None:
         create_contexts=None,
         send=True,
     )
+
+
+def _create_write_probe(remote_open: _NativeOpen) -> None:
+    remote_open.create(
+        impersonation_level=ImpersonationLevel.Impersonation,
+        desired_access=_WRITE_PROBE_ACCESS,
+        file_attributes=0,
+        share_access=_SHARE_ACCESS,
+        create_disposition=CreateDisposition.FILE_CREATE,
+        create_options=_WRITE_PROBE_OPTIONS,
+        create_contexts=None,
+        send=True,
+    )
+
+
+def _write_probe_name() -> str:
+    return f"{_WRITE_PROBE_PREFIX}{token_hex(12)}.tmp"
 
 
 def _query_directory(

@@ -72,6 +72,7 @@ const generateEnvironmentTerms = document.querySelector("#generate-environment-t
 const generateTermsButton = document.querySelector("#generate-terms");
 const termGeneratorStatus = document.querySelector("#term-generator-status");
 const detectPatternsInput = document.querySelector("#detect-patterns");
+const testWriteAccessInput = document.querySelector("#test-write-access");
 const rulePackSelector = document.querySelector("#rule-pack-selector");
 const rulePackCount = document.querySelector("#rule-pack-count");
 const patternRulePackInputs = [...document.querySelectorAll("[data-rule-pack]")];
@@ -154,7 +155,7 @@ class CredentialInputError extends Error {}
 
 const ATTENTION_STATUS = /(?:DENIED|FAILED|ERROR|REFUSED|TIMEOUT|UNREACHABLE|UNAVAILABLE|VIOLATION)/u;
 const WORKING_STATUS = /(?:PENDING|CONNECTING|NEGOTIATING|AUTHENTICATING|SCANNING|RUNNING)/u;
-const OK_STATUS = /(?:OPEN|READY|SUCCESS|AUTHENTICATED|DOĞRULANDI|KERBEROS|NTLM|COMPLETED|PARTIAL_ACCESS|CONNECTED|LISTABLE|READABLE)/u;
+const OK_STATUS = /(?:OPEN|READY|SUCCESS|ALLOWED|AUTHENTICATED|DOĞRULANDI|KERBEROS|NTLM|COMPLETED|PARTIAL_ACCESS|CONNECTED|LISTABLE|READABLE)/u;
 
 function textCell(value, className = "") {
   const cell = document.createElement("td");
@@ -268,6 +269,10 @@ function displayValue(value) {
   if (value === null || value === undefined || value === "") return "—";
   const raw = String(value);
   return localizedMap(STATUS_LABELS, EN_STATUS_LABELS, raw.toLowerCase()) ?? raw;
+}
+
+function writeAccessLabel(value) {
+  return String(value).toLowerCase() === "unknown" ? uiText("Test edilmedi") : displayValue(value);
 }
 
 function findingLabel(value, labels) {
@@ -672,7 +677,7 @@ function renderInventoryDetail(record) {
     ["Tür", record.type],
     ["Durum", record.status],
     ["Okuma", record.readAccess],
-    ["Yazma", record.writeAccess],
+    ["Yazma", writeAccessLabel(record.writeAccess)],
     ["Boyut", formatSize(record.size)],
     ["Değiştirilme", record.modifiedAt],
     ["Hata ayrıntısı", targetErrorDetail(record) ?? record.detail],
@@ -989,7 +994,7 @@ function renderInventory() {
   const visibleRecords = [...inventoryStore].filter(([, record]) => recordMatchesSearch(
     record,
     inventoryFilter.value,
-    ["target", "share", "path", "type", "status", "size", "detail"],
+    ["target", "share", "path", "type", "status", "readAccess", "writeAccess", "size", "detail"],
   ));
   if (!visibleRecords.some(([key]) => key === selectedInventoryKey)) {
     selectedInventoryKey = visibleRecords[0]?.[0] ?? null;
@@ -1044,6 +1049,13 @@ function renderInventory() {
       shareStatus.className = `status-value result-group-status ${statusTone(shareStatusValue)}`;
       shareStatus.textContent = inventoryShareStatusLabel(shareStatusValue);
       shareSummary.append(shareLabel, shareStatus);
+      const writeAccess = shareItem?.[1].writeAccess;
+      if (writeAccess && String(writeAccess).toLowerCase() !== "unknown") {
+        const writeStatus = document.createElement("span");
+        writeStatus.className = `status-value ${statusTone(writeAccess)}`;
+        writeStatus.textContent = `${uiText("Yazma")}: ${displayValue(writeAccess)}`;
+        shareSummary.append(writeStatus);
+      }
       if (shareItem) {
         shareSummary.addEventListener("click", () => {
           selectedInventoryKey = shareItem[0];
@@ -1538,6 +1550,7 @@ function captureScanInputs(credential, search) {
     name: scanName.value.trim(),
     targets: targets.value.trim(),
     target_list: scanTargetInputs(targets.value),
+    test_write_access: testWriteAccessInput.checked,
     credential: storedCredential,
     search: {
       use_default: search.use_default,
@@ -1653,6 +1666,7 @@ function saveCompletedScan(state) {
       name: existing.name ?? "",
       targets: existing.targets ?? "",
       target_list: existing.target_list ?? [],
+      test_write_access: existing.test_write_access ?? false,
       credential: existing.credential ?? {},
       search: existing.search,
     }) === JSON.stringify(capturedInputs);
@@ -1675,6 +1689,7 @@ function saveCompletedScan(state) {
     name: scanName.value.trim(),
     targets: targets.value.trim(),
     target_list: scanTargetInputs(targets.value),
+    test_write_access: testWriteAccessInput.checked,
     credential: {
       domain: credentialDomain.value.trim() || null,
       username: credentialUsername.value.trim() || null,
@@ -1735,6 +1750,7 @@ async function startScan() {
         targets: targets.value,
         credential,
         search,
+        test_write_access: testWriteAccessInput.checked,
       }),
     });
     const payload = await response.json();

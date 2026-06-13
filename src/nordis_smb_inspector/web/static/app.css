@@ -366,7 +366,8 @@ select:disabled { color: var(--muted); opacity: .78; }
 .hint { margin-bottom: 0; }
 
 .credential-block,
-.search-block {
+.search-block,
+.access-test-block {
   margin: 18px 0 0;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -375,7 +376,8 @@ select:disabled { color: var(--muted); opacity: .78; }
 }
 
 .credential-block legend,
-.search-block legend {
+.search-block legend,
+.access-test-block legend {
   padding: 0 6px;
   color: var(--accent);
   font-size: .66rem;
@@ -439,6 +441,7 @@ select:disabled { color: var(--muted); opacity: .78; }
   margin: 0;
   accent-color: var(--accent);
 }
+.access-test-block .hint { margin-top: 8px; line-height: 1.45; }
 
 .rule-pack-selector {
   margin-top: 10px;

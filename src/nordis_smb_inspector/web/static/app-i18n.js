@@ -48,6 +48,7 @@ const STATUS_LABELS = {
   denied: "Reddedildi",
   unknown: "Bilinmiyor",
   error: "Hata",
+  cleanup_failed: "Temizleme başarısız",
 };
 const FINDING_METHOD_LABELS = {
   wordlist: "Arama terimi",
@@ -391,6 +392,7 @@ const EN_STATUS_LABELS = {
   partial_access: "Partial access", completed: "Completed", cancelled: "Cancelled",
   failed: "Failed", high: "High", medium: "Medium", low: "Low",
   allowed: "Allowed", denied: "Denied", unknown: "Unknown", error: "Error",
+  cleanup_failed: "Cleanup failed",
   wordlist: "Wordlist match", pattern: "Pattern match", artifact: "File signature",
   security_active_required: "Active · Required", security_active: "Active",
   security_required: "Required", security_supported: "Supported", security_unsupported: "Unsupported",
@@ -480,6 +482,11 @@ const LANGUAGE_TEXT = {
     "Bulut ve kaynak kod servisleri": "Cloud and source services",
     "Altyapı ve geliştirici araçları": "Infrastructure and developer tools",
     "En az bir kural grubu seç.": "Select at least one rule group.",
+    "Yazma erişimi": "Write access",
+    "Share yazma erişimini test et": "Test share write access",
+    "Her erişilebilir disk share'inde benzersiz, boş bir geçici dosya oluşturur ve hemen siler.": "Creates a unique empty temporary file on each accessible disk share and deletes it immediately.",
+    "Yazma erişimi testi": "Write-access test",
+    "Test edilmedi": "Not tested",
     "Tümü": "All",
     "Taramayı başlat": "Start scan",
     "İptal et": "Cancel",

@@ -1,4 +1,4 @@
-"""Framework-neutral result models for the read-only SMB adapter.
+"""Framework-neutral result models for SMB inspection adapters.
 
 These objects deliberately contain no third-party SMB types.  Adapter code may
 translate library-specific state into these values while the orchestrator and
@@ -440,6 +440,16 @@ class InventoryStatus(StrEnum):
     READ_ERROR = "read_error"
 
 
+class WriteAccessStatus(StrEnum):
+    """Outcome of the optional create-and-delete probe on a disk share root."""
+
+    UNKNOWN = "unknown"
+    ALLOWED = "allowed"
+    DENIED = "denied"
+    ERROR = "error"
+    CLEANUP_FAILED = "cleanup_failed"
+
+
 _INVENTORY_STATUSES: dict[InventoryEntryKind, frozenset[InventoryStatus]] = {
     InventoryEntryKind.SHARE: frozenset(
         {
@@ -486,6 +496,7 @@ class InventoryEntry:
     kind: InventoryEntryKind = InventoryEntryKind.FILE
     status: InventoryStatus = InventoryStatus.FILE_READABLE
     share_kind: ShareKind | None = None
+    write_access: WriteAccessStatus = WriteAccessStatus.UNKNOWN
     size: int | None = None
     modified_at: datetime | None = None
     error: SmbErrorDetail | None = None
@@ -521,6 +532,19 @@ class InventoryEntry:
                 raise ValueError("Non-disk shares must use NON_FILE_SHARE status.")
         elif self.share_kind is not None:
             raise ValueError("Only share entries may carry share_kind.")
+        if not isinstance(self.write_access, WriteAccessStatus):
+            raise TypeError("write_access must be a WriteAccessStatus value.")
+        if (
+            self.write_access is not WriteAccessStatus.UNKNOWN
+            and (
+                self.kind is not InventoryEntryKind.SHARE
+                or self.status is not InventoryStatus.SHARE_CONNECTED
+                or self.share_kind is not ShareKind.DISK
+            )
+        ):
+            raise ValueError(
+                "Write-access results are valid only for connected disk-share entries."
+            )
 
         needs_error = self.status in _INVENTORY_ERROR_STATUSES
         if needs_error and self.error is None:
@@ -551,5 +575,6 @@ class InventoryEntry:
         return (
             f"{type(self).__name__}(target=<redacted>, share_name=<redacted>, "
             f"relative_path=<redacted>, kind={self.kind.value!r}, "
-            f"status={self.status.value!r}, size={self.size!r}, error={self.error!r})"
+            f"status={self.status.value!r}, write_access={self.write_access.value!r}, "
+            f"size={self.size!r}, error={self.error!r})"
         )

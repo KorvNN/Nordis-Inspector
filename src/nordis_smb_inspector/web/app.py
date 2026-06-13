@@ -497,6 +497,20 @@ async def scan_start(request: Request) -> JSONResponse:
             },
             status_code=422,
         )
+    test_write_access = body.get("test_write_access", False)
+    if not isinstance(test_write_access, bool):
+        return JSONResponse(
+            {
+                "ok": False,
+                "errors": [
+                    {
+                        "value": "Yazma erişimi",
+                        "reason": "Write-access selection must be a boolean.",
+                    }
+                ],
+            },
+            status_code=422,
+        )
 
     try:
         handle = runtime.sessions.begin_scan()
@@ -521,7 +535,15 @@ async def scan_start(request: Request) -> JSONResponse:
     runtime.events.publish("snapshot", _snapshot_payload(runtime))
     worker = Thread(
         target=_run_access_scan,
-        args=(runtime, handle, plan, credential, options, phase_total),
+        args=(
+            runtime,
+            handle,
+            plan,
+            credential,
+            options,
+            test_write_access,
+            phase_total,
+        ),
         name=f"nordis-scan-{handle.token.generation}",
         daemon=True,
     )
@@ -648,6 +670,7 @@ def _run_access_scan(
     plan: TargetPlan,
     credential: Credential,
     options: ScanOptions,
+    test_write_access: bool,
     phase_total: int | None,
 ) -> None:
     completed = 0
@@ -728,6 +751,7 @@ def _run_access_scan(
             detect_credential_artifacts=(
                 DetectionRulePack.WINDOWS_AD in options.rule_packs
             ),
+            test_write_access=test_write_access,
             on_target=publish_target_event,
             on_inventory=publish_inventory,
             on_finding=publish_finding,
@@ -1003,7 +1027,7 @@ def _inventory_payload(
         "type": entry.kind.value,
         "status": entry.status.value,
         "read_access": read_access,
-        "write_access": "unknown",
+        "write_access": entry.write_access.value,
         "size": entry.size,
         "modified_at": entry.modified_at.isoformat() if entry.modified_at else None,
         "raw_error_code": entry.error.raw_code if entry.error is not None else None,
