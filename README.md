@@ -9,6 +9,7 @@ credential material in a live web dashboard.
 - Scans IPs, CIDR ranges, and hostnames over SMB/TCP 445
 - Supports passwords, NT hashes, and Kerberos CCache files
 - Reports SMB security settings, authentication outcomes, shares, and readable files
+- Uses an authenticated AD identity to inventory LDAP visibility and highlight usable paths
 - Optionally tests share write access with an empty, immediately deleted probe file
 - Searches bounded text, document, and archive content with rule packs and optional custom terms
 - Streams results live and keeps browser-local history with JSON export
@@ -32,7 +33,8 @@ Open <http://127.0.0.1:8765>. To use another local port:
 Use Nordis only against systems and data you are authorized to assess. The optional
 write-access check creates and immediately deletes an empty probe file on each
 accessible disk share. It is disabled by default. Scan history may contain submitted
-passwords or NT hashes.
+passwords or NT hashes. AD inspection does not modify directory objects and does not
+return readable LAPS or gMSA secret values.
 
 ## License
 
