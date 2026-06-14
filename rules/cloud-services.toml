@@ -1,7 +1,7 @@
 schema_version = 1
 pack_id = "cloud_services"
-title_tr = "Bulut ve kaynak kod servisleri"
-title_en = "Cloud and source services"
+title_tr = "Bulut, SaaS ve kaynak kod servisleri"
+title_en = "Cloud, SaaS, and source control services"
 
 [[rules]]
 rule_id = "cloud-access-key"

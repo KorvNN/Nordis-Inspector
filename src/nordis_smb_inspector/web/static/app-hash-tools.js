@@ -35,28 +35,30 @@ let hashToolsRefreshTimer = null;
 let scanActive = false;
 let configured = false;
 
-let activateWorkspace;
 let displayValue;
-let findingKey;
 let findingStore;
 let formatFileSize;
 let hashFormatLabel;
 let hashJobLabel;
 let mutationHeaders;
-let responsePayload;
+
+async function responsePayload(response) {
+  try {
+    return await response.json();
+  } catch (_error) {
+    return null;
+  }
+}
 
 function configureHashTools(dependencies) {
   if (configured) return;
   ({
-    activateWorkspace,
     displayValue,
-    findingKey,
     findingStore,
     formatFileSize,
     hashFormatLabel,
     hashJobLabel,
     mutationHeaders,
-    responsePayload,
   } = dependencies);
   hashToolSelect.addEventListener("change", syncHashToolControls);
   hashWordlistFile.addEventListener("change", loadHashWordlist);
@@ -219,19 +221,6 @@ function syncHashToolControls() {
     || !toolAvailable
     || typeof hashWordlistUpload?.upload_id !== "string";
   cancelHashToolButton.disabled = !jobActive;
-}
-
-function sendFindingToHashTools(record) {
-  if (hashJobIsActive()) {
-    activateWorkspace("hash-tools");
-    return;
-  }
-  const recordKey = findingKey(record);
-  const candidate = record.auditCandidates[0];
-  if (candidate) {
-    selectedHashCandidateKey = `${recordKey}\u001e${candidate.id}`;
-  }
-  activateWorkspace("hash-tools");
 }
 
 function renderHashToolAvailability() {
@@ -623,6 +612,5 @@ export {
   hashToolErrorMessage,
   refreshHashTools,
   renderHashCandidates,
-  sendFindingToHashTools,
   setHashScanActive,
 };

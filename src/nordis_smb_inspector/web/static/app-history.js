@@ -138,7 +138,7 @@ function credentialKindLabel(kind) {
 
 function authModeLabel(mode) {
   const labels = {
-    auto: "Auto (Kerberos öncelikli)",
+    auto: "Auto (Önerilen)",
     kerberos_only: "Yalnız Kerberos",
     ntlm_only: "Yalnız NTLM",
   };
@@ -252,17 +252,16 @@ function renderHistoryDetail(item) {
     ["Veri kalıpları", !searchRetained
       ? uiText("Bu kayıtta saklanmadı.")
       : uiText(search.detect_patterns ? "Dahil edildi" : "Dahil edilmedi")],
-    ["Kural grupları", retainedRulePacks],
+    ["Tespit kuralı paketleri", retainedRulePacks],
   ]);
 
-  const content = [heading, counts, scanSection, credentialSection, searchSection];
-  if (credential.kind === "password" || credential.kind === "nt_hash") {
-    const note = document.createElement("p");
-    note.className = "history-detail-note";
-    note.textContent = uiText("Parola ve hash bu tarayıcı geçmişinde yerel olarak saklanır.");
-    content.push(note);
-  }
-  historySelectionDetail.replaceChildren(...content);
+  historySelectionDetail.replaceChildren(
+    heading,
+    counts,
+    scanSection,
+    credentialSection,
+    searchSection,
+  );
 }
 
 function selectHistoryItem(item) {

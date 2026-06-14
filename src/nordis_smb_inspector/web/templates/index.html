@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Nordis SMB Inspector</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body data-csrf-token="{{ csrf_token }}" data-origin="{{ app_origin }}">
@@ -42,10 +43,10 @@
 
       <label for="scan-name">Tarama adı</label>
       <input id="scan-name" type="text" autocomplete="off" maxlength="80"
-        placeholder="Örn. Finans sunucuları">
+        placeholder="xxxx">
       <label for="targets">IP, CIDR veya hostname</label>
       <textarea id="targets" rows="5" spellcheck="false"
-        placeholder="example.com, files.example.com&#10;192.0.2.10"></textarea>
+        placeholder="xxxx&#10;192.0.2.10"></textarea>
       <p class="hint">Virgül veya yeni satırla ayır.</p>
 
       <fieldset class="credential-block">
@@ -80,7 +81,7 @@
           <div class="form-field credential-auth-field">
             <label for="auth-mode">Kimlik doğrulama</label>
             <select id="auth-mode">
-              <option value="auto">Auto (Kerberos öncelikli)</option>
+              <option value="auto">Auto (Önerilen)</option>
               <option value="kerberos_only">Yalnız Kerberos</option>
               <option value="ntlm_only">Yalnız NTLM</option>
             </select>
@@ -94,68 +95,47 @@
         </legend>
         <div class="field-heading">
           <label for="additional-terms">Özel arama terimleri (isteğe bağlı)</label>
-          <div class="field-heading-actions">
-            <label class="file-import-button inline-file-import" for="additional-terms-file">
-              TXT içe aktar
-            </label>
-            <input id="additional-terms-file" class="visually-hidden" type="file"
-              accept=".txt,text/plain">
-            <button id="toggle-term-generator" class="inline-management-button secondary-button"
-              type="button" aria-expanded="false" aria-controls="term-generator">Terim üret</button>
-          </div>
         </div>
         <textarea id="additional-terms" rows="3" spellcheck="false"
-          placeholder="project_codename, internal marker"></textarea>
+          placeholder="xxxx, xxxx"></textarea>
+        <div class="additional-terms-actions">
+          <label class="file-import-button" for="additional-terms-file">TXT içe aktar</label>
+          <button id="toggle-term-generator" class="secondary-button" type="button"
+            aria-expanded="false" aria-controls="term-generator">Terim üret</button>
+        </div>
+        <input id="additional-terms-file" class="visually-hidden" type="file"
+          accept=".txt,text/plain">
         <span id="additional-terms-status" class="additional-terms-status summary"
           aria-live="polite"></span>
-        <div id="term-generator" class="term-generator" hidden>
-          <label for="term-generator-roots">Kök ifadeler</label>
-          <textarea id="term-generator-roots" rows="2" spellcheck="false"
-            placeholder="example, project"></textarea>
-          <div class="term-generator-options">
-            <label class="option-control" for="generate-credential-terms">
-              <input id="generate-credential-terms" type="checkbox" checked>
-              <span>Credential alanları</span>
-            </label>
-            <label class="option-control" for="generate-environment-terms">
-              <input id="generate-environment-terms" type="checkbox">
-              <span>Ortam adları</span>
-            </label>
-          </div>
-          <div class="term-generator-actions">
-            <button id="generate-terms" type="button">Ek terimleri üret</button>
-            <span id="term-generator-status" class="summary" aria-live="polite"></span>
-          </div>
-        </div>
         <label class="option-control" for="detect-patterns">
           <input id="detect-patterns" type="checkbox" checked>
-          <span>Veri Kalıplarını Aramaya Dahil Et</span>
+          <span>Otomatik Kelime Tespiti</span>
         </label>
         <details id="rule-pack-selector" class="rule-pack-selector">
           <summary>
-            <span>Kural grupları</span>
+            <span>Tespit kuralı paketleri</span>
             <span id="rule-pack-count" class="summary">5/5</span>
           </summary>
           <div class="rule-pack-options">
             <label class="option-control rule-pack-option">
               <input type="checkbox" value="general_secrets" data-rule-pack checked>
-              <span>Genel sırlar ve tokenlar</span>
+              <span>Genel kimlik bilgileri ve gizli değerler</span>
             </label>
             <label class="option-control rule-pack-option">
               <input type="checkbox" value="windows_ad" data-rule-pack checked>
-              <span>Windows ve Active Directory</span>
+              <span>Windows ve Active Directory verileri</span>
             </label>
             <label class="option-control rule-pack-option">
               <input type="checkbox" value="password_hashes" data-rule-pack checked>
-              <span>Parola hashleri</span>
+              <span>Parola ve kimlik doğrulama hash'leri</span>
             </label>
             <label class="option-control rule-pack-option">
               <input type="checkbox" value="cloud_services" data-rule-pack checked>
-              <span>Bulut ve kaynak kod servisleri</span>
+              <span>Bulut, SaaS ve kaynak kod servisleri</span>
             </label>
             <label class="option-control rule-pack-option">
               <input type="checkbox" value="infrastructure" data-rule-pack checked>
-              <span>Altyapı ve geliştirici araçları</span>
+              <span>Altyapı, konteyner ve geliştirici araçları</span>
             </label>
           </div>
         </details>
@@ -167,8 +147,6 @@
           <input id="test-write-access" type="checkbox">
           <span>Share yazma erişimini test et</span>
         </label>
-        <p class="hint">Her erişilebilir disk share'inde benzersiz, boş bir geçici dosya
-          oluşturur ve hemen siler.</p>
       </fieldset>
 
       <div class="actions">
@@ -412,6 +390,28 @@
       </section>
     </section>
   </main>
+
+  <dialog id="term-generator" class="term-generator-dialog"
+    aria-labelledby="term-generator-heading" aria-describedby="term-generator-description">
+    <div class="dialog-heading">
+      <h2 id="term-generator-heading">Kuruma özel terim üret</h2>
+      <button id="close-term-generator" class="icon-button" type="button"
+        aria-label="Kapat">×</button>
+    </div>
+    <p id="term-generator-description" class="term-generator-dialog-copy">Kuruma özgü adları girin. Parola, token ve API anahtarı terimleri özel arama terimlerine eklenir.</p>
+    <div class="term-generator-field">
+      <label for="term-generator-roots">Kuruma özgü adlar</label>
+      <textarea id="term-generator-roots" rows="3" spellcheck="false"
+        placeholder="xxxx, xxxx"></textarea>
+      <p class="hint">Birden fazla adı virgül veya yeni satırla ayırın.</p>
+    </div>
+    <p id="term-generator-status" class="term-generator-status summary"
+      aria-live="polite"></p>
+    <div class="term-generator-dialog-actions">
+      <button id="cancel-term-generator" class="secondary-button" type="button">Vazgeç</button>
+      <button id="generate-terms" type="button">Terimleri ekle</button>
+    </div>
+  </dialog>
 
   <dialog id="history-delete-dialog" class="confirm-dialog"
     aria-labelledby="history-delete-heading" aria-describedby="history-delete-description">

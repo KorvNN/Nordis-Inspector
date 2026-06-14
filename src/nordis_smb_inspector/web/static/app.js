@@ -5,7 +5,6 @@ import {
   hashToolErrorMessage,
   refreshHashTools,
   renderHashCandidates,
-  sendFindingToHashTools,
   setHashScanActive,
 } from "./app-hash-tools.js";
 import {
@@ -68,9 +67,9 @@ const additionalTermsFile = document.querySelector("#additional-terms-file");
 const additionalTermsStatus = document.querySelector("#additional-terms-status");
 const toggleTermGenerator = document.querySelector("#toggle-term-generator");
 const termGenerator = document.querySelector("#term-generator");
+const closeTermGeneratorButton = document.querySelector("#close-term-generator");
+const cancelTermGeneratorButton = document.querySelector("#cancel-term-generator");
 const termGeneratorRoots = document.querySelector("#term-generator-roots");
-const generateCredentialTerms = document.querySelector("#generate-credential-terms");
-const generateEnvironmentTerms = document.querySelector("#generate-environment-terms");
 const generateTermsButton = document.querySelector("#generate-terms");
 const termGeneratorStatus = document.querySelector("#term-generator-status");
 const detectPatternsInput = document.querySelector("#detect-patterns");
@@ -127,13 +126,12 @@ const GENERATOR_CREDENTIAL_FIELDS = [
   "private key",
   "connection string",
 ];
-const GENERATOR_ENVIRONMENTS = ["dev", "test", "staging", "prod", "production"];
 const DETECTION_RULE_PACK_LABELS = {
-  general_secrets: "Genel sırlar ve tokenlar",
-  windows_ad: "Windows ve Active Directory",
-  password_hashes: "Parola hashleri",
-  cloud_services: "Bulut ve kaynak kod servisleri",
-  infrastructure: "Altyapı ve geliştirici araçları",
+  general_secrets: "Genel kimlik bilgileri ve gizli değerler",
+  windows_ad: "Windows ve Active Directory verileri",
+  password_hashes: "Parola ve kimlik doğrulama hash'leri",
+  cloud_services: "Bulut, SaaS ve kaynak kod servisleri",
+  infrastructure: "Altyapı, konteyner ve geliştirici araçları",
 };
 class CredentialInputError extends Error {}
 
@@ -751,14 +749,6 @@ function renderFindingDetail(record) {
   heading.className = "detail-heading";
   heading.textContent = displayValue(record.file);
   header.append(heading);
-  if (record.auditCandidates.length > 0) {
-    const forward = document.createElement("button");
-    forward.type = "button";
-    forward.className = "secondary-button finding-hash-action";
-    forward.textContent = uiText("Hash Araçlarına gönder");
-    forward.addEventListener("click", () => sendFindingToHashTools(record));
-    header.append(forward);
-  }
 
   const detailSections = [header];
   if (!isArtifactFinding(record)) {
@@ -772,19 +762,6 @@ function renderFindingDetail(record) {
     context.append(contextLabel, line);
     detailSections.push(context);
   }
-  if (isStructuredFinding(record)) {
-    const signal = document.createElement("section");
-    signal.className = "finding-signal";
-    const signalLabel = document.createElement("span");
-    signalLabel.className = "finding-signal-label";
-    signalLabel.textContent = uiText("Bulgu");
-    const signalValue = document.createElement("strong");
-    signalValue.className = "finding-signal-value";
-    signalValue.textContent = findingSignalValue(record);
-    signal.append(signalLabel, signalValue);
-    detailSections.push(signal);
-  }
-
   const metadataFields = [
     ["Hedef", record.target, "detail-code"],
     ["Share", record.share, "detail-code"],
@@ -1398,7 +1375,7 @@ function rulePacksAreValid({report = false} = {}) {
   const firstInput = patternRulePackInputs[0];
   if (!firstInput) return true;
   const valid = !detectPatternsInput.checked || selectedRulePacks().length > 0;
-  firstInput.setCustomValidity(valid ? "" : uiText("En az bir kural grubu seç."));
+  firstInput.setCustomValidity(valid ? "" : uiText("En az bir tespit kuralı paketi seç."));
   if (!valid && report) firstInput.reportValidity();
   return valid;
 }
@@ -1407,7 +1384,12 @@ function syncRulePackControls() {
   const enabled = detectPatternsInput.checked;
   for (const input of patternRulePackInputs) input.disabled = !enabled;
   rulePackSelector.classList.toggle("is-disabled", !enabled);
-  rulePackCount.textContent = `${selectedRulePacks().length}/${patternRulePackInputs.length}`;
+  rulePackSelector.toggleAttribute("inert", !enabled);
+  rulePackSelector.setAttribute("aria-disabled", String(!enabled));
+  if (!enabled) rulePackSelector.open = false;
+  rulePackCount.textContent = enabled
+    ? `${selectedRulePacks().length}/${patternRulePackInputs.length}`
+    : uiText("Kapalı");
   rulePacksAreValid();
   searchSelectionIsValid();
 }
@@ -1415,7 +1397,7 @@ function syncRulePackControls() {
 function searchSelectionIsValid({report = false} = {}) {
   const valid = detectPatternsInput.checked || additionalSearchTerms().length > 0;
   additionalTermsInput.setCustomValidity(
-    valid ? "" : uiText("Veri kalıplarını açın veya en az bir özel terim girin."),
+    valid ? "" : uiText("Otomatik tespiti etkinleştirin veya en az bir özel terim girin."),
   );
   if (!valid && report) additionalTermsInput.reportValidity();
   return valid;
@@ -1479,6 +1461,19 @@ function generatorRoots() {
   )];
 }
 
+function openTermGeneratorDialog() {
+  if (termGenerator.open) return;
+  termGeneratorStatus.textContent = "";
+  termGeneratorStatus.className = "term-generator-status summary";
+  termGenerator.showModal();
+  toggleTermGenerator.setAttribute("aria-expanded", "true");
+  termGeneratorRoots.focus();
+}
+
+function closeTermGeneratorDialog() {
+  if (termGenerator.open) termGenerator.close();
+}
+
 function generatorSeparatorForms(root) {
   const words = root.split(/[\s_-]+/u).filter(Boolean);
   return [...new Set([
@@ -1490,31 +1485,21 @@ function generatorSeparatorForms(root) {
 }
 
 function generatorJoin(left, right, separator) {
-  return `${left}${separator}${right.split(" ").join(separator)}`;
+  const normalizedLeft = left.split(" ").join(separator);
+  const normalizedRight = right.split(" ").join(separator);
+  return `${normalizedLeft}${separator}${normalizedRight}`;
 }
 
 function generatedTerms() {
   const terms = new Set();
-  const credentialFields = generateCredentialTerms.checked
-    ? GENERATOR_CREDENTIAL_FIELDS
-    : [];
-  const environments = generateEnvironmentTerms.checked
-    ? GENERATOR_ENVIRONMENTS
-    : [];
 
   for (const root of generatorRoots()) {
     for (const base of generatorSeparatorForms(root)) {
       terms.add(base);
-      for (const field of credentialFields) {
+      for (const field of GENERATOR_CREDENTIAL_FIELDS) {
         for (const separator of ["_", "-", " "]) {
           terms.add(generatorJoin(base, field, separator));
           terms.add(generatorJoin(field, base, separator));
-        }
-      }
-      for (const environment of environments) {
-        for (const separator of ["_", "-"]) {
-          terms.add(generatorJoin(base, environment, separator));
-          terms.add(generatorJoin(environment, base, separator));
         }
       }
       if (terms.size >= MAX_GENERATED_TERMS) return [...terms].slice(0, MAX_GENERATED_TERMS);
@@ -1526,8 +1511,8 @@ function generatedTerms() {
 function addGeneratedTerms() {
   const roots = generatorRoots();
   if (roots.length === 0) {
-    termGeneratorStatus.textContent = uiText("Kök ifade girin.");
-    termGeneratorStatus.className = "term-generator-status is-error";
+    termGeneratorStatus.textContent = uiText("En az bir kuruma özel ad girin.");
+    termGeneratorStatus.className = "term-generator-status summary is-error";
     return;
   }
 
@@ -1541,12 +1526,17 @@ function addGeneratedTerms() {
     newTerms.push(term);
   }
   additionalTermsInput.value = [...existing, ...newTerms].join("\n");
-  termGeneratorStatus.textContent = newTerms.length > 0
+  const message = newTerms.length > 0
     ? currentLanguage === "en"
-      ? `${newTerms.length} new terms added.`
-      : `${newTerms.length} yeni terim eklendi.`
+      ? `${newTerms.length.toLocaleString(numberLocale())} new terms added.`
+      : `${newTerms.length.toLocaleString(numberLocale())} yeni terim eklendi.`
     : uiText("Yeni terim yok.");
+  termGeneratorStatus.textContent = message;
   termGeneratorStatus.className = "term-generator-status";
+  if (newTerms.length === 0) return;
+  setAdditionalTermsStatus(message, "is-ok");
+  searchSelectionIsValid();
+  closeTermGeneratorDialog();
 }
 
 function scanFormIsValid() {
@@ -1854,15 +1844,12 @@ function handleServerEvent(event) {
 }
 
 configureHashTools({
-  activateWorkspace,
   displayValue,
-  findingKey,
   findingStore,
   formatFileSize,
   hashFormatLabel,
   hashJobLabel,
   mutationHeaders,
-  responsePayload,
 });
 configureHistory({
   activateResultTab,
@@ -1907,10 +1894,11 @@ for (const item of workspaceNavigationItems) {
   item.addEventListener("click", () => activateWorkspace(item.dataset.workspaceView));
 }
 
-toggleTermGenerator.addEventListener("click", () => {
-  termGenerator.hidden = !termGenerator.hidden;
-  toggleTermGenerator.setAttribute("aria-expanded", String(!termGenerator.hidden));
-  if (!termGenerator.hidden) termGeneratorRoots.focus();
+toggleTermGenerator.addEventListener("click", openTermGeneratorDialog);
+closeTermGeneratorButton.addEventListener("click", closeTermGeneratorDialog);
+cancelTermGeneratorButton.addEventListener("click", closeTermGeneratorDialog);
+termGenerator.addEventListener("close", () => {
+  toggleTermGenerator.setAttribute("aria-expanded", "false");
 });
 generateTermsButton.addEventListener("click", addGeneratedTerms);
 detectPatternsInput.addEventListener("change", syncRulePackControls);

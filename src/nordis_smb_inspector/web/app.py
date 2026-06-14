@@ -108,6 +108,7 @@ _STATIC_ASSETS: dict[str, str] = {
     "app-history.js": "text/javascript; charset=utf-8",
     "app-i18n.js": "text/javascript; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
+    "favicon.svg": "image/svg+xml",
 }
 
 _templates = Environment(
@@ -272,6 +273,7 @@ def create_app(
         Route("/hash-tools/wordlist", hash_wordlist_upload, methods=["PUT"]),
         Route("/hash-tools/jobs", hash_tools_start, methods=["POST"]),
         Route("/hash-tools/jobs/cancel", hash_tools_cancel, methods=["POST"]),
+        Route("/favicon.ico", favicon, methods=["GET"]),
         Route("/static/{asset_name}", static_asset, methods=["GET"]),
     ]
     middleware = [
@@ -1162,13 +1164,20 @@ async def scan_events(request: Request) -> StreamingResponse:
     )
 
 
-async def static_asset(request: Request) -> Response:
-    asset_name = request.path_params["asset_name"]
+def _static_asset_response(asset_name: str) -> Response:
     media_type = _STATIC_ASSETS.get(asset_name)
     if media_type is None:
         raise SafeHttpError(HttpErrorCode.NOT_FOUND)
     data = files("nordis_smb_inspector.web").joinpath("static", asset_name).read_bytes()
     return Response(data, media_type=media_type)
+
+
+async def favicon(_request: Request) -> Response:
+    return _static_asset_response("favicon.svg")
+
+
+async def static_asset(request: Request) -> Response:
+    return _static_asset_response(request.path_params["asset_name"])
 
 
 async def safe_http_error(_request: Request, exc: SafeHttpError) -> JSONResponse:

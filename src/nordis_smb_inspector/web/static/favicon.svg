@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
+  <title>Nordis SMB Inspector</title>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#5fe1b7"/>
+  <path d="M14 49V15h9l18 21V15h9v34h-9L23 28v21Z" fill="#07100f"/>
+  <path d="M14 12h36" fill="none" stroke="#edf5f2" stroke-width="3" stroke-linecap="round"/>
+</svg>

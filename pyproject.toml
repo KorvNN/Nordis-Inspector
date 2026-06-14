@@ -42,6 +42,7 @@ where = ["src"]
 "nordis_smb_inspector.web" = [
   "static/*.css",
   "static/*.js",
+  "static/*.svg",
   "templates/*.html",
 ]
 

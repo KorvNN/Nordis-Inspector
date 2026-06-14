@@ -1,7 +1,7 @@
 schema_version = 1
 pack_id = "infrastructure"
-title_tr = "Altyapı ve geliştirici araçları"
-title_en = "Infrastructure and developer tools"
+title_tr = "Altyapı, konteyner ve geliştirici araçları"
+title_en = "Infrastructure, container, and developer tools"
 
 [[rules]]
 rule_id = "npm-token-prefix"
