@@ -58,12 +58,6 @@ from nordis_smb_inspector.core.targets import (
     TargetPlan,
     parse_targets,
 )
-from nordis_smb_inspector.core.wordlist_store import (
-    WordlistDocument,
-    WordlistKind,
-    WordlistStore,
-    WordlistStoreError,
-)
 from nordis_smb_inspector.smb.cancellation import (
     ScanCancelled as SmbScanCancelled,
 )
@@ -134,7 +128,6 @@ class WebRuntime:
     file_adapter: Any = field(repr=False)
     share_discoverer: Any = field(repr=False)
     access_inspector: Any = field(repr=False)
-    wordlists: WordlistStore = field(repr=False)
     hash_tools: CredentialAuditManager = field(repr=False)
     kerberos_hostname_resolver: Callable[[ExpandedTarget], str | None] = field(
         repr=False
@@ -248,7 +241,6 @@ def create_app(
     authenticator: Any | None = None,
     file_adapter: Any | None = None,
     share_discoverer: Any | None = None,
-    wordlist_store: WordlistStore | None = None,
     hash_tool_manager: CredentialAuditManager | None = None,
     kerberos_hostname_resolver: Callable[
         [ExpandedTarget], str | None
@@ -265,7 +257,6 @@ def create_app(
         file_adapter=file_adapter or SmbProtocolFileAdapter(),
         share_discoverer=share_discoverer or ImpacketShareDiscoverer(),
         access_inspector=access_inspector,
-        wordlists=wordlist_store or WordlistStore(),
         hash_tools=hash_tool_manager or CredentialAuditManager(),
         kerberos_hostname_resolver=kerberos_hostname_resolver,
     )
@@ -281,8 +272,6 @@ def create_app(
         Route("/hash-tools/wordlist", hash_wordlist_upload, methods=["PUT"]),
         Route("/hash-tools/jobs", hash_tools_start, methods=["POST"]),
         Route("/hash-tools/jobs/cancel", hash_tools_cancel, methods=["POST"]),
-        Route("/wordlists", wordlist_snapshot, methods=["GET"]),
-        Route("/wordlists/{wordlist_name}", wordlist_save, methods=["PUT"]),
         Route("/static/{asset_name}", static_asset, methods=["GET"]),
     ]
     middleware = [
@@ -413,35 +402,6 @@ async def hash_tools_cancel(request: Request) -> JSONResponse:
     except AuditInvalidTransition:
         return _hash_tools_error("HASH_TOOL_NOT_RUNNING", status_code=409)
     return JSONResponse(_hash_tools_payload(runtime), status_code=202)
-
-
-async def wordlist_snapshot(request: Request) -> JSONResponse:
-    runtime = _runtime(request)
-    try:
-        documents = runtime.wordlists.snapshot()
-    except WordlistStoreError as exc:
-        raise SafeHttpError(HttpErrorCode.INTERNAL_ERROR) from exc
-    return JSONResponse(_wordlist_snapshot_payload(documents))
-
-
-async def wordlist_save(request: Request) -> JSONResponse:
-    runtime = _runtime(request)
-    _protect_post(request, runtime)
-    kind, response_name = _wordlist_kind(request.path_params["wordlist_name"])
-    body = await _read_json(request)
-    text = body.get("text")
-    if not isinstance(text, str):
-        raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
-    try:
-        document = runtime.wordlists.save(kind, text)
-    except WordlistStoreError as exc:
-        return JSONResponse(
-            {"ok": False, "error": str(exc)},
-            status_code=422,
-        )
-    return JSONResponse(
-        {"ok": True, response_name: _wordlist_document_payload(document)}
-    )
 
 
 async def scan_start(request: Request) -> JSONResponse:
@@ -641,27 +601,6 @@ def _hash_tools_error(code: str, *, status_code: int = 422) -> JSONResponse:
 def _safe_hash_tool_error(error: AuditRequestError) -> str:
     code = str(error)
     return code if code in _HASH_TOOL_ERROR_CODES else "INVALID_REQUEST"
-
-
-def _wordlist_kind(value: object) -> tuple[WordlistKind, str]:
-    if value == "content":
-        return WordlistKind.CONTENT, "content"
-    raise SafeHttpError(HttpErrorCode.NOT_FOUND)
-
-
-def _wordlist_document_payload(document: WordlistDocument) -> dict[str, object]:
-    return {
-        "text": document.text,
-        "entry_count": document.entry_count,
-    }
-
-
-def _wordlist_snapshot_payload(
-    documents: Mapping[WordlistKind, WordlistDocument],
-) -> dict[str, object]:
-    return {
-        "content": _wordlist_document_payload(documents[WordlistKind.CONTENT]),
-    }
 
 
 def _run_access_scan(

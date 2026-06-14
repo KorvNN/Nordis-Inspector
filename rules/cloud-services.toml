@@ -44,6 +44,14 @@ pattern = "\\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\\b"
 keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"]
 
 [[rules]]
+rule_id = "stripe-webhook-secret"
+title = "Stripe webhook signing secret"
+category = "Ödeme servisi"
+confidence = "high"
+pattern = "\\bwhsec_[A-Za-z0-9]{16,}\\b"
+keywords = ["whsec_"]
+
+[[rules]]
 rule_id = "sendgrid-api-key"
 title = "SendGrid API key"
 category = "Cloud / SaaS"
@@ -138,12 +146,36 @@ pattern = "\\bya29\\.[A-Za-z0-9._-]{20,}\\b"
 keywords = ["ya29."]
 
 [[rules]]
+rule_id = "ai-provider-api-key"
+title = "AI service API key"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\b(?:sk-proj-|sk-svcacct-|sk-ant-)[A-Za-z0-9_-]{20,}\\b"
+keywords = ["sk-proj-", "sk-svcacct-", "sk-ant-"]
+
+[[rules]]
+rule_id = "new-relic-api-key"
+title = "New Relic API key"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "\\bNRAK-[A-Za-z0-9]{20,}\\b"
+keywords = ["NRAK-"]
+
+[[rules]]
 rule_id = "slack-webhook-url"
 title = "Slack webhook URL"
 category = "Cloud / SaaS"
 confidence = "high"
 pattern = "https://hooks\\.slack\\.com/services/[A-Z0-9]{8,}/[A-Z0-9]{8,}/[A-Za-z0-9]{20,}"
 keywords = ["hooks.slack.com/services/"]
+
+[[rules]]
+rule_id = "discord-webhook-url"
+title = "Discord webhook URL"
+category = "Cloud / SaaS"
+confidence = "high"
+pattern = "https://(?:(?:canary|ptb)\\.)?discord(?:app)?\\.com/api/webhooks/[0-9]{16,20}/[A-Za-z0-9._-]{30,}"
+keywords = ["discord.com/api/webhooks/", "discordapp.com/api/webhooks/", "canary.discord.com/api/webhooks/", "ptb.discord.com/api/webhooks/"]
 
 [[rules]]
 rule_id = "telegram-bot-token"

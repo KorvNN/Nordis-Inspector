@@ -10,7 +10,7 @@ credential material in a live web dashboard.
 - Supports passwords, NT hashes, and Kerberos CCache files
 - Reports SMB security settings, authentication outcomes, shares, and readable files
 - Optionally tests share write access with an empty, immediately deleted probe file
-- Searches bounded text, document, and archive content using wordlists and rule packs
+- Searches bounded text, document, and archive content with rule packs and optional custom terms
 - Streams results live and keeps browser-local history with JSON export
 - Can pass supported offline hashes to local Hashcat or John the Ripper installations
 

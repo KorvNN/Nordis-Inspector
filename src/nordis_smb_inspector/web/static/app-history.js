@@ -248,10 +248,7 @@ function renderHistoryDetail(item) {
         ? search.rule_packs.map(detectionRulePackLabel).join(", ") || "—"
         : uiText("Tümü");
   const searchSection = historyDetailSection("İçerik arama", [
-    ["Dahili wordlist", !searchRetained
-      ? uiText("Bu kayıtta saklanmadı.")
-      : uiText(search.use_default ? "Kullanıldı" : "Dahil edilmedi")],
-    ["Ek terimler", terms, "detail-code"],
+    ["Özel terimler", terms, "detail-code"],
     ["Veri kalıpları", !searchRetained
       ? uiText("Bu kayıtta saklanmadı.")
       : uiText(search.detect_patterns ? "Dahil edildi" : "Dahil edilmedi")],

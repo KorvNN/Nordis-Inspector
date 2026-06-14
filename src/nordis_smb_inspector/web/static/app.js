@@ -64,6 +64,8 @@ const credentialCcacheField = document.querySelector("#credential-ccache-field")
 const credentialCcache = document.querySelector("#credential-ccache");
 const authMode = document.querySelector("#auth-mode");
 const additionalTermsInput = document.querySelector("#additional-terms");
+const additionalTermsFile = document.querySelector("#additional-terms-file");
+const additionalTermsStatus = document.querySelector("#additional-terms-status");
 const toggleTermGenerator = document.querySelector("#toggle-term-generator");
 const termGenerator = document.querySelector("#term-generator");
 const termGeneratorRoots = document.querySelector("#term-generator-roots");
@@ -76,14 +78,6 @@ const testWriteAccessInput = document.querySelector("#test-write-access");
 const rulePackSelector = document.querySelector("#rule-pack-selector");
 const rulePackCount = document.querySelector("#rule-pack-count");
 const patternRulePackInputs = [...document.querySelectorAll("[data-rule-pack]")];
-const contentWordlist = document.querySelector("#content-wordlist");
-const contentWordlistFile = document.querySelector("#content-wordlist-file");
-const contentWordlistCount = document.querySelector("#content-wordlist-count");
-const contentWordlistStatus = document.querySelector("#content-wordlist-status");
-const saveContentWordlist = document.querySelector("#save-content-wordlist");
-const openWordlistsButton = document.querySelector("#open-wordlists");
-const closeWordlistsButton = document.querySelector("#close-wordlists");
-const wordlistDialog = document.querySelector("#wordlist-dialog");
 const startScanButton = document.querySelector("#start-scan-button");
 const cancelScanButton = document.querySelector("#cancel-scan-button");
 const previewErrors = document.querySelector("#preview-errors");
@@ -121,7 +115,7 @@ let pendingScanInputs = null;
 const scanInputSnapshots = new Map();
 
 const CCACHE_MAX_BYTES = 1024 * 1024;
-const WORDLIST_MAX_BYTES = 1024 * 1024;
+const CUSTOM_TERMS_MAX_BYTES = 1024 * 1024;
 const MAX_GENERATED_TERMS = 2000;
 const GENERATOR_CREDENTIAL_FIELDS = [
   "password",
@@ -141,16 +135,6 @@ const DETECTION_RULE_PACK_LABELS = {
   cloud_services: "Bulut ve kaynak kod servisleri",
   infrastructure: "Altyapı ve geliştirici araçları",
 };
-const WORDLIST_EDITORS = {
-  content: {
-    count: contentWordlistCount,
-    editor: contentWordlist,
-    file: contentWordlistFile,
-    save: saveContentWordlist,
-    status: contentWordlistStatus,
-  },
-};
-
 class CredentialInputError extends Error {}
 
 const ATTENTION_STATUS = /(?:DENIED|FAILED|ERROR|REFUSED|TIMEOUT|UNREACHABLE|UNAVAILABLE|VIOLATION)/u;
@@ -1247,132 +1231,6 @@ function mutationHeaders() {
   };
 }
 
-function wordlistEntryCount(text) {
-  const entries = new Set();
-  for (const line of text.split(/\r?\n/u)) {
-    const entry = line.trim();
-    if (entry && !entry.startsWith("#")) entries.add(entry.toLocaleLowerCase("tr-TR"));
-  }
-  return entries.size;
-}
-
-function setWordlistCount(kind, count = null) {
-  const controls = WORDLIST_EDITORS[kind];
-  const resolvedCount = Number.isInteger(count)
-    ? count
-    : wordlistEntryCount(controls.editor.value);
-  controls.count.textContent = currentLanguage === "en"
-    ? `${resolvedCount.toLocaleString(numberLocale())} entries`
-    : `${resolvedCount.toLocaleString(numberLocale())} kayıt`;
-}
-
-function setWordlistStatus(kind, message, tone = "") {
-  const status = WORDLIST_EDITORS[kind].status;
-  status.textContent = uiText(message);
-  status.className = `wordlist-status${tone ? ` ${tone}` : ""}`;
-}
-
-function wordlistPayload(payload, kind) {
-  const candidate = payload?.[kind] ?? payload;
-  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
-  if (typeof candidate.text !== "string") return null;
-  return candidate;
-}
-
-async function responsePayload(response) {
-  try {
-    return await response.json();
-  } catch (_error) {
-    return null;
-  }
-}
-
-function responseError(payload, fallback) {
-  if (typeof payload?.error === "string") return payload.error;
-  if (typeof payload?.error?.message === "string") return payload.error.message;
-  if (typeof payload?.message === "string") return payload.message;
-  return fallback;
-}
-
-async function refreshWordlists() {
-  for (const kind of Object.keys(WORDLIST_EDITORS)) setWordlistStatus(kind, "Yükleniyor");
-  try {
-    const response = await fetch("/wordlists", {cache: "no-store", credentials: "omit"});
-    const payload = await responsePayload(response);
-    if (!response.ok) throw new Error("request_failed");
-
-    for (const kind of Object.keys(WORDLIST_EDITORS)) {
-      const item = wordlistPayload(payload, kind);
-      if (!item) throw new Error("invalid_payload");
-      WORDLIST_EDITORS[kind].editor.value = item.text;
-      setWordlistCount(kind, item.entry_count);
-      setWordlistStatus(kind, "");
-    }
-  } catch (_error) {
-    for (const kind of Object.keys(WORDLIST_EDITORS)) {
-      setWordlistStatus(kind, "Liste yüklenemedi", "is-error");
-    }
-  }
-}
-
-async function saveWordlist(kind) {
-  const controls = WORDLIST_EDITORS[kind];
-  controls.save.disabled = true;
-  setWordlistStatus(kind, "Kaydediliyor");
-  try {
-    const response = await fetch(`/wordlists/${kind}`, {
-      method: "PUT",
-      credentials: "omit",
-      cache: "no-store",
-      headers: mutationHeaders(),
-      body: JSON.stringify({text: controls.editor.value}),
-    });
-    const payload = await responsePayload(response);
-    if (!response.ok) {
-      setWordlistStatus(
-        kind,
-        responseError(payload, "Liste kaydedilemedi"),
-        "is-error",
-      );
-      return;
-    }
-
-    const item = wordlistPayload(payload, kind);
-    if (item) controls.editor.value = item.text;
-    setWordlistCount(kind, item?.entry_count);
-    setWordlistStatus(kind, "Kaydedildi", "is-ok");
-  } catch (_error) {
-    setWordlistStatus(kind, "Liste kaydedilemedi", "is-error");
-  } finally {
-    controls.save.disabled = false;
-  }
-}
-
-async function importWordlist(kind) {
-  const controls = WORDLIST_EDITORS[kind];
-  const file = controls.file.files?.[0];
-  if (!file) return;
-
-  try {
-    if (!file.name.toLocaleLowerCase("tr-TR").endsWith(".txt")) {
-      throw new CredentialInputError(uiText("Yalnız .txt dosyası seçilebilir"));
-    }
-    if (file.size > WORDLIST_MAX_BYTES) {
-      throw new CredentialInputError(uiText("TXT dosyası en fazla 1 MiB olabilir"));
-    }
-    controls.editor.value = await file.text();
-    setWordlistCount(kind);
-    setWordlistStatus(kind, "İçe aktarıldı · kaydedilmedi", "is-ok");
-  } catch (error) {
-    const message = error instanceof CredentialInputError
-      ? error.message
-      : uiText("TXT dosyası okunamadı");
-    setWordlistStatus(kind, message, "is-error");
-  } finally {
-    controls.file.value = "";
-  }
-}
-
 function syncCredentialControls() {
   const hashSelected = credentialKind.value === "nt_hash";
   const ccacheSelected = credentialKind.value === "ccache";
@@ -1481,11 +1339,53 @@ function credentialIsValid() {
 }
 
 function additionalSearchTerms() {
-  const terms = additionalTermsInput.value
-    .split(/[\n,]+/u)
-    .map((term) => term.trim())
-    .filter(Boolean);
-  return [...new Set(terms)];
+  const terms = [];
+  const seen = new Set();
+  for (const line of additionalTermsInput.value.split(/\r?\n/u)) {
+    if (line.trimStart().startsWith("#")) continue;
+    for (const value of line.split(",")) {
+      const term = value.trim();
+      const key = term.toLocaleLowerCase("tr-TR");
+      if (!term || seen.has(key)) continue;
+      seen.add(key);
+      terms.push(term);
+    }
+  }
+  return terms;
+}
+
+function setAdditionalTermsStatus(message, tone = "") {
+  additionalTermsStatus.textContent = message;
+  additionalTermsStatus.className = `additional-terms-status summary${tone ? ` ${tone}` : ""}`;
+}
+
+async function importAdditionalTerms() {
+  const file = additionalTermsFile.files?.[0];
+  if (!file) return;
+  try {
+    if (!file.name.toLocaleLowerCase("tr-TR").endsWith(".txt")) {
+      throw new CredentialInputError(uiText("Yalnız .txt dosyası seçilebilir"));
+    }
+    if (file.size > CUSTOM_TERMS_MAX_BYTES) {
+      throw new CredentialInputError(uiText("TXT dosyası en fazla 1 MiB olabilir"));
+    }
+    additionalTermsInput.value = await file.text();
+    const count = additionalSearchTerms().length;
+    setAdditionalTermsStatus(
+      currentLanguage === "en"
+        ? `${count.toLocaleString(numberLocale())} custom terms imported.`
+        : `${count.toLocaleString(numberLocale())} özel terim içe aktarıldı.`,
+      "is-ok",
+    );
+    searchSelectionIsValid();
+  } catch (error) {
+    const message = error instanceof CredentialInputError
+      ? error.message
+      : uiText("TXT dosyası okunamadı");
+    setAdditionalTermsStatus(message, "is-error");
+  } finally {
+    additionalTermsFile.value = "";
+  }
 }
 
 function selectedRulePacks() {
@@ -1509,6 +1409,16 @@ function syncRulePackControls() {
   rulePackSelector.classList.toggle("is-disabled", !enabled);
   rulePackCount.textContent = `${selectedRulePacks().length}/${patternRulePackInputs.length}`;
   rulePacksAreValid();
+  searchSelectionIsValid();
+}
+
+function searchSelectionIsValid({report = false} = {}) {
+  const valid = detectPatternsInput.checked || additionalSearchTerms().length > 0;
+  additionalTermsInput.setCustomValidity(
+    valid ? "" : uiText("Veri kalıplarını açın veya en az bir özel terim girin."),
+  );
+  if (!valid && report) additionalTermsInput.reportValidity();
+  return valid;
 }
 
 function detectionRulePackLabel(pack) {
@@ -1517,7 +1427,6 @@ function detectionRulePackLabel(pack) {
 
 function scanSearchOptions() {
   return {
-    use_default: true,
     additional_terms: additionalSearchTerms(),
     detect_patterns: detectPatternsInput.checked,
     rule_packs: selectedRulePacks(),
@@ -1553,7 +1462,6 @@ function captureScanInputs(credential, search) {
     test_write_access: testWriteAccessInput.checked,
     credential: storedCredential,
     search: {
-      use_default: search.use_default,
       additional_terms: [...search.additional_terms],
       additional_terms_input: additionalTermsInput.value.trim(),
       detect_patterns: search.detect_patterns,
@@ -1642,7 +1550,9 @@ function addGeneratedTerms() {
 }
 
 function scanFormIsValid() {
-  return credentialIsValid() && rulePacksAreValid({report: true});
+  return credentialIsValid()
+    && rulePacksAreValid({report: true})
+    && searchSelectionIsValid({report: true});
 }
 
 
@@ -1997,14 +1907,6 @@ for (const item of workspaceNavigationItems) {
   item.addEventListener("click", () => activateWorkspace(item.dataset.workspaceView));
 }
 
-openWordlistsButton.addEventListener("click", async () => {
-  await refreshWordlists();
-  wordlistDialog.showModal();
-});
-closeWordlistsButton.addEventListener("click", () => wordlistDialog.close());
-wordlistDialog.addEventListener("click", (event) => {
-  if (event.target === wordlistDialog) wordlistDialog.close();
-});
 toggleTermGenerator.addEventListener("click", () => {
   termGenerator.hidden = !termGenerator.hidden;
   toggleTermGenerator.setAttribute("aria-expanded", String(!termGenerator.hidden));
@@ -2012,6 +1914,11 @@ toggleTermGenerator.addEventListener("click", () => {
 });
 generateTermsButton.addEventListener("click", addGeneratedTerms);
 detectPatternsInput.addEventListener("change", syncRulePackControls);
+additionalTermsInput.addEventListener("input", () => {
+  setAdditionalTermsStatus("");
+  searchSelectionIsValid();
+});
+additionalTermsFile.addEventListener("change", importAdditionalTerms);
 for (const input of patternRulePackInputs) {
   input.addEventListener("change", syncRulePackControls);
 }
@@ -2022,14 +1929,6 @@ credentialKind.addEventListener("change", syncCredentialControls);
 credentialCcache.addEventListener("change", () => ccacheIsValid());
 inventoryFilter.addEventListener("input", renderInventory);
 findingsFilter.addEventListener("input", renderFindings);
-for (const [kind, controls] of Object.entries(WORDLIST_EDITORS)) {
-  controls.editor.addEventListener("input", () => {
-    setWordlistCount(kind);
-    setWordlistStatus(kind, "");
-  });
-  controls.file.addEventListener("change", () => importWordlist(kind));
-  controls.save.addEventListener("click", () => saveWordlist(kind));
-}
 languageSelect.value = currentLanguage;
 if (currentLanguage === "en") applyLanguage(currentLanguage);
 syncCredentialControls();
@@ -2038,7 +1937,6 @@ activateWorkspace("scan");
 activateResultTab("targets");
 refreshSnapshot();
 refreshResultPanels();
-refreshWordlists();
 refreshHashTools();
 
 const scanEvents = new EventSource("/scan/events");

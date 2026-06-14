@@ -15,21 +15,54 @@ from typing import Any
 _RULE_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _IGNORED_VALUES = frozenset(
     {
+        "<empty>",
+        "<password>",
+        "<secret>",
+        "<token>",
         "changeme",
         "default",
         "dummy",
+        "empty",
         "example",
         "false",
+        "n/a",
         "none",
+        "not_set",
         "null",
         "password",
         "placeholder",
         "redacted",
+        "replace_me",
         "sample",
         "test",
+        "tbd",
+        "todo",
         "true",
+        "undefined",
+        "unset",
         "your_password",
+        "your_secret",
+        "your_token",
     }
+)
+_PLACEHOLDER_VALUE = re.compile(
+    r"""(?:
+        \$[A-Za-z_][A-Za-z0-9_]*
+        |\$\{[A-Za-z_][A-Za-z0-9_]*(?::[-?][^}\r\n]*)?\}
+        |\$\([A-Za-z_][A-Za-z0-9_.-]*\)
+        |%[A-Za-z_][A-Za-z0-9_]*%
+        |\{\{[^{}\r\n]{1,256}\}\}
+        |(?:env|environment|getenv|os\.getenv|process\.env|secretKeyRef|valueFrom)
+          (?:\.|\[|\()[^\r\n]{0,256}
+        |(?:var|local|data|module|vault|secrets?)\.[A-Za-z_][A-Za-z0-9_.-]*
+        |(?:[A-Za-z]:[\\/]|/)[^\r\n]{1,260}\.(?:ccache|cer|crt|jks|json|key|keystore|p12|pem|pfx|txt|ya?ml)
+        |(?:change|enter|insert|replace|set)[ _.-]*(?:me|this|value|password|secret|token)
+          (?:[ _.-]*here)?
+        |your[ _.-]+(?:api[ _.-]+)?(?:key|password|secret|token)(?:[ _.-]+here)?
+        |(?:not|no)[ _.-]+(?:configured|set|a[ _.-]+real[ _.-]+secret)
+        |x{3,}|\*{3,}|\.{3,}
+    )""",
+    re.IGNORECASE | re.ASCII | re.VERBOSE,
 )
 _MAX_MATCHES_PER_RULE_LINE = 32
 _RULE_PACK_SCHEMA_VERSION = 1
@@ -99,7 +132,7 @@ class DetectionRule:
         if not isinstance(self.ignore_common_values, bool):
             raise TypeError("Detection rule ignore selection is invalid.")
         try:
-            compiled = re.compile(self.pattern, re.IGNORECASE | re.ASCII)
+            compiled = re.compile(self.pattern, re.IGNORECASE)
         except re.error as error:
             raise ValueError("Detection rule pattern is invalid.") from error
         if self.secret_group is not None and self.secret_group not in compiled.groupindex:
@@ -194,10 +227,12 @@ def detect_patterns(
         for match_index, match in enumerate(rule._compiled.finditer(line)):
             if match_index >= _MAX_MATCHES_PER_RULE_LINE:
                 break
-            if rule.secret_group is not None and rule.ignore_common_values:
-                value = match.group(rule.secret_group).strip("'\" ").casefold()
-                if value in _IGNORED_VALUES:
-                    continue
+            if (
+                rule.secret_group is not None
+                and rule.ignore_common_values
+                and _is_ignored_secret_value(match.group(rule.secret_group))
+            ):
+                continue
             findings.append(
                 PatternMatch(
                     line_number=line_number,
@@ -211,6 +246,19 @@ def detect_patterns(
                 )
             )
     return _without_redundant_matches(findings)
+
+
+def _is_ignored_secret_value(value: str) -> bool:
+    """Return whether a captured value is clearly a reference or placeholder."""
+
+    normalized = value.strip()
+    while (
+        len(normalized) >= 2
+        and (normalized[0], normalized[-1]) in {("'", "'"), ('"', '"')}
+    ):
+        normalized = normalized[1:-1].strip()
+    folded = normalized.casefold()
+    return folded in _IGNORED_VALUES or _PLACEHOLDER_VALUE.fullmatch(normalized) is not None
 
 
 def detection_rules_for_packs(

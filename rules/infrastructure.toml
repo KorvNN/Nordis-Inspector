@@ -42,7 +42,7 @@ rule_id = "ansible-vault-artifact"
 title = "Ansible Vault artifact"
 category = "Infrastructure"
 confidence = "high"
-pattern = "\\$ANSIBLE_VAULT;[0-9.]+;AES[0-9]+;[0-9a-f]{20,}"
+pattern = "^\\$ANSIBLE_VAULT;[0-9]+\\.[0-9]+;AES[0-9]+(?:;[A-Za-z0-9_-]+)?$"
 keywords = ["$ANSIBLE_VAULT;"]
 
 [[rules]]
@@ -90,6 +90,14 @@ pattern = "\\b(?:TF_TOKEN_app_[A-Za-z0-9_.-]+|terraform[_-]?cloud[_-]?token|tfe[
 keywords = ["TF_TOKEN_app_", "terraform_cloud_token", "terraform-cloud-token", "tfe_token", "tfe-token", "tf_api_token", "tf-api-token"]
 secret_group = "secret"
 ignore_common_values = true
+
+[[rules]]
+rule_id = "hcp-terraform-api-token"
+title = "HCP Terraform API token"
+category = "Infrastructure"
+confidence = "high"
+pattern = "\\b[A-Za-z0-9]{6,}\\.atlasv1\\.[A-Za-z0-9]{10,}\\b"
+keywords = [".atlasv1."]
 
 [[rules]]
 rule_id = "jenkins-api-token"

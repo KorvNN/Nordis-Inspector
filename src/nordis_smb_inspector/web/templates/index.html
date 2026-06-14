@@ -91,16 +91,23 @@
       <fieldset class="search-block">
         <legend class="fieldset-legend">
           <span>İçerik arama</span>
-          <button id="open-wordlists" class="inline-management-button secondary-button"
-            type="button">Wordlist yönetimi</button>
         </legend>
         <div class="field-heading">
-          <label for="additional-terms">Ek arama terimleri</label>
-          <button id="toggle-term-generator" class="inline-management-button secondary-button"
-            type="button" aria-expanded="false" aria-controls="term-generator">Terim üret</button>
+          <label for="additional-terms">Özel arama terimleri (isteğe bağlı)</label>
+          <div class="field-heading-actions">
+            <label class="file-import-button inline-file-import" for="additional-terms-file">
+              TXT içe aktar
+            </label>
+            <input id="additional-terms-file" class="visually-hidden" type="file"
+              accept=".txt,text/plain">
+            <button id="toggle-term-generator" class="inline-management-button secondary-button"
+              type="button" aria-expanded="false" aria-controls="term-generator">Terim üret</button>
+          </div>
         </div>
         <textarea id="additional-terms" rows="3" spellcheck="false"
-          placeholder="example, client_secret"></textarea>
+          placeholder="project_codename, internal marker"></textarea>
+        <span id="additional-terms-status" class="additional-terms-status summary"
+          aria-live="polite"></span>
         <div id="term-generator" class="term-generator" hidden>
           <label for="term-generator-roots">Kök ifadeler</label>
           <textarea id="term-generator-roots" rows="2" spellcheck="false"
@@ -423,32 +430,6 @@
     <div class="confirm-dialog-actions">
       <button id="cancel-history-delete" class="secondary-button" type="button">Vazgeç</button>
       <button id="confirm-history-delete" class="danger-button" type="button">Geçmişten sil</button>
-    </div>
-  </dialog>
-
-  <dialog id="wordlist-dialog" class="wordlist-dialog" aria-labelledby="wordlist-heading">
-    <div class="dialog-heading">
-      <div>
-        <h2 id="wordlist-heading">Wordlist yönetimi</h2>
-      </div>
-      <button id="close-wordlists" class="icon-button" type="button" aria-label="Kapat">×</button>
-    </div>
-
-    <div class="wordlist-grid">
-      <article class="wordlist-editor">
-        <div class="wordlist-editor-heading">
-          <label for="content-wordlist">İçerik arama terimleri</label>
-          <span id="content-wordlist-count" class="summary">— kayıt</span>
-        </div>
-        <textarea id="content-wordlist" rows="18" spellcheck="false"></textarea>
-        <div class="wordlist-actions">
-          <label class="file-import-button" for="content-wordlist-file">TXT içe aktar</label>
-          <input id="content-wordlist-file" class="visually-hidden" type="file"
-            accept=".txt,text/plain">
-          <button id="save-content-wordlist" type="button">Kaydet</button>
-          <span id="content-wordlist-status" class="wordlist-status" aria-live="polite"></span>
-        </div>
-      </article>
     </div>
   </dialog>
 

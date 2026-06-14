@@ -50,8 +50,26 @@ rule_id = "windows-nt-hash"
 title = "Etiketli NTLM hash"
 category = "Windows / AD"
 confidence = "high"
-pattern = "(?:\\$NT\\$|\\b(?:NTLM(?:[ \\t]+Hash)?|NT[ _-]*Hash|NTHash|Hash[ _-]*NTLM)[ \\t]*[:=][ \\t]*)(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
-keywords = ["$nt$", "ntlm", "nt hash", "nt_hash", "nt-hash", "nthash"]
+pattern = "(?:\\$NT\\$|\\b(?:NTLM(?:[ \\t]+Hash)?|NT[ _-]*Hash|NTHash|Hash[ _-]*NTLM|krbtgt[ _-]*hash)[ \\t]*[:=][ \\t]*)(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
+keywords = ["$nt$", "ntlm", "nt hash", "nt_hash", "nt-hash", "nthash", "krbtgt_hash", "krbtgt-hash", "krbtgt hash"]
+secret_group = "secret"
+
+[[rules]]
+rule_id = "windows-lm-hash"
+title = "Etiketli LM hash"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\b(?:LM(?:[ \\t]+Hash)?|LM[ _-]*Hash)[ \\t]*[:=][ \\t]*(?P<secret>[0-9A-Fa-f]{32})(?![0-9A-Fa-f])"
+keywords = ["lm"]
+secret_group = "secret"
+
+[[rules]]
+rule_id = "windows-password-history"
+title = "Windows parola geçmişi veya supplemental credential"
+category = "Windows / AD"
+confidence = "high"
+pattern = "\\b(?:ntPwdHistory|lmPwdHistory|dBCSPwd|supplementalCredentials)[ \\t]*[:=][ \\t]*(?P<secret>(?:0x)?[0-9A-Fa-f]{32,})(?![0-9A-Fa-f])"
+keywords = ["ntPwdHistory", "lmPwdHistory", "dBCSPwd", "supplementalCredentials"]
 secret_group = "secret"
 
 [[rules]]
@@ -95,8 +113,8 @@ rule_id = "windows-managed-password"
 title = "Windows managed password attribute"
 category = "Windows / AD"
 confidence = "high"
-pattern = "\\b(?:ms-Mcs-AdmPwd|msLAPS-Password|msLAPS-EncryptedPassword)[ \\t]*[:=][ \\t]*(?P<secret>[^\\s,;]+)"
-keywords = ["ms-Mcs-AdmPwd", "msLAPS-Password", "msLAPS-EncryptedPassword"]
+pattern = "\\b(?:ms-Mcs-AdmPwd|msLAPS-Password|msLAPS-EncryptedPassword|msDS-ManagedPassword)[ \\t]*[:=][ \\t]*(?P<secret>[^\\s,;]{4,})"
+keywords = ["ms-Mcs-AdmPwd", "msLAPS-Password", "msLAPS-EncryptedPassword", "msDS-ManagedPassword"]
 secret_group = "secret"
 ignore_common_values = true
 
@@ -135,8 +153,8 @@ rule_id = "windows-lsa-secret"
 title = "Windows LSA or DPAPI secret"
 category = "Windows / AD"
 confidence = "high"
-pattern = "\\b(?:DPAPI_(?:MACHINE|USER)KEY|NL\\$KM|plain_password_hex)[ \\t]*[:=][ \\t]*(?P<secret>(?:0x)?[0-9A-Fa-f]{32,})(?![0-9A-Fa-f])"
-keywords = ["DPAPI_MACHINEKEY", "DPAPI_USERKEY", "NL$KM", "plain_password_hex"]
+pattern = "\\b(?:DPAPI_(?:MACHINE|USER)KEY|DPAPI_SYSTEM|NL\\$KM|plain_password_hex|MACHINE\\.ACC|BCKUPKEY_[A-Za-z0-9_-]{4,})[ \\t]*[:=][ \\t]*(?P<secret>(?:0x)?[0-9A-Fa-f]{32,})(?![0-9A-Fa-f])"
+keywords = ["DPAPI_MACHINEKEY", "DPAPI_USERKEY", "DPAPI_SYSTEM", "NL$KM", "plain_password_hex", "MACHINE.ACC", "BCKUPKEY_"]
 secret_group = "secret"
 
 [[rules]]
