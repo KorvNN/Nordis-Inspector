@@ -1,19 +1,16 @@
-# Nordis SMB Inspector
+# Nordis Inspector
 
-Nordis is a local SMB assessment tool for authorized Windows and
-Samba environments. It inventories accessible data and highlights exposed
-credential material in a live web dashboard.
+Nordis is a local assessment tool for authorized Windows and Active Directory
+environments. It uses the supplied identity to show what is visible, accessible,
+and potentially usable in a live web dashboard.
 
 ## Highlights
 
-- Scans IPs, CIDR ranges, and hostnames over SMB/TCP 445
-- Supports passwords, NT hashes, and Kerberos CCache files
-- Reports SMB security settings, authentication outcomes, shares, and readable files
-- Uses an authenticated AD identity to inventory LDAP visibility and highlight usable paths
-- Optionally tests share write access with an empty, immediately deleted probe file
-- Searches bounded text, document, and archive content with rule packs and optional custom terms
-- Streams results live and keeps browser-local history with JSON export
-- Can pass supported offline hashes to local Hashcat or John the Ripper installations
+- Inspects SMB security, shares, readable files, and exposed credential material
+- Uses authenticated LDAP to separate principal capabilities from environment findings
+- Supports passwords, NT hashes, Kerberos, and CCache files
+- Shows verification state and incomplete coverage instead of treating unknowns as clean
+- Keeps results local and can export completed SMB scans as JSON
 
 ## Quick start
 
@@ -31,10 +28,8 @@ Open <http://127.0.0.1:8765>. To use another local port:
 ## Safety
 
 Use Nordis only against systems and data you are authorized to assess. The optional
-write-access check creates and immediately deletes an empty probe file on each
-accessible disk share. It is disabled by default. Scan history may contain submitted
-passwords or NT hashes. AD inspection does not modify directory objects and does not
-return readable LAPS or gMSA secret values.
+SMB write check is disabled by default. AD inspection does not modify directory
+objects or return readable LAPS and gMSA secret values.
 
 ## License
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nordis-smb-inspector"
 version = "0.1.0"
-description = "Authorized SMB inventory and sensitive-content inspection"
+description = "Principal-focused Windows, SMB, and Active Directory assessment"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
