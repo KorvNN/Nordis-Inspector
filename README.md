@@ -1,8 +1,14 @@
 # Nordis Inspector
 
+<p align="center">
+  <img src="src/nordis_smb_inspector/web/static/favicon.svg" alt="Nordis Inspector" width="96">
+</p>
+
+> **What is visible, accessible, and potentially usable.**
+
 Nordis Inspector is a local assessment tool for authorized Windows and Active
-Directory environments. It uses the supplied identity to show what is visible,
-accessible, and potentially usable in a live web dashboard.
+Directory environments. It evaluates the supplied identity in a live local web
+dashboard.
 
 ## Highlights
 
