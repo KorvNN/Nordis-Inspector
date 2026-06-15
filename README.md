@@ -1,8 +1,8 @@
 # Nordis Inspector
 
-Nordis is a local assessment tool for authorized Windows and Active Directory
-environments. It uses the supplied identity to show what is visible, accessible,
-and potentially usable in a live web dashboard.
+Nordis Inspector is a local assessment tool for authorized Windows and Active
+Directory environments. It uses the supplied identity to show what is visible,
+accessible, and potentially usable in a live web dashboard.
 
 ## Highlights
 
@@ -27,9 +27,9 @@ Open <http://127.0.0.1:8765>. To use another local port:
 
 ## Safety
 
-Use Nordis only against systems and data you are authorized to assess. The optional
-SMB write check is disabled by default. AD inspection does not modify directory
-objects or return readable LAPS and gMSA secret values.
+Use Nordis Inspector only against systems and data you are authorized to assess.
+The optional SMB write check is disabled by default. AD inspection does not modify
+directory objects or return readable LAPS and gMSA secret values.
 
 ## License
 
