@@ -3,7 +3,7 @@
 <p>
   <img src="src/nordis_smb_inspector/web/static/favicon.svg" alt="Nordis Inspector" width="96" align="left">
   <br><br>
-  <strong>What is visible, accessible, and potentially usable.</strong>
+  <strong>"What is visible, accessible, and potentially usable."</strong>
   <br><br>
 </p>
 <br clear="left">
