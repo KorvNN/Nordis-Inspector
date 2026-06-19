@@ -1,11 +1,11 @@
-<p>
-  <img src="src/nordis_smb_inspector/web/static/favicon.svg" alt="Nordis Inspector" width="96" align="left">
-</p>
-
 # Nordis Inspector
 
-**"What is visible, accessible, and potentially usable."**
-
+<p>
+  <img src="src/nordis_smb_inspector/web/static/favicon.svg" alt="Nordis Inspector" width="96" align="left">
+  <br><br>
+  <strong>"What is visible, accessible, and potentially usable."</strong>
+  <br><br>
+</p>
 <br clear="left">
 
 Nordis Inspector is a local assessment tool for authorized Windows and Active
