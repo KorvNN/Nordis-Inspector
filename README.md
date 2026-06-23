@@ -13,17 +13,17 @@ dashboard.
 - Inspects SMB security, shares, readable files, and exposed credential material
 - Uses authenticated LDAP to separate principal capabilities from environment findings
 - Supports passwords, NT hashes, Kerberos, and CCache files
-- Shows verification state and incomplete coverage instead of treating unknowns as clean
-- Keeps results local and can export completed SMB scans as JSON
 
 ## Quick start
 
 ```bash
 ./setup.sh
 ./run.sh
+
+# Open http://127.0.0.1:8765
 ```
 
-Open <http://127.0.0.1:8765>. To use another local port:
+To use another local port:
 
 ```bash
 ./run.sh --port 9000
