@@ -1,6 +1,10 @@
 "use strict";
 
 import {
+  configureAdInspector,
+  refreshAdInspector,
+} from "./app-ad.js";
+import {
   configureHashTools,
   hashToolErrorMessage,
   refreshHashTools,
@@ -47,6 +51,7 @@ const body = document.body;
 const languageSelect = document.querySelector("#language-select");
 const workspaceNavigationItems = [...document.querySelectorAll("[data-workspace-view]")];
 const scanWorkspace = document.querySelector("#scan-workspace");
+const adWorkspace = document.querySelector("#ad-workspace");
 const hashToolsWorkspace = document.querySelector("#hash-tools-workspace");
 const csrfToken = body.dataset.csrfToken;
 const origin = body.dataset.origin;
@@ -234,7 +239,9 @@ function activateResultTab(name) {
 
 function activateWorkspace(name) {
   const hashToolsActive = name === "hash-tools";
-  scanWorkspace.hidden = hashToolsActive;
+  const adActive = name === "ad";
+  scanWorkspace.hidden = name !== "scan";
+  adWorkspace.hidden = !adActive;
   hashToolsWorkspace.hidden = !hashToolsActive;
   for (const item of workspaceNavigationItems) {
     const active = item.dataset.workspaceView === name;
@@ -245,6 +252,7 @@ function activateWorkspace(name) {
     renderHashCandidates();
     void refreshHashTools();
   }
+  if (adActive) void refreshAdInspector();
 }
 
 function displayValue(value) {
@@ -1851,6 +1859,7 @@ configureHashTools({
   hashJobLabel,
   mutationHeaders,
 });
+configureAdInspector({mutationHeaders});
 configureHistory({
   activateResultTab,
   detailList,

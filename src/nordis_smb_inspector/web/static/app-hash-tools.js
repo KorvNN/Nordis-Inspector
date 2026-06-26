@@ -264,6 +264,7 @@ function hashToolErrorMessage(code) {
   const messages = currentLanguage === "en"
     ? {
       SCAN_IN_PROGRESS: "Stop the SMB scan before running a hash tool.",
+      AD_INSPECTION_IN_PROGRESS: "Stop the AD inspection before running a hash tool.",
       HASH_TOOL_IN_PROGRESS: "Another hash tool job is already running.",
       HASH_TOOL_NOT_RUNNING: "There is no running hash tool job.",
       TOOL_UNAVAILABLE: "The selected local tool is no longer available.",
@@ -288,6 +289,7 @@ function hashToolErrorMessage(code) {
     }
     : {
       SCAN_IN_PROGRESS: "Hash aracını çalıştırmadan önce SMB taramasını durdur.",
+      AD_INSPECTION_IN_PROGRESS: "Hash aracını çalıştırmadan önce AD incelemesini durdur.",
       HASH_TOOL_IN_PROGRESS: "Başka bir hash aracı işi zaten çalışıyor.",
       HASH_TOOL_NOT_RUNNING: "Çalışan bir hash aracı işi yok.",
       TOOL_UNAVAILABLE: "Seçilen yerel araç artık kullanılamıyor.",

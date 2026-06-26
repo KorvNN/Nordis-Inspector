@@ -1,27 +1,29 @@
-# Nordis SMB Inspector
+<p>
+  <img src="src/nordis_smb_inspector/web/static/favicon.svg?v=2" alt="Nordis Inspector" width="96" align="left">
+</p>
 
-Nordis is a local SMB assessment tool for authorized Windows and
-Samba environments. It inventories accessible data and highlights exposed
-credential material in a live web dashboard.
+# Nordis Inspector<br><sup><sup><em>"What is visible, accessible, and potentially usable."</em></sup></sup>
+
+Nordis Inspector is a local assessment tool for authorized Windows and Active
+Directory environments. It evaluates the supplied identity in a live local web
+dashboard.
 
 ## Highlights
 
-- Scans IPs, CIDR ranges, and hostnames over SMB/TCP 445
-- Supports passwords, NT hashes, and Kerberos CCache files
-- Reports SMB security settings, authentication outcomes, shares, and readable files
-- Optionally tests share write access with an empty, immediately deleted probe file
-- Searches bounded text, document, and archive content with rule packs and optional custom terms
-- Streams results live and keeps browser-local history with JSON export
-- Can pass supported offline hashes to local Hashcat or John the Ripper installations
+- Inspects SMB security, shares, readable files, and exposed credential material
+- Uses authenticated LDAP to separate principal capabilities from environment findings
+- Supports passwords, NT hashes, Kerberos, and CCache files
 
 ## Quick start
 
 ```bash
 ./setup.sh
 ./run.sh
+
+# Open http://127.0.0.1:8765
 ```
 
-Open <http://127.0.0.1:8765>. To use another local port:
+To use another local port:
 
 ```bash
 ./run.sh --port 9000
@@ -29,10 +31,9 @@ Open <http://127.0.0.1:8765>. To use another local port:
 
 ## Safety
 
-Use Nordis only against systems and data you are authorized to assess. The optional
-write-access check creates and immediately deletes an empty probe file on each
-accessible disk share. It is disabled by default. Scan history may contain submitted
-passwords or NT hashes.
+Use Nordis Inspector only against systems and data you are authorized to assess.
+The optional SMB write check is disabled by default. AD inspection does not modify
+directory objects or return readable LAPS and gMSA secret values.
 
 ## License
 

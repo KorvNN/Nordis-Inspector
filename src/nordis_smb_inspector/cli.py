@@ -29,7 +29,7 @@ class _NordisServer(uvicorn.Server):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nordis-smb-inspector",
-        description="Start the local Nordis SMB inspection panel.",
+        description="Start the local Nordis inspection panel.",
     )
     parser.add_argument(
         "--port",
@@ -46,7 +46,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from nordis_smb_inspector.web.app import create_app
 
     url = f"http://127.0.0.1:{args.port}"
-    print(f"Nordis SMB Inspector: {url}")
+    print(f"Nordis Inspector: {url}")
     print("Durdurmak için Ctrl+C.")
     app = create_app(port=args.port)
     config = uvicorn.Config(

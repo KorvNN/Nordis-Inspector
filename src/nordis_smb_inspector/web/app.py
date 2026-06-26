@@ -20,6 +20,17 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from nordis_smb_inspector.ad.inspection import inspect_directory
+from nordis_smb_inspector.ad.ldap_adapter import (
+    AdInspectionError,
+    domain_to_base_dn,
+    valid_directory_host,
+)
+from nordis_smb_inspector.ad.models import (
+    AdComputer,
+    AdFinding,
+    AdInspectionReport,
+)
 from nordis_smb_inspector.core.access_pipeline import (
     AccessEventKind as PipelineEventKind,
 )
@@ -51,6 +62,9 @@ from nordis_smb_inspector.core.session import (
     ScanAlreadyRunning,
     ScanHandle,
     ScanSessionManager,
+)
+from nordis_smb_inspector.core.session import (
+    ScanCancelled as SessionScanCancelled,
 )
 from nordis_smb_inspector.core.targets import (
     ExpandedTarget,
@@ -104,6 +118,7 @@ _MAX_TARGET_WORKERS = 32
 _DEFAULT_MAX_DEPTH = 32
 _STATIC_ASSETS: dict[str, str] = {
     "app.css": "text/css; charset=utf-8",
+    "app-ad.js": "text/javascript; charset=utf-8",
     "app-hash-tools.js": "text/javascript; charset=utf-8",
     "app-history.js": "text/javascript; charset=utf-8",
     "app-i18n.js": "text/javascript; charset=utf-8",
@@ -129,6 +144,8 @@ class WebRuntime:
     file_adapter: Any = field(repr=False)
     share_discoverer: Any = field(repr=False)
     access_inspector: Any = field(repr=False)
+    ad_inspector: Any = field(repr=False)
+    ad_sessions: ScanSessionManager = field(repr=False)
     hash_tools: CredentialAuditManager = field(repr=False)
     kerberos_hostname_resolver: Callable[[ExpandedTarget], str | None] = field(
         repr=False
@@ -138,6 +155,13 @@ class WebRuntime:
     _targets: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
     _terminal_error: dict[str, str] | None = field(default=None, repr=False)
     worker: Thread | None = field(default=None, repr=False)
+    ad_worker: Thread | None = field(default=None, repr=False)
+    _ad_lock: RLock = field(default_factory=RLock, repr=False)
+    _ad_generation: int = field(default=0, repr=False)
+    _ad_identity: dict[str, object] | None = field(default=None, repr=False)
+    _ad_coverage: list[dict[str, object]] = field(default_factory=list, repr=False)
+    _ad_authentication_method: str | None = field(default=None, repr=False)
+    _ad_terminal_error: dict[str, str] | None = field(default=None, repr=False)
 
     def reset_targets(self, generation: int) -> None:
         with self._target_lock:
@@ -194,6 +218,45 @@ class WebRuntime:
                 return None
             return dict(self._terminal_error)
 
+    def reset_ad(self, generation: int) -> None:
+        with self._ad_lock:
+            self._ad_generation = generation
+            self._ad_identity = None
+            self._ad_coverage.clear()
+            self._ad_authentication_method = None
+            self._ad_terminal_error = None
+
+    def set_ad_report(self, generation: int, report: AdInspectionReport) -> None:
+        with self._ad_lock:
+            if generation != self._ad_generation:
+                return
+            self._ad_identity = report.identity.public_payload()
+            self._ad_coverage = [item.public_payload() for item in report.coverage]
+            self._ad_authentication_method = report.authentication_method
+
+    def set_ad_error(self, generation: int, code: str, message: str) -> None:
+        with self._ad_lock:
+            if generation == self._ad_generation:
+                self._ad_terminal_error = {"code": code, "message": message}
+
+    def ad_metadata(self, generation: int) -> dict[str, object]:
+        with self._ad_lock:
+            if generation != self._ad_generation:
+                return {
+                    "identity": None,
+                    "coverage": [],
+                    "authentication_method": None,
+                    "terminal_error": None,
+                }
+            return {
+                "identity": dict(self._ad_identity) if self._ad_identity else None,
+                "coverage": [dict(item) for item in self._ad_coverage],
+                "authentication_method": self._ad_authentication_method,
+                "terminal_error": (
+                    dict(self._ad_terminal_error) if self._ad_terminal_error else None
+                ),
+            }
+
 
 class SecurityHeadersMiddleware:
     """Apply non-persistence and browser hardening headers to every response."""
@@ -222,6 +285,10 @@ class AccessInspector(Protocol):
     def __call__(self, **kwargs: object) -> InspectionResult: ...
 
 
+class AdInspector(Protocol):
+    def __call__(self, **kwargs: object) -> AdInspectionReport: ...
+
+
 @dataclass(frozen=True, slots=True)
 class _CancellationBridge:
     signal: Any = field(repr=False)
@@ -247,6 +314,7 @@ def create_app(
         [ExpandedTarget], str | None
     ] = resolve_kerberos_hostname,
     access_inspector: AccessInspector = inspect_target,
+    ad_inspector: AdInspector = inspect_directory,
 ) -> Starlette:
     runtime = WebRuntime(
         port=port,
@@ -258,6 +326,8 @@ def create_app(
         file_adapter=file_adapter or SmbProtocolFileAdapter(),
         share_discoverer=share_discoverer or ImpacketShareDiscoverer(),
         access_inspector=access_inspector,
+        ad_inspector=ad_inspector,
+        ad_sessions=ScanSessionManager(),
         hash_tools=hash_tool_manager or CredentialAuditManager(),
         kerberos_hostname_resolver=kerberos_hostname_resolver,
     )
@@ -269,6 +339,11 @@ def create_app(
         Route("/scan/events", scan_events, methods=["GET"]),
         Route("/inventory", inventory_results, methods=["GET"]),
         Route("/findings", finding_results, methods=["GET"]),
+        Route("/ad/scan", ad_scan_start, methods=["POST"]),
+        Route("/ad/scan/cancel", ad_scan_cancel, methods=["POST"]),
+        Route("/ad/scan/snapshot", ad_scan_snapshot, methods=["GET"]),
+        Route("/ad/computers", ad_computer_results, methods=["GET"]),
+        Route("/ad/findings", ad_finding_results, methods=["GET"]),
         Route("/hash-tools", hash_tools_snapshot, methods=["GET"]),
         Route("/hash-tools/wordlist", hash_wordlist_upload, methods=["PUT"]),
         Route("/hash-tools/jobs", hash_tools_start, methods=["POST"]),
@@ -313,6 +388,236 @@ async def finding_results(request: Request) -> JSONResponse:
     return JSONResponse(_result_page_payload(request, findings=True))
 
 
+async def ad_scan_snapshot(request: Request) -> JSONResponse:
+    return JSONResponse(_ad_snapshot_payload(_runtime(request)))
+
+
+async def ad_computer_results(request: Request) -> JSONResponse:
+    return JSONResponse(_ad_result_page_payload(request, findings=False))
+
+
+async def ad_finding_results(request: Request) -> JSONResponse:
+    return JSONResponse(_ad_result_page_payload(request, findings=True))
+
+
+async def ad_scan_start(request: Request) -> JSONResponse:
+    runtime = _runtime(request)
+    _protect_post(request, runtime)
+    body = await _read_json(request)
+    if runtime.sessions.snapshot.active or runtime.hash_tools.active:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": (
+                    "SMB taraması veya hash aracı çalışırken AD incelemesi "
+                    "başlatılamaz."
+                ),
+            },
+            status_code=409,
+        )
+    controller = body.get("controller")
+    domain = body.get("domain")
+    kerberos_hostname = body.get("kerberos_hostname")
+    if not isinstance(controller, str) or not valid_directory_host(controller):
+        return _ad_request_error("Domain controller hostname veya IP adresi geçersiz.")
+    if not isinstance(domain, str):
+        return _ad_request_error("Domain FQDN biçiminde girilmelidir.")
+    if kerberos_hostname is not None and (
+        not isinstance(kerberos_hostname, str)
+        or not valid_directory_host(kerberos_hostname)
+    ):
+        return _ad_request_error("Kerberos hostname geçersiz.")
+    try:
+        domain_to_base_dn(domain.strip())
+        credential = _credential_from_body(body.get("credential"))
+    except (AdInspectionError, CredentialValidationError) as error:
+        return _ad_request_error(str(error))
+    if credential.auth_mode is AuthMode.AUTO:
+        return _ad_request_error("AD incelemesi için Kerberos veya NTLM seçilmelidir.")
+    if credential.auth_mode is AuthMode.KERBEROS_ONLY:
+        effective_hostname = (kerberos_hostname or controller).strip()
+        if not effective_hostname or all(
+            character.isdigit() or character == "." for character in effective_hostname
+        ):
+            return _ad_request_error(
+                "IP ile Kerberos kullanırken domain controller hostname gereklidir."
+            )
+    if credential.domain and credential.domain.casefold() != domain.strip().casefold():
+        return _ad_request_error("Kimlik bilgisi domaini ile incelenecek domain eşleşmiyor.")
+
+    try:
+        handle = runtime.ad_sessions.begin_scan()
+    except ScanAlreadyRunning as error:
+        raise SafeHttpError(HttpErrorCode.CONFLICT) from error
+    runtime.reset_ad(handle.token.generation)
+    handle.progress.set_phase(
+        ScanPhase.INSPECTION,
+        total=1,
+        message="Active Directory LDAP kontrolleri çalışıyor.",
+        overall_percent=0,
+        overall_is_estimate=False,
+    )
+    worker = Thread(
+        target=_run_ad_inspection,
+        args=(
+            runtime,
+            handle,
+            controller.strip(),
+            domain.strip(),
+            credential,
+            kerberos_hostname.strip() if kerberos_hostname else None,
+        ),
+        name=f"nordis-ad-{handle.token.generation}",
+        daemon=True,
+    )
+    runtime.ad_worker = worker
+    worker.start()
+    return JSONResponse(
+        {
+            "ok": True,
+            "scan_id": handle.token.scan_id,
+            "generation": handle.token.generation,
+        },
+        status_code=202,
+    )
+
+
+async def ad_scan_cancel(request: Request) -> JSONResponse:
+    runtime = _runtime(request)
+    _protect_post(request, runtime)
+    token = runtime.ad_sessions.snapshot.token
+    if token is None:
+        raise SafeHttpError(HttpErrorCode.CONFLICT)
+    try:
+        runtime.ad_sessions.request_cancel(token)
+    except InvalidScanTransition as error:
+        raise SafeHttpError(HttpErrorCode.CONFLICT) from error
+    return JSONResponse(_ad_snapshot_payload(runtime), status_code=202)
+
+
+def _run_ad_inspection(
+    runtime: WebRuntime,
+    handle: ScanHandle,
+    controller: str,
+    domain: str,
+    credential: Credential,
+    kerberos_hostname: str | None,
+) -> None:
+    def publish_computer(computer: AdComputer) -> None:
+        handle.cancellation.raise_if_requested()
+        payload = computer.public_payload()
+        payload["generation"] = handle.token.generation
+        runtime.ad_sessions.upsert_inventory(
+            handle.token,
+            computer.account_name.casefold(),
+            payload,
+        )
+
+    def publish_finding(finding: AdFinding) -> None:
+        handle.cancellation.raise_if_requested()
+        payload = finding.public_payload()
+        payload["generation"] = handle.token.generation
+        runtime.ad_sessions.add_finding(handle.token, payload)
+
+    try:
+        report = runtime.ad_inspector(
+            controller=controller,
+            domain=domain,
+            credential=credential,
+            kerberos_hostname=kerberos_hostname,
+            cancellation=handle.cancellation,
+            on_computer=publish_computer,
+            on_finding=publish_finding,
+        )
+        handle.cancellation.raise_if_requested()
+        runtime.set_ad_report(handle.token.generation, report)
+        handle.progress.update_progress(
+            1,
+            expected_phase=ScanPhase.INSPECTION,
+            total=1,
+            overall_percent=100,
+            overall_is_estimate=False,
+            message="Active Directory incelemesi tamamlandı.",
+        )
+        runtime.ad_sessions.complete(handle.token)
+    except SessionScanCancelled:
+        state = runtime.ad_sessions.snapshot
+        if state.active:
+            runtime.ad_sessions.mark_cancelled(handle.token)
+    except AdInspectionError as error:
+        state = runtime.ad_sessions.snapshot
+        if state.status.value == "cancelling":
+            runtime.ad_sessions.mark_cancelled(handle.token)
+        else:
+            runtime.set_ad_error(handle.token.generation, error.code, error.safe_message)
+            if state.active:
+                runtime.ad_sessions.fail(handle.token)
+    except Exception:
+        state = runtime.ad_sessions.snapshot
+        if state.status.value == "cancelling":
+            runtime.ad_sessions.mark_cancelled(handle.token)
+        else:
+            runtime.set_ad_error(
+                handle.token.generation,
+                "AD_INSPECTION_FAILED",
+                "Active Directory incelemesi beklenmeyen bir uygulama hatasıyla durdu.",
+            )
+            if state.active:
+                runtime.ad_sessions.fail(handle.token)
+
+
+def _ad_snapshot_payload(runtime: WebRuntime) -> dict[str, object]:
+    state = runtime.ad_sessions.snapshot
+    progress = state.progress
+    payload: dict[str, object] = {
+        "status": state.status.value,
+        "generation": state.generation,
+        "scan_id": state.scan_id,
+        "computer_count": state.inventory_count,
+        "finding_count": state.finding_count,
+        "partial": state.partial,
+        "progress": None
+        if progress is None
+        else {
+            "phase": progress.phase.value,
+            "phase_completed": progress.phase_completed,
+            "phase_total": progress.phase_total,
+            "phase_percent": progress.phase_percent,
+            "message": progress.message,
+        },
+    }
+    payload.update(runtime.ad_metadata(state.generation))
+    return payload
+
+
+def _ad_result_page_payload(request: Request, *, findings: bool) -> dict[str, object]:
+    runtime = _runtime(request)
+    token = runtime.ad_sessions.snapshot.token
+    if token is None:
+        return {"items": [], "page": 1, "page_size": 100, "total_items": 0}
+    page = _positive_query_integer(request, "page", default=1)
+    page_size = _positive_query_integer(request, "page_size", default=100)
+    try:
+        result_page = (
+            runtime.ad_sessions.findings_page(token, page=page, page_size=page_size)
+            if findings
+            else runtime.ad_sessions.inventory_page(token, page=page, page_size=page_size)
+        )
+    except ValueError as error:
+        raise SafeHttpError(HttpErrorCode.BAD_REQUEST) from error
+    return {
+        "items": list(result_page.items),
+        "page": result_page.page,
+        "page_size": result_page.page_size,
+        "total_items": result_page.total_items,
+        "total_pages": result_page.total_pages,
+    }
+
+
+def _ad_request_error(message: str) -> JSONResponse:
+    return JSONResponse({"ok": False, "error": message}, status_code=422)
+
+
 async def hash_tools_snapshot(request: Request) -> JSONResponse:
     return JSONResponse(_hash_tools_payload(_runtime(request)))
 
@@ -322,6 +627,8 @@ async def hash_wordlist_upload(request: Request) -> JSONResponse:
     _protect_post(request, runtime)
     if runtime.sessions.snapshot.active:
         return _hash_tools_error("SCAN_IN_PROGRESS", status_code=409)
+    if runtime.ad_sessions.snapshot.active:
+        return _hash_tools_error("AD_INSPECTION_IN_PROGRESS", status_code=409)
     content_type = request.headers.get("content-type", "").partition(";")[0].strip()
     if content_type.casefold() not in {"application/octet-stream", "text/plain"}:
         return _hash_tools_error("INVALID_WORDLIST")
@@ -370,6 +677,8 @@ async def hash_tools_start(request: Request) -> JSONResponse:
     body = await _read_json(request)
     if runtime.sessions.snapshot.active:
         return _hash_tools_error("SCAN_IN_PROGRESS", status_code=409)
+    if runtime.ad_sessions.snapshot.active:
+        return _hash_tools_error("AD_INSPECTION_IN_PROGRESS", status_code=409)
     materials = classify_audit_material(body.get("rule_id"), body.get("full_line"))
     variant = body.get("variant")
     if not isinstance(variant, str):
@@ -416,6 +725,19 @@ async def scan_start(request: Request) -> JSONResponse:
                 "ok": False,
                 "errors": [
                     {"value": "Hash tools", "reason": "HASH_TOOL_IN_PROGRESS"}
+                ],
+            },
+            status_code=409,
+        )
+    if runtime.ad_sessions.snapshot.active:
+        return JSONResponse(
+            {
+                "ok": False,
+                "errors": [
+                    {
+                        "value": "AD İnceleme",
+                        "reason": "Active Directory incelemesi devam ediyor.",
+                    }
                 ],
             },
             status_code=409,

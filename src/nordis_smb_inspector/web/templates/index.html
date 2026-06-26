@@ -4,16 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Nordis SMB Inspector</title>
+  <title>Nordis Inspector</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body data-csrf-token="{{ csrf_token }}" data-origin="{{ app_origin }}">
   <header class="topbar">
-    <h1>NordisGlobal SMB Inspector</h1>
+    <h1>Nordis Inspector</h1>
     <nav class="workspace-navigation" aria-label="Çalışma alanları">
       <button class="workspace-navigation-item is-active" type="button"
         data-workspace-view="scan" aria-pressed="true">SMB Tarama</button>
+      <button class="workspace-navigation-item" type="button"
+        data-workspace-view="ad" aria-pressed="false">AD İnceleme</button>
       <button class="workspace-navigation-item" type="button"
         data-workspace-view="hash-tools" aria-pressed="false">
         Hash Araçları <strong id="hash-tools-navigation-count">0</strong>
@@ -305,6 +307,149 @@
               aria-label="Bulgu ayrıntısı">
               <p class="selection-placeholder">Ayrıntı için bir bulgu seç.</p>
             </aside>
+          </div>
+        </section>
+      </article>
+    </section>
+  </main>
+
+  <main id="ad-workspace" class="ad-shell" hidden>
+    <aside class="panel ad-sidebar" aria-labelledby="ad-form-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="ad-form-heading">Active Directory incelemesi</h2>
+          <p class="hint">Girilen kimliğin LDAP üzerinden görebildiği ve kullanabileceği alanları inceler.</p>
+        </div>
+      </div>
+
+      <label for="ad-controller">Domain controller</label>
+      <input id="ad-controller" type="text" autocomplete="off" spellcheck="false"
+        placeholder="dc01.xxxx.local" required>
+      <label for="ad-domain">Domain</label>
+      <input id="ad-domain" type="text" autocomplete="off" spellcheck="false"
+        placeholder="xxxx.local" required>
+
+      <fieldset class="credential-block ad-credential-block">
+        <legend>Kimlik bilgisi</legend>
+        <div class="credential-grid">
+          <div class="form-field ad-username-field">
+            <label id="ad-username-label" for="ad-username">Kullanıcı</label>
+            <input id="ad-username" type="text" autocomplete="off" spellcheck="false"
+              required>
+          </div>
+          <div class="form-field">
+            <label for="ad-credential-kind">Credential türü</label>
+            <select id="ad-credential-kind">
+              <option value="password">Parola</option>
+              <option value="nt_hash">NT hash</option>
+              <option value="ccache">CCache</option>
+            </select>
+          </div>
+          <div id="ad-secret-field" class="form-field credential-secret-field">
+            <label id="ad-secret-label" for="ad-secret">Parola</label>
+            <input id="ad-secret" type="password" autocomplete="new-password"
+              spellcheck="false" required>
+          </div>
+          <div id="ad-ccache-field" class="form-field credential-file-field" hidden>
+            <label for="ad-ccache">CCache dosyası</label>
+            <input id="ad-ccache" type="file" accept=".ccache" disabled>
+          </div>
+          <div class="form-field credential-auth-field">
+            <label for="ad-auth-mode">Kimlik doğrulama</label>
+            <select id="ad-auth-mode">
+              <option value="kerberos_only">Kerberos (Önerilen)</option>
+              <option value="ntlm_only">NTLM</option>
+            </select>
+          </div>
+          <div id="ad-kerberos-hostname-field" class="form-field credential-auth-field">
+            <label for="ad-kerberos-hostname">Kerberos hostname</label>
+            <input id="ad-kerberos-hostname" type="text" autocomplete="off"
+              spellcheck="false" placeholder="dc01.xxxx.local">
+            <p class="hint">Domain controller alanında IP kullanılıyorsa gereklidir.</p>
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="actions">
+        <button id="start-ad-scan" type="button">İncelemeyi başlat</button>
+        <button id="cancel-ad-scan" class="secondary-button" type="button" disabled>
+          İptal et
+        </button>
+      </div>
+      <div id="ad-errors" class="error-list" hidden aria-live="polite"></div>
+    </aside>
+
+    <section class="ad-workspace" aria-label="Active Directory çalışma alanı">
+      <article class="panel ad-status-panel">
+        <div class="ad-status-copy">
+          <span id="ad-status-badge" class="state idle">Hazır</span>
+          <div>
+            <h2 id="ad-phase">İnceleme yok</h2>
+            <p id="ad-progress-message" class="hint">Henüz Active Directory incelemesi başlatılmadı.</p>
+          </div>
+        </div>
+        <div class="metric-grid ad-metrics">
+          <div><strong id="ad-capability-count">0</strong><span>Yapılabilen</span></div>
+          <div><strong id="ad-environment-count">0</strong><span>Ortam</span></div>
+          <div><strong id="ad-computer-count">0</strong><span>Bilgisayar</span></div>
+        </div>
+      </article>
+
+      <article id="ad-identity-panel" class="panel ad-identity-panel" hidden>
+        <div>
+          <span>Bağlanan kimlik</span>
+          <strong id="ad-identity-principal"></strong>
+        </div>
+        <div>
+          <span>Kimlik doğrulama</span>
+          <strong id="ad-identity-auth"></strong>
+        </div>
+        <div>
+          <span>Etkin grup</span>
+          <strong id="ad-identity-groups"></strong>
+        </div>
+      </article>
+
+      <article class="panel ad-results">
+        <div class="result-tabs" role="tablist" aria-label="Active Directory sonuçları">
+          <button class="result-tab is-active" type="button" role="tab"
+            aria-selected="true" data-ad-tab="capability">
+            Bu kimlikle yapılabilenler <strong id="ad-capability-tab-count">0</strong>
+          </button>
+          <button class="result-tab" type="button" role="tab" aria-selected="false"
+            data-ad-tab="environment">
+            Ortam zayıflıkları <strong id="ad-environment-tab-count">0</strong>
+          </button>
+          <button class="result-tab" type="button" role="tab" aria-selected="false"
+            data-ad-tab="computers">
+            Bilgisayarlar <strong id="ad-computer-tab-count">0</strong>
+          </button>
+          <button class="result-tab" type="button" role="tab" aria-selected="false"
+            data-ad-tab="coverage">Kapsam <strong id="ad-coverage-tab-count">0</strong></button>
+        </div>
+        <section class="ad-result-panel" data-ad-panel="capability">
+          <div id="ad-capability-list" class="ad-finding-list">
+            <p class="group-empty-state">Henüz sonuç yok.</p>
+          </div>
+        </section>
+        <section class="ad-result-panel" data-ad-panel="environment" hidden>
+          <div id="ad-environment-list" class="ad-finding-list">
+            <p class="group-empty-state">Henüz sonuç yok.</p>
+          </div>
+        </section>
+        <section class="ad-result-panel" data-ad-panel="computers" hidden>
+          <div class="table-frame ad-computer-frame">
+            <table class="ad-computer-table">
+              <thead><tr><th>Hostname</th><th>Hesap</th><th>İşletim sistemi</th><th>Durum</th></tr></thead>
+              <tbody id="ad-computer-body">
+                <tr class="table-empty-row"><td colspan="4">Henüz bilgisayar envanteri yok.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="ad-result-panel" data-ad-panel="coverage" hidden>
+          <div id="ad-coverage-list" class="ad-coverage-list">
+            <p class="group-empty-state">Henüz kontrol çalıştırılmadı.</p>
           </div>
         </section>
       </article>
