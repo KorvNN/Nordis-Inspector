@@ -44,6 +44,16 @@ body {
   min-height: 82px;
   border-bottom: 1px solid var(--line);
 }
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+}
+.brand-icon {
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
 .workspace-navigation {
   display: flex;
   align-self: stretch;

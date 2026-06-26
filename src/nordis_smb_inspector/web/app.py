@@ -108,8 +108,9 @@ _STATIC_ASSETS: dict[str, str] = {
     "app-history.js": "text/javascript; charset=utf-8",
     "app-i18n.js": "text/javascript; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
-    "favicon.svg": "image/svg+xml",
+    "nordis-icon.svg": "image/svg+xml",
 }
+_STATIC_ASSET_ALIASES = {"favicon.svg": "nordis-icon.svg"}
 
 _templates = Environment(
     loader=PackageLoader("nordis_smb_inspector.web", "templates"),
@@ -1165,6 +1166,7 @@ async def scan_events(request: Request) -> StreamingResponse:
 
 
 def _static_asset_response(asset_name: str) -> Response:
+    asset_name = _STATIC_ASSET_ALIASES.get(asset_name, asset_name)
     media_type = _STATIC_ASSETS.get(asset_name)
     if media_type is None:
         raise SafeHttpError(HttpErrorCode.NOT_FOUND)

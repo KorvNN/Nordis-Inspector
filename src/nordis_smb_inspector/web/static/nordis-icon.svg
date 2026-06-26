@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
+  <title>Nordis Inspector</title>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#07100f"/>
+  <rect x="3.5" y="3.5" width="57" height="57" rx="13.5" fill="none" stroke="#5fe1b7" stroke-opacity=".28" stroke-width="3"/>
+  <path d="M14 47V17h8l18 20V17h9v30h-8L23 27v20Z" fill="#5fe1b7"/>
+  <circle cx="45" cy="44" r="8" fill="#07100f" stroke="#edf5f2" stroke-width="3"/>
+  <path d="m51 50 6 6" fill="none" stroke="#edf5f2" stroke-width="4" stroke-linecap="round"/>
+</svg>
