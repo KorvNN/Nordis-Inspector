@@ -1,5 +1,12 @@
 """Principal-scoped directory access evidence for Nordis Inspector."""
 
+from .directory import (
+    DirectoryAccessError,
+    DirectoryClient,
+    DirectoryQuery,
+    DirectoryRecord,
+    ImpacketDirectoryClient,
+)
 from .models import (
     AccessCapability,
     CapabilityKind,
@@ -17,7 +24,12 @@ __all__ = [
     "Coverage",
     "CoverageState",
     "DirectoryIdentity",
+    "DirectoryAccessError",
+    "DirectoryClient",
+    "DirectoryQuery",
+    "DirectoryRecord",
     "EvidenceState",
     "IdentityAccessReport",
     "IdentityGroup",
+    "ImpacketDirectoryClient",
 ]
