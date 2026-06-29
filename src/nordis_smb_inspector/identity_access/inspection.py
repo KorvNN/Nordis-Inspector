@@ -81,6 +81,17 @@ def inspect_identity_access(
                 add_capability,
             )
         )
+        cancellation.raise_if_requested()
+        from .acl import inspect_direct_acl_capabilities
+
+        coverage.append(
+            inspect_direct_acl_capabilities(
+                client,
+                identity,
+                cancellation,
+                add_capability,
+            )
+        )
         return IdentityAccessReport(
             controller=controller,
             authentication_method=client.authentication_method,
