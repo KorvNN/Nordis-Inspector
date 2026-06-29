@@ -7,6 +7,7 @@ from .directory import (
     DirectoryRecord,
     ImpacketDirectoryClient,
 )
+from .inspection import inspect_identity_access
 from .models import (
     AccessCapability,
     CapabilityKind,
@@ -32,4 +33,5 @@ __all__ = [
     "IdentityAccessReport",
     "IdentityGroup",
     "ImpacketDirectoryClient",
+    "inspect_identity_access",
 ]

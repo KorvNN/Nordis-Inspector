@@ -48,6 +48,7 @@ class DirectoryIdentity:
     domain: str
     sid: str
     groups: tuple[IdentityGroup, ...] = field(default_factory=tuple, repr=False)
+    token_complete: bool = field(default=True, repr=False)
 
     @property
     def token_sids(self) -> frozenset[str]:
