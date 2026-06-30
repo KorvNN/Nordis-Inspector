@@ -52,12 +52,18 @@ from nordis_smb_inspector.core.session import (
     ScanHandle,
     ScanSessionManager,
 )
+from nordis_smb_inspector.core.session import (
+    ScanCancelled as SessionScanCancelled,
+)
 from nordis_smb_inspector.core.targets import (
     ExpandedTarget,
     TargetParseError,
     TargetPlan,
     parse_targets,
 )
+from nordis_smb_inspector.identity_access.directory import DirectoryAccessError
+from nordis_smb_inspector.identity_access.inspection import inspect_identity_access
+from nordis_smb_inspector.identity_access.models import IdentityAccessReport
 from nordis_smb_inspector.smb.cancellation import (
     ScanCancelled as SmbScanCancelled,
 )
@@ -72,6 +78,7 @@ from nordis_smb_inspector.smb.inspection import (
 )
 from nordis_smb_inspector.smb.models import (
     InventoryEntry,
+    InventoryEntryKind,
     TargetStage,
     TargetStatus,
 )
@@ -101,6 +108,7 @@ from nordis_smb_inspector.web.security import (
 _MAX_CCACHE_BYTES = 1024 * 1024
 _MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
 _MAX_TARGET_WORKERS = 32
+_MAX_DIRECTORY_CANDIDATES = 3
 _DEFAULT_MAX_DEPTH = 32
 _STATIC_ASSETS: dict[str, str] = {
     "app.css": "text/css; charset=utf-8",
@@ -130,6 +138,7 @@ class WebRuntime:
     file_adapter: Any = field(repr=False)
     share_discoverer: Any = field(repr=False)
     access_inspector: Any = field(repr=False)
+    identity_access_inspector: Any = field(repr=False)
     hash_tools: CredentialAuditManager = field(repr=False)
     kerberos_hostname_resolver: Callable[[ExpandedTarget], str | None] = field(
         repr=False
@@ -138,6 +147,13 @@ class WebRuntime:
     _target_generation: int = field(default=0, repr=False)
     _targets: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
     _terminal_error: dict[str, str] | None = field(default=None, repr=False)
+    _identity_status: str = field(default="not_checked", repr=False)
+    _identity_controller: str | None = field(default=None, repr=False)
+    _identity_message: str | None = field(
+        default="Henüz tarama başlatılmadı.", repr=False
+    )
+    _identity_error: dict[str, str] | None = field(default=None, repr=False)
+    _identity_report: IdentityAccessReport | None = field(default=None, repr=False)
     worker: Thread | None = field(default=None, repr=False)
 
     def reset_targets(self, generation: int) -> None:
@@ -145,6 +161,11 @@ class WebRuntime:
             self._target_generation = generation
             self._targets.clear()
             self._terminal_error = None
+            self._identity_status = "pending"
+            self._identity_controller = None
+            self._identity_message = "SMB taraması tamamlandıktan sonra değerlendirilecek."
+            self._identity_error = None
+            self._identity_report = None
 
     def update_target(self, generation: int, payload: dict[str, object]) -> bool:
         key = str(payload["address"])
@@ -195,6 +216,87 @@ class WebRuntime:
                 return None
             return dict(self._terminal_error)
 
+    def set_identity_running(self, generation: int, controller: str) -> bool:
+        with self._target_lock:
+            if generation != self._target_generation:
+                return False
+            self._identity_status = "running"
+            self._identity_controller = controller
+            self._identity_message = "Verilen kimliğin doğrudan erişimleri inceleniyor."
+            self._identity_error = None
+            self._identity_report = None
+            return True
+
+    def set_identity_report(
+        self,
+        generation: int,
+        report: IdentityAccessReport,
+    ) -> bool:
+        with self._target_lock:
+            if generation != self._target_generation:
+                return False
+            self._identity_status = "completed"
+            self._identity_controller = report.controller
+            self._identity_message = None
+            self._identity_error = None
+            self._identity_report = report
+            return True
+
+    def set_identity_error(
+        self,
+        generation: int,
+        *,
+        controller: str | None,
+        code: str,
+        message: str,
+    ) -> bool:
+        with self._target_lock:
+            if generation != self._target_generation:
+                return False
+            self._identity_status = "failed"
+            self._identity_controller = controller
+            self._identity_message = None
+            self._identity_error = {"code": code, "message": message}
+            self._identity_report = None
+            return True
+
+    def set_identity_not_checked(self, generation: int, message: str) -> bool:
+        with self._target_lock:
+            if generation != self._target_generation:
+                return False
+            self._identity_status = "not_checked"
+            self._identity_controller = None
+            self._identity_message = message
+            self._identity_error = None
+            self._identity_report = None
+            return True
+
+    def identity_snapshot(self, generation: int) -> dict[str, object]:
+        with self._target_lock:
+            if generation != self._target_generation:
+                return {
+                    "status": "not_checked",
+                    "controller": None,
+                    "message": "Bu tarama nesli artık etkin değil.",
+                    "error": None,
+                    "report": None,
+                }
+            return {
+                "status": self._identity_status,
+                "controller": self._identity_controller,
+                "message": self._identity_message,
+                "error": (
+                    dict(self._identity_error)
+                    if self._identity_error is not None
+                    else None
+                ),
+                "report": (
+                    self._identity_report.public_payload()
+                    if self._identity_report is not None
+                    else None
+                ),
+            }
+
 
 class SecurityHeadersMiddleware:
     """Apply non-persistence and browser hardening headers to every response."""
@@ -223,6 +325,16 @@ class AccessInspector(Protocol):
     def __call__(self, **kwargs: object) -> InspectionResult: ...
 
 
+class IdentityAccessInspector(Protocol):
+    def __call__(self, **kwargs: object) -> IdentityAccessReport: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _DirectoryCandidate:
+    controller: str
+    kerberos_hostname: str | None
+
+
 @dataclass(frozen=True, slots=True)
 class _CancellationBridge:
     signal: Any = field(repr=False)
@@ -248,6 +360,7 @@ def create_app(
         [ExpandedTarget], str | None
     ] = resolve_kerberos_hostname,
     access_inspector: AccessInspector = inspect_target,
+    identity_access_inspector: IdentityAccessInspector = inspect_identity_access,
 ) -> Starlette:
     runtime = WebRuntime(
         port=port,
@@ -259,6 +372,7 @@ def create_app(
         file_adapter=file_adapter or SmbProtocolFileAdapter(),
         share_discoverer=share_discoverer or ImpacketShareDiscoverer(),
         access_inspector=access_inspector,
+        identity_access_inspector=identity_access_inspector,
         hash_tools=hash_tool_manager or CredentialAuditManager(),
         kerberos_hostname_resolver=kerberos_hostname_resolver,
     )
@@ -550,6 +664,7 @@ def _snapshot_payload(runtime: WebRuntime) -> dict[str, object]:
         "partial": state.partial,
         "terminal_reason": state.terminal_reason.value if state.terminal_reason else None,
         "terminal_error": runtime.terminal_error_snapshot(state.generation),
+        "identity_access": runtime.identity_snapshot(state.generation),
         "targets": runtime.target_snapshot(state.generation),
         "progress": None
         if progress is None
@@ -618,9 +733,29 @@ def _run_access_scan(
     completed = 0
     pipeline_failed = False
     cancellation = _CancellationBridge(handle.cancellation)
+    candidate_lock = RLock()
+    directory_candidates: dict[str, _DirectoryCandidate] = {}
     executor = AccessPipelineExecutor(
         AccessPipelineSettings(max_concurrency=_MAX_TARGET_WORKERS)
     )
+
+    def remember_directory_candidate(
+        entry: InventoryEntry,
+        kerberos_hostname: str | None,
+    ) -> None:
+        if not _is_directory_candidate_share(entry):
+            return
+        candidate = _DirectoryCandidate(
+            controller=entry.target,
+            kerberos_hostname=kerberos_hostname,
+        )
+        with candidate_lock:
+            current = directory_candidates.get(candidate.controller)
+            if current is None or (
+                current.kerberos_hostname is None
+                and candidate.kerberos_hostname is not None
+            ):
+                directory_candidates[candidate.controller] = candidate
 
     def inspect_one(
         target: ExpandedTarget,
@@ -661,6 +796,7 @@ def _run_access_scan(
                 runtime.events.publish("target.changed", payload)
 
         def publish_inventory(entry: InventoryEntry) -> None:
+            remember_directory_candidate(entry, kerberos_hostname)
             payload = _inventory_payload(entry, generation=handle.token.generation)
             runtime.sessions.upsert_inventory(
                 handle.token,
@@ -748,9 +884,23 @@ def _run_access_scan(
         state = runtime.sessions.snapshot
         if state.active:
             if pipeline_failed:
+                runtime.set_identity_not_checked(
+                    handle.token.generation,
+                    "SMB taraması uygulama hatasıyla durduğu için kimlik erişimi "
+                    "incelenmedi.",
+                )
                 runtime.sessions.fail(handle.token)
             else:
-                runtime.sessions.complete(handle.token)
+                with candidate_lock:
+                    candidates = tuple(directory_candidates.values())
+                _run_identity_access_stage(
+                    runtime,
+                    handle,
+                    credential,
+                    candidates,
+                )
+                if runtime.sessions.snapshot.active:
+                    runtime.sessions.complete(handle.token)
     except Exception:
         runtime.set_terminal_error(
             handle.token.generation,
@@ -762,8 +912,125 @@ def _run_access_scan(
         if state.active:
             runtime.sessions.fail(handle.token)
     finally:
+        identity = runtime.identity_snapshot(handle.token.generation)
+        if identity["status"] in {"pending", "running"}:
+            runtime.set_identity_not_checked(
+                handle.token.generation,
+                "SMB taraması tamamlanamadığı için kimlik erişimi incelenmedi.",
+            )
         _ensure_terminal_error(runtime, handle)
         runtime.events.publish("snapshot", _snapshot_payload(runtime))
+
+
+def _run_identity_access_stage(
+    runtime: WebRuntime,
+    handle: ScanHandle,
+    credential: Credential,
+    candidates: tuple[_DirectoryCandidate, ...],
+) -> None:
+    generation = handle.token.generation
+    try:
+        handle.cancellation.raise_if_requested()
+    except SessionScanCancelled:
+        runtime.set_identity_not_checked(
+            generation,
+            "Tarama iptal edildiği için kimlik erişimi incelenmedi.",
+        )
+        return
+
+    ordered = sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate.kerberos_hostname is None,
+            candidate.controller,
+        ),
+    )
+    if credential.auth_mode is AuthMode.KERBEROS_ONLY:
+        ordered = [
+            candidate
+            for candidate in ordered
+            if candidate.kerberos_hostname is not None
+        ]
+    usable = tuple(ordered[:_MAX_DIRECTORY_CANDIDATES])
+    if not usable:
+        if candidates and credential.auth_mode is AuthMode.KERBEROS_ONLY:
+            message = (
+                "Kerberos için doğrulanmış bir domain controller FQDN'i "
+                "çözümlenemedi."
+            )
+        else:
+            message = (
+                "SMB taramasında SYSVOL veya NETLOGON share'i görülen bir "
+                "domain controller bulunamadı."
+            )
+        runtime.set_identity_not_checked(generation, message)
+        return
+
+    handle.progress.set_phase(
+        ScanPhase.IDENTITY_ACCESS,
+        total=len(usable),
+        message="Verilen kimliğin doğrudan directory erişimleri inceleniyor.",
+        overall_is_estimate=False,
+    )
+    runtime.events.publish("snapshot", _snapshot_payload(runtime))
+
+    last_error = (
+        "IDENTITY_ACCESS_UNAVAILABLE",
+        "Kimlik erişimi incelemesi tamamlanamadı.",
+        None,
+    )
+    for index, candidate in enumerate(usable, start=1):
+        try:
+            handle.cancellation.raise_if_requested()
+            runtime.set_identity_running(generation, candidate.controller)
+            runtime.events.publish("snapshot", _snapshot_payload(runtime))
+            report = runtime.identity_access_inspector(
+                controller=candidate.controller,
+                kerberos_hostname=candidate.kerberos_hostname,
+                credential=credential,
+                cancellation=handle.cancellation,
+            )
+        except SessionScanCancelled:
+            runtime.set_identity_not_checked(
+                generation,
+                "Tarama iptal edildiği için kimlik erişimi tamamlanmadı.",
+            )
+            return
+        except DirectoryAccessError as error:
+            last_error = (error.code, error.safe_message, candidate.controller)
+        except Exception:
+            last_error = (
+                "IDENTITY_ACCESS_FAILED",
+                "Kimlik erişimi incelemesi beklenmeyen bir uygulama hatasıyla durdu.",
+                candidate.controller,
+            )
+        else:
+            handle.progress.update_progress(
+                index,
+                expected_phase=ScanPhase.IDENTITY_ACCESS,
+                total=index,
+                message="Kimliğin doğrudan erişimleri incelendi.",
+            )
+            runtime.set_identity_report(generation, report)
+            runtime.events.publish("snapshot", _snapshot_payload(runtime))
+            return
+
+        handle.progress.update_progress(
+            index,
+            expected_phase=ScanPhase.IDENTITY_ACCESS,
+            total=len(usable),
+            message=f"{index} domain controller adayı denendi.",
+        )
+        runtime.events.publish("snapshot", _snapshot_payload(runtime))
+
+    code, message, controller = last_error
+    runtime.set_identity_error(
+        generation,
+        controller=controller,
+        code=code,
+        message=message,
+    )
+    runtime.events.publish("snapshot", _snapshot_payload(runtime))
 
 
 def _ensure_terminal_error(runtime: WebRuntime, handle: ScanHandle) -> None:
@@ -976,6 +1243,13 @@ def _inventory_payload(
         "error_name": entry.error.symbolic_name if entry.error is not None else None,
         "error_message": entry.error.safe_message if entry.error is not None else None,
     }
+
+
+def _is_directory_candidate_share(entry: InventoryEntry) -> bool:
+    return (
+        entry.kind is InventoryEntryKind.SHARE
+        and entry.share_name.casefold() in {"sysvol", "netlogon"}
+    )
 
 
 def _finding_payload(

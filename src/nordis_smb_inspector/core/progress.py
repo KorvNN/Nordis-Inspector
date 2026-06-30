@@ -19,6 +19,7 @@ class ScanPhase(StrEnum):
     SHARE_DISCOVERY = "share_discovery"
     FILE_INVENTORY = "file_inventory"
     CONTENT_SCAN = "content_scan"
+    IDENTITY_ACCESS = "identity_access"
     CANCELLING = "cancelling"
     CANCELLED = "cancelled"
     COMPLETED = "completed"
