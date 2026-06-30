@@ -31,6 +31,7 @@ let detectionRulePackLabel;
 let displayValue;
 let formatFileSize;
 let replaceFindings;
+let replaceIdentityAccess;
 let replaceInventory;
 let replaceTargets;
 let setSelectionPlaceholder;
@@ -44,6 +45,7 @@ function configureHistory(dependencies) {
     displayValue,
     formatFileSize,
     replaceFindings,
+    replaceIdentityAccess,
     replaceInventory,
     replaceTargets,
     setSelectionPlaceholder,
@@ -111,6 +113,7 @@ function writeHistory(history) {
         targets_snapshot: [],
         inventory_items: [],
         finding_items: [],
+        identity_access: null,
         history_incomplete: true,
       }];
       try {
@@ -380,6 +383,7 @@ function loadHistoryItem(item) {
   replaceTargets(item.targets_snapshot ?? []);
   replaceInventory(item.inventory_items ?? []);
   replaceFindings(item.finding_items ?? []);
+  replaceIdentityAccess(item.identity_access ?? null);
   activateResultTab("findings");
 }
 

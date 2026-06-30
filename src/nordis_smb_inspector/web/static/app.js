@@ -15,6 +15,11 @@ import {
   writeHistory,
 } from "./app-history.js";
 import {
+  configureIdentityAccess,
+  currentIdentityAccess,
+  renderIdentityAccess,
+} from "./app-identity.js";
+import {
   EN_CATEGORY_LABELS,
   EN_FINDING_METHOD_LABELS,
   EN_FINDING_RULE_LABELS,
@@ -1183,6 +1188,7 @@ function clearResults() {
   setSelectionPlaceholder(findingSelectionDetail, "Ayrıntı için bir bulgu seç.");
   renderInventory();
   renderFindings();
+  renderIdentityAccess(null);
 }
 
 function showErrors(errors) {
@@ -1555,12 +1561,14 @@ function saveCompletedScan(state) {
     targets_snapshot: [...targetStore.values()],
     inventory_items: [...inventoryStore.values()],
     finding_items: [...findingStore.values()],
+    identity_access: currentIdentityAccess(),
   };
   if (existing) {
     const resultsUnchanged = JSON.stringify({
       targets_snapshot: existing.targets_snapshot ?? [],
       inventory_items: existing.inventory_items ?? [],
       finding_items: existing.finding_items ?? [],
+      identity_access: existing.identity_access ?? null,
     }) === JSON.stringify(snapshot);
     const inputsUnchanged = capturedInputs === null || capturedInputs === undefined || JSON.stringify({
       name: existing.name ?? "",
@@ -1620,6 +1628,7 @@ function exportResults() {
     targets: [...targetStore.values()],
     inventory: [...inventoryStore.values()],
     findings: [...findingStore.values()],
+    identity_access: currentIdentityAccess(),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json"});
   const link = document.createElement("a");
@@ -1746,6 +1755,7 @@ function setScanState(state) {
       : localizedMap(STATUS_MESSAGES, EN_STATUS_MESSAGES, status) ?? "";
   }
   document.querySelector("#progress-message").textContent = progressMessage;
+  renderIdentityAccess(state.identity_access);
   saveCompletedScan(state);
 
   document.querySelector("#inventory-count").textContent = state.inventory_count ?? 0;
@@ -1851,6 +1861,7 @@ configureHashTools({
   hashJobLabel,
   mutationHeaders,
 });
+configureIdentityAccess({displayValue, statusTone});
 configureHistory({
   activateResultTab,
   detailList,
@@ -1858,6 +1869,7 @@ configureHistory({
   displayValue,
   formatFileSize,
   replaceFindings,
+  replaceIdentityAccess: renderIdentityAccess,
   replaceInventory,
   replaceTargets,
   setSelectionPlaceholder,

@@ -7,6 +7,7 @@
   <title>Nordis Inspector</title>
   <link rel="icon" href="/static/nordis-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/app-identity.css">
 </head>
 <body data-csrf-token="{{ csrf_token }}" data-origin="{{ app_origin }}">
   <header class="topbar">
@@ -185,6 +186,10 @@
             aria-selected="true" aria-controls="targets-panel" data-result-tab="targets">
             Hedefler <strong data-workspace-count="targets">0</strong>
           </button>
+          <button id="identity-tab" class="result-tab" type="button" role="tab"
+            aria-selected="false" aria-controls="identity-panel" data-result-tab="identity">
+            Kimlik erişimi <strong id="identity-tab-count">0</strong>
+          </button>
           <button id="inventory-tab" class="result-tab" type="button" role="tab"
             aria-selected="false" aria-controls="inventory-panel" data-result-tab="inventory">
             Envanter <strong id="inventory-tab-count">0</strong>
@@ -251,6 +256,23 @@
               aria-label="Hedef ayrıntısı">
               <p class="selection-placeholder">Ayrıntı için bir hedef seç.</p>
             </aside>
+          </div>
+        </section>
+
+        <section id="identity-panel" class="result-tab-panel identity-panel" role="tabpanel"
+          aria-labelledby="identity-tab" data-result-panel="identity" hidden>
+          <header class="identity-panel-heading">
+            <div>
+              <h3>Bu kimlikle erişilebilenler</h3>
+              <p>SMB taramasında görülen domain controller üzerinde, girilen kullanıcıyla doğrudan kullanılabilecek erişimleri gösterir.</p>
+            </div>
+            <span id="identity-access-status" class="status-value">İncelenmedi</span>
+          </header>
+          <div id="identity-access-content" class="identity-access-content" aria-live="polite">
+            <div class="identity-empty-state">
+              <strong>Henüz kimlik erişimi incelemesi yok.</strong>
+              <p>Önce bir SMB taraması başlatın.</p>
+            </div>
           </div>
         </section>
 
