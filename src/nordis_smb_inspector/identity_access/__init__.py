@@ -7,6 +7,7 @@ from .directory import (
     DirectoryRecord,
     ImpacketDirectoryClient,
 )
+from .hostname import discover_directory_hostname
 from .inspection import inspect_identity_access
 from .models import (
     AccessCapability,
@@ -29,6 +30,7 @@ __all__ = [
     "DirectoryClient",
     "DirectoryQuery",
     "DirectoryRecord",
+    "discover_directory_hostname",
     "EvidenceState",
     "IdentityAccessReport",
     "IdentityGroup",

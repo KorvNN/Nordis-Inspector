@@ -62,6 +62,7 @@ from nordis_smb_inspector.core.targets import (
     parse_targets,
 )
 from nordis_smb_inspector.identity_access.directory import DirectoryAccessError
+from nordis_smb_inspector.identity_access.hostname import discover_directory_hostname
 from nordis_smb_inspector.identity_access.inspection import inspect_identity_access
 from nordis_smb_inspector.identity_access.models import IdentityAccessReport
 from nordis_smb_inspector.smb.cancellation import (
@@ -141,6 +142,7 @@ class WebRuntime:
     share_discoverer: Any = field(repr=False)
     access_inspector: Any = field(repr=False)
     identity_access_inspector: Any = field(repr=False)
+    directory_hostname_resolver: Callable[[str], str | None] = field(repr=False)
     hash_tools: CredentialAuditManager = field(repr=False)
     kerberos_hostname_resolver: Callable[[ExpandedTarget], str | None] = field(
         repr=False
@@ -363,6 +365,9 @@ def create_app(
     ] = resolve_kerberos_hostname,
     access_inspector: AccessInspector = inspect_target,
     identity_access_inspector: IdentityAccessInspector = inspect_identity_access,
+    directory_hostname_resolver: Callable[
+        [str], str | None
+    ] = discover_directory_hostname,
 ) -> Starlette:
     runtime = WebRuntime(
         port=port,
@@ -375,6 +380,7 @@ def create_app(
         share_discoverer=share_discoverer or ImpacketShareDiscoverer(),
         access_inspector=access_inspector,
         identity_access_inspector=identity_access_inspector,
+        directory_hostname_resolver=directory_hostname_resolver,
         hash_tools=hash_tool_manager or CredentialAuditManager(),
         kerberos_hostname_resolver=kerberos_hostname_resolver,
     )
@@ -940,8 +946,25 @@ def _run_identity_access_stage(
         )
         return
 
+    resolved_candidates: list[_DirectoryCandidate] = []
+    for candidate in candidates:
+        kerberos_hostname = candidate.kerberos_hostname
+        if kerberos_hostname is None and credential.auth_mode is not AuthMode.NTLM_ONLY:
+            try:
+                kerberos_hostname = runtime.directory_hostname_resolver(
+                    candidate.controller
+                )
+            except Exception:
+                kerberos_hostname = None
+        resolved_candidates.append(
+            _DirectoryCandidate(
+                controller=candidate.controller,
+                kerberos_hostname=kerberos_hostname,
+            )
+        )
+
     ordered = sorted(
-        candidates,
+        resolved_candidates,
         key=lambda candidate: (
             candidate.kerberos_hostname is None,
             candidate.controller,
