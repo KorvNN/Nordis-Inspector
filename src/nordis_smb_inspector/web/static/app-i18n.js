@@ -499,7 +499,7 @@ const LANGUAGE_TEXT = {
     "Kuruma özgü adlar": "Organization-specific names",
     "Birden fazla adı virgül veya yeni satırla ayırın.": "Separate multiple names with commas or new lines.",
     "Terimleri ekle": "Add terms",
-    "Otomatik Kelime Tespiti": "Automatic Word Detection",
+    "Otomatik Kural Tespiti": "Automatic Rule Detection",
     "Tespit kuralı paketleri": "Detection rule packs",
     "Genel kimlik bilgileri ve gizli değerler": "General credentials and secrets",
     "Windows ve Active Directory verileri": "Windows and Active Directory material",

@@ -902,6 +902,10 @@ def _scan_file(
     document_stream: RemoteRangeIO | None = None
     partial = False
     active_path = entry.relative_path
+    pending_wordlist_matches: dict[int, list[LineMatch]] = {}
+
+    def queue_wordlist_match(match: LineMatch) -> None:
+        pending_wordlist_matches.setdefault(match.line_number, []).append(match)
 
     def publish_wordlist_match(match: LineMatch) -> None:
         counts.findings += 1
@@ -919,10 +923,21 @@ def _scan_file(
         )
 
     def publish_pattern_matches(line_number: int, line: str) -> None:
-        if not detect_patterns:
-            return
-        for match in detect_line_patterns(line, line_number, rules=pattern_rules):
+        pattern_matches = (
+            detect_line_patterns(line, line_number, rules=pattern_rules)
+            if detect_patterns
+            else ()
+        )
+        for match in pattern_matches:
             publish_pattern_match(match)
+        for wordlist_match in pending_wordlist_matches.pop(line_number, ()):
+            overlaps_pattern = any(
+                span.start < pattern.end and pattern.start < span.end
+                for span in wordlist_match.spans
+                for pattern in pattern_matches
+            )
+            if not overlaps_pattern:
+                publish_wordlist_match(wordlist_match)
 
     def publish_pattern_match(match: PatternMatch) -> None:
         counts.findings += 1
@@ -972,7 +987,7 @@ def _scan_file(
             search_terms,
             options=MatchOptions(case_sensitive=False),
             on_line=publish_pattern_matches,
-            on_match=publish_wordlist_match,
+            on_match=queue_wordlist_match,
             retain_matches=False,
             legacy_detection_sample_bytes=256 * 1024,
         ).status
