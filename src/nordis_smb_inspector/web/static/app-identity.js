@@ -294,39 +294,6 @@ function smbAccessCard(item, state) {
   return card;
 }
 
-function identityOutcome(report, capabilities, smbEvidence) {
-  const totalEvidence = capabilities.length + smbEvidence.usable.length;
-  const outcome = document.createElement("section");
-  outcome.className = `identity-outcome ${totalEvidence > 0 ? "has-evidence" : "is-empty"}`;
-  const eyebrow = document.createElement("span");
-  eyebrow.textContent = currentLanguage === "en" ? "RESULT" : "SONUÇ";
-  const title = document.createElement("h3");
-  if (totalEvidence > 0) {
-    title.textContent = currentLanguage === "en"
-      ? `${totalEvidence.toLocaleString(numberLocale())} directly usable access items confirmed`
-      : `${totalEvidence.toLocaleString(numberLocale())} doğrudan erişim doğrulandı`;
-  } else {
-    title.textContent = currentLanguage === "en"
-      ? "No directly usable access was confirmed"
-      : "Doğrudan kullanılabilir erişim doğrulanmadı";
-  }
-  const copy = document.createElement("p");
-  copy.textContent = currentLanguage === "en"
-    ? `${smbEvidence.usable.length.toLocaleString(numberLocale())} readable SMB shares and ${capabilities.length.toLocaleString(numberLocale())} directly usable AD rights were found.`
-    : `${smbEvidence.usable.length.toLocaleString(numberLocale())} okunabilir SMB share ve ${capabilities.length.toLocaleString(numberLocale())} doğrudan kullanılabilir AD yetkisi bulundu.`;
-  outcome.append(eyebrow, title, copy);
-
-  if (report.partial === true) {
-    const warning = document.createElement("p");
-    warning.className = "identity-outcome-warning";
-    warning.textContent = currentLanguage === "en"
-      ? "The AD rights result is incomplete; unverified areas were not treated as no access."
-      : "AD yetki sonucu eksik; doğrulanamayan alanlar erişim yok kabul edilmedi.";
-    outcome.append(warning);
-  }
-  return outcome;
-}
-
 function capabilityTitle(capability) {
   if (currentLanguage !== "en") return displayValue(capability.title);
   return EN_CAPABILITY_TITLES[capability.capability_id]
@@ -457,7 +424,7 @@ function renderIdentityAccess(payload) {
 
   const reportIsPartial = status === "completed" && report?.partial === true;
   identityAccessStatus.textContent = reportIsPartial
-    ? currentLanguage === "en" ? "Partial coverage" : "Kısmi kapsam"
+    ? currentLanguage === "en" ? "AD result incomplete" : "AD sonucu eksik"
     : identityLabel(IDENTITY_STATUS_LABELS, status, displayValue(status));
   identityAccessStatus.className = `status-value ${
     reportIsPartial ? "is-working" : statusTone(status)
@@ -480,10 +447,7 @@ function renderIdentityAccess(payload) {
     return;
   }
 
-  identityAccessContent.append(
-    identitySummary(report),
-    identityOutcome(report, capabilities, smbEvidence),
-  );
+  identityAccessContent.append(identitySummary(report));
   const layout = document.createElement("div");
   layout.className = "identity-results-layout";
   const smbSection = resultSection(
