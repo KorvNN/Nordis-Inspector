@@ -152,7 +152,7 @@ def inspect_direct_acl_capabilities(
 
         dacl = descriptor["Dacl"]
         aces = getattr(dacl, "aces", None)
-        if aces is None or _has_ambiguous_deny_or_ace(aces, token_sids, record):
+        if aces is None:
             inconclusive += 1
             continue
 
@@ -177,6 +177,12 @@ def inspect_direct_acl_capabilities(
             grants.extend(
                 (right, trustee_sid) for right in _rights_from_ace(ace, record)
             )
+
+        if not grants:
+            continue
+        if _has_ambiguous_deny_or_ace(aces, token_sids, record):
+            inconclusive += 1
+            continue
 
         _publish_record_capabilities(
             record,

@@ -524,7 +524,7 @@ const LANGUAGE_TEXT = {
     "Hedefler": "Targets",
     "Kimlik erişimi": "Identity access",
     "Bu kimlikle erişilebilenler": "What this identity can access",
-    "SMB taramasında görülen domain controller üzerinde, girilen kullanıcıyla doğrudan kullanılabilecek erişimleri gösterir.": "Shows directly usable access for the supplied user on a domain controller observed during the SMB scan.",
+    "Girilen kimlikle doğrulanan SMB erişimlerini ve domain controller üzerinde doğrudan kullanılabilir AD yetkilerini gösterir.": "Shows verified SMB access and directly usable AD rights for the supplied identity.",
     "İncelenmedi": "Not inspected",
     "Henüz kimlik erişimi incelemesi yok.": "No identity access inspection yet.",
     "Önce bir SMB taraması başlatın.": "Start an SMB scan first.",

@@ -1134,6 +1134,9 @@ function upsertInventory(payload) {
   inventoryStore.set(key, record);
   if (selectedInventoryKey === key) renderInventoryDetail(record);
   renderInventory();
+  if (currentIdentityAccess() !== null) {
+    renderIdentityAccess(currentIdentityAccess());
+  }
   return true;
 }
 
@@ -1159,6 +1162,9 @@ function replaceInventory(records) {
     setSelectionPlaceholder(inventorySelectionDetail, "Ayrıntı için bir kayıt seç.");
   }
   renderInventory();
+  if (currentIdentityAccess() !== null) {
+    renderIdentityAccess(currentIdentityAccess());
+  }
   return true;
 }
 
@@ -1861,7 +1867,11 @@ configureHashTools({
   hashJobLabel,
   mutationHeaders,
 });
-configureIdentityAccess({displayValue, statusTone});
+configureIdentityAccess({
+  displayValue,
+  statusTone,
+  inventoryItems: () => [...inventoryStore.values()],
+});
 configureHistory({
   activateResultTab,
   detailList,

@@ -26,10 +26,6 @@ const IDENTITY_EVIDENCE_LABELS = {
   tr: {verified: "Doğrulandı", inferred: "Çıkarım"},
   en: {verified: "Verified", inferred: "Inferred"},
 };
-const IDENTITY_COVERAGE_LABELS = {
-  tr: {completed: "Tamamlandı", partial: "Kısmi", not_checked: "İncelenmedi"},
-  en: {completed: "Completed", partial: "Partial", not_checked: "Not inspected"},
-};
 const EN_CAPABILITY_TITLES = {
   laps_secret_read: "LAPS password data is readable",
   gmsa_secret_read: "gMSA password data is readable",
@@ -43,10 +39,11 @@ const EN_CAPABILITY_TITLES = {
 
 let displayValue;
 let statusTone;
+let inventoryItems = () => [];
 let identityAccessSnapshot = null;
 
 function configureIdentityAccess(dependencies) {
-  ({displayValue, statusTone} = dependencies);
+  ({displayValue, statusTone, inventoryItems} = dependencies);
 }
 
 function currentIdentityAccess() {
@@ -185,6 +182,151 @@ function identitySummary(report) {
   return card;
 }
 
+function normalizedInventoryValue(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function inventoryAccessEvidence() {
+  const records = inventoryItems();
+  const groups = new Map();
+  for (const record of Array.isArray(records) ? records : []) {
+    if (!record || typeof record !== "object" || Array.isArray(record)) continue;
+    const target = String(record.target ?? "").trim();
+    const share = String(record.share ?? "").trim();
+    if (!target || !share) continue;
+    const key = `${target.toLocaleLowerCase()}\u001f${share.toLocaleLowerCase()}`;
+    if (!groups.has(key)) groups.set(key, {target, share, records: []});
+    groups.get(key).records.push(record);
+  }
+
+  const evidence = {usable: [], limited: [], denied: []};
+  for (const group of groups.values()) {
+    const shareRecord = group.records.find(
+      (record) => normalizedInventoryValue(record.type) === "share",
+    );
+    if (!shareRecord) continue;
+    const shareStatus = normalizedInventoryValue(shareRecord.status);
+    const shareRead = normalizedInventoryValue(shareRecord.readAccess);
+    if (shareStatus === "non_file_share") continue;
+
+    const rootListingDenied = group.records.some((record) => (
+      normalizedInventoryValue(record.type) === "directory"
+      && !String(record.path ?? "").trim()
+      && (
+        normalizedInventoryValue(record.status).includes("denied")
+        || normalizedInventoryValue(record.readAccess) === "denied"
+      )
+    ));
+    const readableChildren = group.records.filter((record) => (
+      String(record.path ?? "").trim()
+      && normalizedInventoryValue(record.readAccess) === "allowed"
+      && !normalizedInventoryValue(record.status).includes("denied")
+    ));
+    const item = {
+      target: group.target,
+      share: group.share,
+      paths: readableChildren.map((record) => String(record.path)).slice(0, 3),
+      readableFiles: readableChildren.filter(
+        (record) => normalizedInventoryValue(record.type) === "file",
+      ).length,
+      readableEntries: readableChildren.length,
+    };
+
+    if (shareStatus.includes("denied") || shareRead === "denied") {
+      evidence.denied.push(item);
+    } else if (shareStatus === "share_connected" && rootListingDenied) {
+      evidence.limited.push(item);
+    } else if (shareStatus === "share_connected" && shareRead === "allowed") {
+      evidence.usable.push(item);
+    }
+  }
+
+  for (const items of Object.values(evidence)) {
+    items.sort((left, right) => (
+      `${left.target}\\${left.share}`.localeCompare(`${right.target}\\${right.share}`)
+    ));
+  }
+  return evidence;
+}
+
+function smbAccessCard(item, state) {
+  const card = document.createElement("article");
+  card.className = `identity-smb-access is-${state}`;
+  const header = document.createElement("header");
+  const title = document.createElement("h4");
+  title.textContent = `\\\\${item.target}\\${item.share}`;
+  const badge = document.createElement("span");
+  badge.textContent = state === "usable"
+    ? currentLanguage === "en" ? "Readable" : "Okunabiliyor"
+    : currentLanguage === "en" ? "Limited" : "Sınırlı";
+  header.append(title, badge);
+
+  const copy = document.createElement("p");
+  if (state === "limited") {
+    copy.textContent = currentLanguage === "en"
+      ? "The share connection succeeded, but listing its root directory was denied."
+      : "Share bağlantısı kuruldu ancak kök dizin listesi reddedildi.";
+  } else if (item.readableFiles > 0) {
+    copy.textContent = currentLanguage === "en"
+      ? `${item.readableFiles.toLocaleString(numberLocale())} readable files were observed.`
+      : `${item.readableFiles.toLocaleString(numberLocale())} okunabilir dosya görüldü.`;
+  } else if (item.readableEntries > 0) {
+    copy.textContent = currentLanguage === "en"
+      ? `${item.readableEntries.toLocaleString(numberLocale())} readable entries were observed.`
+      : `${item.readableEntries.toLocaleString(numberLocale())} okunabilir kayıt görüldü.`;
+  } else {
+    copy.textContent = currentLanguage === "en"
+      ? "Share access and an empty root listing were confirmed."
+      : "Share erişimi ve boş kök dizin listesi doğrulandı.";
+  }
+  card.append(header, copy);
+
+  if (item.paths.length > 0) {
+    const paths = document.createElement("div");
+    paths.className = "identity-smb-paths";
+    for (const pathValue of item.paths) {
+      const path = document.createElement("code");
+      path.textContent = pathValue;
+      paths.append(path);
+    }
+    card.append(paths);
+  }
+  return card;
+}
+
+function identityOutcome(report, capabilities, smbEvidence) {
+  const totalEvidence = capabilities.length + smbEvidence.usable.length;
+  const outcome = document.createElement("section");
+  outcome.className = `identity-outcome ${totalEvidence > 0 ? "has-evidence" : "is-empty"}`;
+  const eyebrow = document.createElement("span");
+  eyebrow.textContent = currentLanguage === "en" ? "RESULT" : "SONUÇ";
+  const title = document.createElement("h3");
+  if (totalEvidence > 0) {
+    title.textContent = currentLanguage === "en"
+      ? `${totalEvidence.toLocaleString(numberLocale())} directly usable access items confirmed`
+      : `${totalEvidence.toLocaleString(numberLocale())} doğrudan erişim doğrulandı`;
+  } else {
+    title.textContent = currentLanguage === "en"
+      ? "No directly usable access was confirmed"
+      : "Doğrudan kullanılabilir erişim doğrulanmadı";
+  }
+  const copy = document.createElement("p");
+  copy.textContent = currentLanguage === "en"
+    ? `${smbEvidence.usable.length.toLocaleString(numberLocale())} readable SMB shares and ${capabilities.length.toLocaleString(numberLocale())} directly usable AD rights were found.`
+    : `${smbEvidence.usable.length.toLocaleString(numberLocale())} okunabilir SMB share ve ${capabilities.length.toLocaleString(numberLocale())} doğrudan kullanılabilir AD yetkisi bulundu.`;
+  outcome.append(eyebrow, title, copy);
+
+  if (report.partial === true) {
+    const warning = document.createElement("p");
+    warning.className = "identity-outcome-warning";
+    warning.textContent = currentLanguage === "en"
+      ? "The AD rights result is incomplete; unverified areas were not treated as no access."
+      : "AD yetki sonucu eksik; doğrulanamayan alanlar erişim yok kabul edilmedi.";
+    outcome.append(warning);
+  }
+  return outcome;
+}
+
 function capabilityTitle(capability) {
   if (currentLanguage !== "en") return displayValue(capability.title);
   return EN_CAPABILITY_TITLES[capability.capability_id]
@@ -284,40 +426,6 @@ function capabilityCard(capability) {
   return card;
 }
 
-function coverageItem(coverage) {
-  const item = document.createElement("article");
-  item.className = "identity-coverage-item";
-  const header = document.createElement("div");
-  header.className = "identity-coverage-header";
-  const label = document.createElement("strong");
-  label.textContent = displayValue(coverage.label);
-  const stateKey = String(coverage.state ?? "not_checked").toLowerCase();
-  const state = document.createElement("span");
-  state.className = `identity-coverage-state is-${stateKey.replaceAll("_", "-")}`;
-  state.textContent = identityLabel(
-    IDENTITY_COVERAGE_LABELS,
-    stateKey,
-    displayValue(stateKey),
-  );
-  header.append(label, state);
-  item.append(header);
-
-  const recordsSeen = Number.isFinite(coverage.records_seen) ? coverage.records_seen : 0;
-  const records = document.createElement("p");
-  records.className = "identity-coverage-meta";
-  records.textContent = currentLanguage === "en"
-    ? `${recordsSeen.toLocaleString(numberLocale())} records inspected.`
-    : `${recordsSeen.toLocaleString(numberLocale())} kayıt incelendi.`;
-  item.append(records);
-  if (typeof coverage.message === "string" && coverage.message.trim() !== "") {
-    const message = document.createElement("p");
-    message.className = "identity-coverage-meta";
-    message.textContent = coverage.message;
-    item.append(message);
-  }
-  return item;
-}
-
 function resultSection(titleText, descriptionText) {
   const section = document.createElement("section");
   section.className = "identity-result-section";
@@ -343,7 +451,9 @@ function renderIdentityAccess(payload) {
     ? validPayload.report
     : null;
   const capabilities = Array.isArray(report?.capabilities) ? report.capabilities : [];
-  identityTabCount.textContent = capabilities.length.toLocaleString(numberLocale());
+  const smbEvidence = inventoryAccessEvidence();
+  const usefulEvidenceCount = capabilities.length + smbEvidence.usable.length;
+  identityTabCount.textContent = usefulEvidenceCount.toLocaleString(numberLocale());
 
   const reportIsPartial = status === "completed" && report?.partial === true;
   identityAccessStatus.textContent = reportIsPartial
@@ -370,11 +480,53 @@ function renderIdentityAccess(payload) {
     return;
   }
 
-  identityAccessContent.append(identitySummary(report));
+  identityAccessContent.append(
+    identitySummary(report),
+    identityOutcome(report, capabilities, smbEvidence),
+  );
   const layout = document.createElement("div");
   layout.className = "identity-results-layout";
+  const smbSection = resultSection(
+    currentLanguage === "en" ? "Usable SMB access" : "Kullanılabilir SMB erişimleri",
+    currentLanguage === "en"
+      ? "Only observed access for the supplied identity is shown."
+      : "Yalnızca girilen kimlikle gözlenen erişimler gösterilir.",
+  );
+  const smbList = document.createElement("div");
+  smbList.className = "identity-smb-list";
+  for (const item of smbEvidence.usable) smbList.append(smbAccessCard(item, "usable"));
+  if (smbEvidence.usable.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "identity-no-capability";
+    const title = document.createElement("strong");
+    title.textContent = currentLanguage === "en"
+      ? "No readable SMB share was confirmed"
+      : "Okunabilir SMB share doğrulanmadı";
+    empty.append(title);
+    smbList.append(empty);
+  }
+  for (const item of smbEvidence.limited) smbList.append(smbAccessCard(item, "limited"));
+  if (smbEvidence.denied.length > 0) {
+    const denied = document.createElement("details");
+    denied.className = "identity-denied-access";
+    const summary = document.createElement("summary");
+    summary.textContent = currentLanguage === "en"
+      ? `${smbEvidence.denied.length.toLocaleString(numberLocale())} denied shares`
+      : `${smbEvidence.denied.length.toLocaleString(numberLocale())} reddedilen share`;
+    const list = document.createElement("div");
+    list.className = "identity-denied-list";
+    for (const item of smbEvidence.denied) {
+      const path = document.createElement("code");
+      path.textContent = `\\\\${item.target}\\${item.share}`;
+      list.append(path);
+    }
+    denied.append(summary, list);
+    smbList.append(denied);
+  }
+  smbSection.append(smbList);
+
   const capabilitySection = resultSection(
-    currentLanguage === "en" ? "Directly usable access" : "Doğrudan kullanılabilir erişimler",
+    currentLanguage === "en" ? "Usable AD rights" : "Kullanılabilir AD yetkileri",
     currentLanguage === "en"
       ? "Verified items come from LDAP responses; inferred items come from a direct ACL match."
       : "Doğrulananlar LDAP yanıtından, çıkarımlar doğrudan ACL eşleşmesinden gelir.",
@@ -386,12 +538,12 @@ function renderIdentityAccess(payload) {
     empty.className = "identity-no-capability";
     const title = document.createElement("strong");
     title.textContent = currentLanguage === "en"
-      ? "No direct access evidence was found"
-      : "Doğrudan erişim kanıtı bulunmadı";
+      ? "No directly usable AD right was confirmed"
+      : "Doğrudan kullanılabilir AD yetkisi doğrulanmadı";
     const copy = document.createElement("p");
     copy.textContent = currentLanguage === "en"
-      ? "This does not mean the account is ineffective or the environment is clean. Review coverage before interpreting the result."
-      : "Bu, hesabın etkisiz veya ortamın temiz olduğu anlamına gelmez. Sonucu yorumlamadan önce kontrol kapsamını inceleyin.";
+      ? "No readable managed password or directly matching usable ACL right was found."
+      : "Okunabilir yönetilen parola veya doğrudan eşleşen kullanılabilir ACL yetkisi bulunmadı.";
     empty.append(title, copy);
     capabilityList.append(empty);
   } else {
@@ -402,29 +554,7 @@ function renderIdentityAccess(payload) {
   }
   capabilitySection.append(capabilityList);
 
-  const coverageSection = resultSection(
-    currentLanguage === "en" ? "Check coverage" : "Kontrol kapsamı",
-    currentLanguage === "en"
-      ? "Incomplete checks are not treated as clean."
-      : "Tamamlanmayan kontroller temiz kabul edilmez.",
-  );
-  const coverageList = document.createElement("div");
-  coverageList.className = "identity-coverage-list";
-  const coverageItems = Array.isArray(report.coverage) ? report.coverage : [];
-  for (const coverage of coverageItems) {
-    if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) continue;
-    coverageList.append(coverageItem(coverage));
-  }
-  if (coverageList.childElementCount === 0) {
-    const empty = document.createElement("p");
-    empty.className = "identity-coverage-meta";
-    empty.textContent = currentLanguage === "en"
-      ? "Coverage information is unavailable."
-      : "Kapsam bilgisi alınamadı.";
-    coverageList.append(empty);
-  }
-  coverageSection.append(coverageList);
-  layout.append(capabilitySection, coverageSection);
+  layout.append(smbSection, capabilitySection);
   identityAccessContent.append(layout);
 }
 
