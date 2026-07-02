@@ -276,6 +276,34 @@
 .identity-meta-row { color: var(--muted); font-size: .66rem; line-height: 1.5; }
 .identity-meta-row strong { color: #cbd8d5; }
 .identity-rights { display: flex; flex-wrap: wrap; gap: 5px; }
+.identity-capability-targets {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+.identity-capability-targets summary {
+  width: fit-content;
+  color: #8cdcf2;
+  font-size: .67rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.identity-capability-target-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.identity-capability-target-list code {
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  color: #cbdad6;
+  background: #111f1d;
+  font-size: .62rem;
+  overflow-wrap: anywhere;
+}
 .identity-next-step {
   margin: 10px 0 0;
   border-radius: 7px;

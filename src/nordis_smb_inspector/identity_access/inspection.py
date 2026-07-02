@@ -279,6 +279,7 @@ def _inspect_secret_readability(
                         "Değer sonuçlara alınmadı."
                     ),
                     subject=subject,
+                    subject_type="computer",
                     via_principal=identity.principal,
                     rights=(readable_attribute,),
                     next_step=(
@@ -310,6 +311,7 @@ def _inspect_secret_readability(
                         "döndürdü. Değer sonuçlara alınmadı."
                     ),
                     subject=subject,
+                    subject_type="gmsa",
                     via_principal=identity.principal,
                     rights=("msDS-ManagedPassword",),
                     next_step="Hesabın bağlı olduğu servisleri ve erişim kapsamını doğrula.",

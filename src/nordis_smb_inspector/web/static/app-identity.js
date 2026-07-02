@@ -302,19 +302,46 @@ function capabilityTitle(capability) {
 }
 
 function capabilitySummary(capability) {
-  if (currentLanguage !== "en") return displayValue(capability.summary);
   if (capability.capability_id === "laps_secret_read") {
-    return "LDAP returned the LAPS password attribute for this identity. The value was not retained.";
+    return currentLanguage === "en"
+      ? "LDAP returned the LAPS password attribute for this identity. The value was not retained."
+      : displayValue(capability.summary);
   }
   if (capability.capability_id === "gmsa_secret_read") {
-    return "LDAP returned the managed password blob for this identity. The value was not retained.";
+    return currentLanguage === "en"
+      ? "LDAP returned the managed password blob for this identity. The value was not retained."
+      : displayValue(capability.summary);
   }
+  if (String(capability.evidence_state).toLowerCase() === "inferred") {
+    const summaries = {
+      tr: {
+        secret_read: "Gerekli iki replication hakkı birlikte eşleşiyor; domain parola verisi okunabilir.",
+        password_reset: "Eşleşen allow ACE, hedef hesabın parolasını sıfırlama hakkını kapsıyor.",
+        group_membership_write: "Eşleşen allow ACE, hedef gruba üye ekleme veya gruptan üye çıkarma hakkını kapsıyor.",
+        object_control: "Listelenen sahiplik, DACL veya geniş yazma hakları hedef nesne üzerinde kontrol kurulmasına imkân verebilir.",
+        authentication_material_write: "SPN, UAC veya KeyCredentialLink gibi kimlik doğrulamayı etkileyen özellikler yazılabilir.",
+        delegation_write: "RBCD delegasyon özelliği yazılabilir ve hedef bilgisayara erişim yolu oluşturabilir.",
+      },
+      en: {
+        secret_read: "Both required replication rights match, so domain password data may be read.",
+        password_reset: "The matching allow ACE includes the right to reset the target account password.",
+        group_membership_write: "The matching allow ACE includes the right to add or remove members on the target group.",
+        object_control: "The listed ownership, DACL, or broad write rights may establish control over the target object.",
+        authentication_material_write: "Authentication-related attributes such as SPN, UAC, or KeyCredentialLink can be written.",
+        delegation_write: "The RBCD delegation attribute can be written and may create an access path to the target computer.",
+      },
+    };
+    const summary = summaries[currentLanguage]?.[capability.kind];
+    if (summary) return summary;
+  }
+  if (currentLanguage !== "en") return displayValue(capability.summary);
   const via = displayValue(capability.via_principal);
   const subject = displayValue(capability.subject);
   return `A directly matching allow ACE for ${via} indicates this access on ${subject}. Nordis made no directory change.`;
 }
 
 function capabilityNextStep(capability) {
+  if (Number(capability.aggregate_count) > 1) return null;
   if (currentLanguage !== "en") return capability.next_step;
   const subject = displayValue(capability.subject);
   const labels = {
@@ -328,13 +355,86 @@ function capabilityNextStep(capability) {
   return labels[capability.kind] ?? capability.next_step;
 }
 
+function aggregateCapabilityTitle(capability) {
+  const count = Number(capability.aggregate_count);
+  const amount = count.toLocaleString(numberLocale());
+  const subjectType = String(capability.subject_type ?? "").toLowerCase();
+  if (currentLanguage === "en") {
+    const titles = {
+      secret_read: `${amount} targets expose secret data`,
+      password_reset: `${amount} account passwords can be reset`,
+      group_membership_write: `Membership of ${amount} groups can be changed`,
+      authentication_material_write: `Authentication data on ${amount} accounts can be changed`,
+      delegation_write: `Delegation data on ${amount} targets can be changed`,
+    };
+    if (capability.kind === "object_control") {
+      const nouns = {user: "user objects", group: "group objects", computer: "computer objects"};
+      return `${amount} ${nouns[subjectType] ?? "directory objects"} can be controlled`;
+    }
+    return titles[capability.kind] ?? `${amount} usable AD rights`;
+  }
+  const titles = {
+    secret_read: `${amount} hedefte gizli veri okunabiliyor`,
+    password_reset: `${amount} hesabın parolası sıfırlanabilir`,
+    group_membership_write: `${amount} grubun üyeliği değiştirilebilir`,
+    authentication_material_write: `${amount} hesapta kimlik doğrulama verisi değiştirilebilir`,
+    delegation_write: `${amount} hedefte delegasyon verisi değiştirilebilir`,
+  };
+  if (capability.kind === "object_control") {
+    const nouns = {user: "kullanıcı nesnesi", group: "grup nesnesi", computer: "bilgisayar nesnesi"};
+    return `${amount} ${nouns[subjectType] ?? "directory nesnesi"} kontrol edilebilir`;
+  }
+  return titles[capability.kind] ?? `${amount} kullanılabilir AD yetkisi`;
+}
+
+function aggregateTargetLabel(capability) {
+  const count = Number(capability.aggregate_count);
+  const amount = count.toLocaleString(numberLocale());
+  const subjectType = String(capability.subject_type ?? "").toLowerCase();
+  if (currentLanguage === "en") return `Show ${amount} targets`;
+  const labels = {
+    user: `${amount} kullanıcıyı göster`,
+    group: `${amount} grubu göster`,
+    computer: `${amount} bilgisayarı göster`,
+    gmsa: `${amount} gMSA hesabını göster`,
+  };
+  return labels[subjectType] ?? `${amount} hedefi göster`;
+}
+
+function groupCapabilities(capabilities) {
+  const groups = new Map();
+  for (const capability of capabilities) {
+    const rights = Array.isArray(capability.rights)
+      ? capability.rights.map(String).sort((left, right) => left.localeCompare(right))
+      : [];
+    const key = JSON.stringify([
+      capability.capability_id,
+      capability.kind,
+      capability.evidence_state,
+      capability.subject_type,
+      capability.via_principal,
+      rights,
+    ]);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(capability);
+  }
+  return [...groups.values()].map((items) => {
+    if (items.length === 1) return items[0];
+    const subjects = [...new Set(items.map((item) => String(item.subject ?? "")).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right));
+    return {...items[0], aggregate_count: items.length, subjects};
+  });
+}
+
 function capabilityCard(capability) {
   const card = document.createElement("article");
   card.className = "identity-capability";
   const header = document.createElement("header");
   header.className = "identity-capability-header";
   const title = document.createElement("h4");
-  title.textContent = capabilityTitle(capability);
+  title.textContent = Number(capability.aggregate_count) > 1
+    ? aggregateCapabilityTitle(capability)
+    : capabilityTitle(capability);
   const evidenceKey = String(capability.evidence_state ?? "inferred").toLowerCase();
   const evidence = document.createElement("span");
   evidence.className = `identity-evidence is-${evidenceKey}`;
@@ -345,13 +445,17 @@ function capabilityCard(capability) {
   );
   header.append(title, evidence);
 
-  const subject = document.createElement("p");
-  subject.className = "identity-subject";
-  subject.textContent = displayValue(capability.subject);
   const summary = document.createElement("p");
   summary.className = "identity-capability-summary";
   summary.textContent = capabilitySummary(capability);
-  card.append(header, subject, summary);
+  card.append(header);
+  if (Number(capability.aggregate_count) <= 1) {
+    const subject = document.createElement("p");
+    subject.className = "identity-subject";
+    subject.textContent = displayValue(capability.subject);
+    card.append(subject);
+  }
+  card.append(summary);
 
   const via = capability.via_principal;
   const rights = Array.isArray(capability.rights) ? capability.rights : [];
@@ -379,6 +483,22 @@ function capabilityCard(capability) {
       metadata.append(rightList);
     }
     card.append(metadata);
+  }
+
+  if (Number(capability.aggregate_count) > 1) {
+    const targets = document.createElement("details");
+    targets.className = "identity-capability-targets";
+    const targetsSummary = document.createElement("summary");
+    targetsSummary.textContent = aggregateTargetLabel(capability);
+    const targetList = document.createElement("div");
+    targetList.className = "identity-capability-target-list";
+    for (const subjectValue of capability.subjects ?? []) {
+      const item = document.createElement("code");
+      item.textContent = subjectValue;
+      targetList.append(item);
+    }
+    targets.append(targetsSummary, targetList);
+    card.append(targets);
   }
 
   const nextStepValue = capabilityNextStep(capability);
@@ -417,9 +537,11 @@ function renderIdentityAccess(payload) {
     && !Array.isArray(validPayload.report)
     ? validPayload.report
     : null;
-  const capabilities = Array.isArray(report?.capabilities) ? report.capabilities : [];
+  const capabilities = (Array.isArray(report?.capabilities) ? report.capabilities : [])
+    .filter((item) => item && typeof item === "object" && !Array.isArray(item));
+  const capabilityGroups = groupCapabilities(capabilities);
   const smbEvidence = inventoryAccessEvidence();
-  const usefulEvidenceCount = capabilities.length + smbEvidence.usable.length;
+  const usefulEvidenceCount = capabilityGroups.length + smbEvidence.usable.length;
   identityTabCount.textContent = usefulEvidenceCount.toLocaleString(numberLocale());
 
   const reportIsPartial = status === "completed" && report?.partial === true;
@@ -511,8 +633,7 @@ function renderIdentityAccess(payload) {
     empty.append(title, copy);
     capabilityList.append(empty);
   } else {
-    for (const capability of capabilities) {
-      if (!capability || typeof capability !== "object" || Array.isArray(capability)) continue;
+    for (const capability of capabilityGroups) {
       capabilityList.append(capabilityCard(capability));
     }
   }

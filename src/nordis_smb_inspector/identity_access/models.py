@@ -78,6 +78,7 @@ class AccessCapability:
     title: str
     summary: str
     subject: str
+    subject_type: str | None = None
     via_principal: str | None = None
     rights: tuple[str, ...] = field(default_factory=tuple, repr=False)
     next_step: str | None = None
@@ -90,6 +91,7 @@ class AccessCapability:
             "title": self.title,
             "summary": self.summary,
             "subject": self.subject,
+            "subject_type": self.subject_type,
             "via_principal": self.via_principal,
             "rights": list(self.rights),
             "next_step": self.next_step,

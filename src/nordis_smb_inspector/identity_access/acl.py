@@ -242,6 +242,7 @@ def _publish_record_capabilities(
                     "yapılmadı."
                 ),
                 subject=subject,
+                subject_type=object_kind,
                 via_principal=via,
                 rights=ordered_labels,
                 next_step=_next_step(kind, subject),
@@ -256,7 +257,9 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
 
     if object_guid is None:
         if mask & ACCESS_MASK.GENERIC_ALL:
-            return (_Right(CapabilityKind.OBJECT_CONTROL, "Tam kontrol (GenericAll)"),)
+            rights.append(
+                _Right(CapabilityKind.OBJECT_CONTROL, "Tam kontrol (GenericAll)")
+            )
         if mask & ACCESS_MASK.GENERIC_WRITE:
             rights.append(
                 _Right(CapabilityKind.OBJECT_CONTROL, "Genel yazma (GenericWrite)")
@@ -277,6 +280,7 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
             rights.append(
                 _Right(CapabilityKind.OBJECT_CONTROL, "Tüm extended rights")
             )
+        rights.extend(_broad_right_implications(mask, record))
         return tuple(rights)
 
     if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_WRITE_PROP:
@@ -309,6 +313,60 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
     return tuple(rights)
 
 
+def _broad_right_implications(
+    mask: int,
+    record: DirectoryRecord,
+) -> tuple[_Right, ...]:
+    """Translate broad, unscoped rights into their immediate object-specific effects."""
+
+    object_classes = {value.casefold() for value in record.text_values("objectClass")}
+    generic_all = bool(mask & ACCESS_MASK.GENERIC_ALL)
+    can_write_properties = generic_all or bool(
+        mask
+        & (
+            ACCESS_MASK.GENERIC_WRITE
+            | ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_WRITE_PROP
+        )
+    )
+    has_all_extended_rights = generic_all or bool(
+        mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_CONTROL_ACCESS
+    )
+    rights: list[_Right] = []
+
+    if can_write_properties:
+        if "group" in object_classes:
+            rights.append(_Right(CapabilityKind.GROUP_MEMBERSHIP_WRITE, "Member"))
+        if object_classes & {"user", "computer"}:
+            rights.extend(
+                _Right(CapabilityKind.AUTHENTICATION_MATERIAL_WRITE, label)
+                for label in (
+                    "Service-Principal-Name",
+                    "User-Account-Control",
+                    "ms-DS-Key-Credential-Link",
+                )
+            )
+        if "computer" in object_classes:
+            rights.append(
+                _Right(
+                    CapabilityKind.DELEGATION_WRITE,
+                    "ms-DS-Allowed-To-Act-On-Behalf-Of-Other-Identity",
+                )
+            )
+
+    if has_all_extended_rights:
+        if object_classes & {"user", "computer"}:
+            rights.append(
+                _Right(CapabilityKind.PASSWORD_RESET, "User-Force-Change-Password")
+            )
+        if object_classes & {"domain", "domaindns"}:
+            rights.extend(
+                _Right(CapabilityKind.SECRET_READ, label)
+                for label in sorted(_REPLICATION_REQUIRED)
+            )
+
+    return tuple(rights)
+
+
 def _property_applies(property_name: str, record: DirectoryRecord) -> bool:
     object_classes = {value.casefold() for value in record.text_values("objectClass")}
     if property_name == "Member":
@@ -318,7 +376,7 @@ def _property_applies(property_name: str, record: DirectoryRecord) -> bool:
     if property_name == "ms-DS-Key-Credential-Link":
         return "user" in object_classes or "computer" in object_classes
     if property_name == "ms-DS-Allowed-To-Act-On-Behalf-Of-Other-Identity":
-        return "computer" in object_classes or "domaindns" in object_classes
+        return "computer" in object_classes
     return True
 
 
