@@ -8,6 +8,11 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from nordis_smb_inspector.core.credentials import Credential
+from nordis_smb_inspector.core.detection import (
+    DEFAULT_DETECTION_RULES,
+    DetectionRulePack,
+    detect_patterns,
+)
 
 from .directory import (
     DirectoryAccessError,
@@ -30,6 +35,31 @@ from .models import (
 )
 
 CapabilityCallback = Callable[[AccessCapability], None]
+
+_DIRECTORY_TEXT_ATTRIBUTES = ("description", "info", "comment")
+_DIRECTORY_TEXT_GENERAL_RULE_IDS = frozenset(
+    {
+        "authorization-basic",
+        "authorization-bearer",
+        "authorization-token-header",
+        "connection-string-password",
+        "cookie-secret-assignment",
+        "credential-url",
+        "jwt-token",
+        "natural-language-secret",
+        "netrc-credential",
+        "recovery-secret-assignment",
+        "secret-assignment",
+        "slack-token-prefix",
+        "url-query-secret",
+    }
+)
+_DIRECTORY_TEXT_RULES = tuple(
+    rule
+    for rule in DEFAULT_DETECTION_RULES
+    if rule.pack is DetectionRulePack.CLOUD_SERVICES
+    or rule.rule_id in _DIRECTORY_TEXT_GENERAL_RULE_IDS
+)
 
 
 class IdentityAccessCancellation(Protocol):
@@ -75,6 +105,15 @@ def inspect_identity_access(
         cancellation.raise_if_requested()
         coverage.append(
             _inspect_secret_readability(
+                client,
+                identity,
+                cancellation,
+                add_capability,
+            )
+        )
+        cancellation.raise_if_requested()
+        coverage.append(
+            _inspect_exposed_directory_credentials(
                 client,
                 identity,
                 cancellation,
@@ -336,6 +375,96 @@ def _inspect_secret_readability(
             None
             if complete
             else "Bir veya daha fazla sorgu sonuç sınırına ulaştı; kapsam eksik."
+        ),
+    )
+
+
+def _inspect_exposed_directory_credentials(
+    client: DirectoryClient,
+    identity: DirectoryIdentity,
+    cancellation: IdentityAccessCancellation,
+    add_capability: CapabilityCallback,
+) -> Coverage:
+    """Find credential-shaped text in common user-authored LDAP attributes."""
+
+    try:
+        query = client.search(
+            "(|(&(objectCategory=person)(objectClass=user))(objectCategory=computer))",
+            (
+                "sAMAccountName",
+                "dNSHostName",
+                "objectClass",
+                *_DIRECTORY_TEXT_ATTRIBUTES,
+            ),
+        )
+    except DirectoryAccessError as error:
+        return Coverage(
+            check_id="exposed_directory_credentials",
+            label="LDAP alanlarındaki kimlik bilgileri",
+            state=CoverageState.NOT_CHECKED,
+            message=error.safe_message,
+        )
+
+    seen: set[tuple[str, str, str]] = set()
+    for record in query:
+        cancellation.raise_if_requested()
+        subject = (
+            record.first_text("dNSHostName")
+            or record.first_text("sAMAccountName")
+            or _rdn(record)
+        )
+        subject_type = (
+            "computer"
+            if any(
+                value.casefold() == "computer"
+                for value in record.text_values("objectClass")
+            )
+            else "user"
+        )
+        for attribute in _DIRECTORY_TEXT_ATTRIBUTES:
+            for value in record.text_values(attribute):
+                lines = value.splitlines() or (value,)
+                for line_number, line in enumerate(lines, start=1):
+                    for match in detect_patterns(
+                        line,
+                        line_number,
+                        rules=_DIRECTORY_TEXT_RULES,
+                    ):
+                        key = (record.distinguished_name, attribute, match.rule_id)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        add_capability(
+                            AccessCapability(
+                                capability_id="ldap_exposed_credential",
+                                kind=CapabilityKind.SECRET_READ,
+                                evidence_state=EvidenceState.VERIFIED,
+                                title="LDAP alanında olası kimlik bilgisi okunuyor",
+                                summary=(
+                                    f"{attribute} alanı {match.title} kuralıyla "
+                                    "eşleşti. Değer sonuçlara alınmadı ve "
+                                    "geçerliliği denenmedi."
+                                ),
+                                subject=subject,
+                                subject_type=subject_type,
+                                via_principal=identity.principal,
+                                rights=(attribute, match.title),
+                                next_step=(
+                                    "Alanın içeriğini yetkili bir LDAP sorgusuyla "
+                                    "doğrula ve ilgili hesabın parolasını döndür."
+                                ),
+                            )
+                        )
+
+    return Coverage(
+        check_id="exposed_directory_credentials",
+        label="LDAP alanlarındaki kimlik bilgileri",
+        state=CoverageState.COMPLETED if query.complete else CoverageState.PARTIAL,
+        records_seen=len(query),
+        message=(
+            None
+            if query.complete
+            else "Sorgu sonuç sınırına ulaştı; kapsam eksik."
         ),
     )
 
