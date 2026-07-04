@@ -29,6 +29,8 @@ from .models import (
     Coverage,
     CoverageState,
     DirectoryIdentity,
+    DirectoryTextEntry,
+    DirectoryTextSignal,
     EvidenceState,
     IdentityAccessReport,
     IdentityGroup,
@@ -36,7 +38,12 @@ from .models import (
 
 CapabilityCallback = Callable[[AccessCapability], None]
 
-_DIRECTORY_TEXT_ATTRIBUTES = ("description", "info", "comment")
+_DIRECTORY_TEXT_ATTRIBUTES = (
+    "description",
+    "info",
+    "comment",
+    "adminDescription",
+)
 _DIRECTORY_TEXT_GENERAL_RULE_IDS = frozenset(
     {
         "authorization-basic",
@@ -81,12 +88,13 @@ def inspect_identity_access(
     on_capability: CapabilityCallback | None = None,
     client_factory: DirectoryClientFactory = ImpacketDirectoryClient,
 ) -> IdentityAccessReport:
-    """Inspect immediate access without changing AD state or retaining secret values."""
+    """Inspect immediate access and retain readable text only in the live report."""
 
     cancellation.raise_if_requested()
     client = client_factory(controller, credential, kerberos_hostname)
     capabilities: list[AccessCapability] = []
     coverage: list[Coverage] = []
+    directory_text: tuple[DirectoryTextEntry, ...] = ()
 
     def add_capability(capability: AccessCapability) -> None:
         capabilities.append(capability)
@@ -112,14 +120,11 @@ def inspect_identity_access(
             )
         )
         cancellation.raise_if_requested()
-        coverage.append(
-            _inspect_exposed_directory_credentials(
-                client,
-                identity,
-                cancellation,
-                add_capability,
-            )
+        directory_text, directory_text_coverage = _inspect_directory_text(
+            client,
+            cancellation,
         )
+        coverage.append(directory_text_coverage)
         cancellation.raise_if_requested()
         from .acl import inspect_direct_acl_capabilities
 
@@ -137,6 +142,7 @@ def inspect_identity_access(
             identity=identity,
             capabilities=tuple(capabilities),
             coverage=tuple(coverage),
+            directory_text=directory_text,
         )
     finally:
         with suppress(Exception):
@@ -379,50 +385,50 @@ def _inspect_secret_readability(
     )
 
 
-def _inspect_exposed_directory_credentials(
+def _inspect_directory_text(
     client: DirectoryClient,
-    identity: DirectoryIdentity,
     cancellation: IdentityAccessCancellation,
-    add_capability: CapabilityCallback,
-) -> Coverage:
-    """Find credential-shaped text in common user-authored LDAP attributes."""
+) -> tuple[tuple[DirectoryTextEntry, ...], Coverage]:
+    """Inventory readable LDAP text and attach non-authoritative review signals."""
 
     try:
         query = client.search(
-            "(|(&(objectCategory=person)(objectClass=user))(objectCategory=computer))",
+            "(|(description=*)(info=*)(comment=*)(adminDescription=*))",
             (
                 "sAMAccountName",
                 "dNSHostName",
+                "displayName",
+                "name",
                 "objectClass",
                 *_DIRECTORY_TEXT_ATTRIBUTES,
             ),
         )
     except DirectoryAccessError as error:
-        return Coverage(
-            check_id="exposed_directory_credentials",
-            label="LDAP alanlarındaki kimlik bilgileri",
-            state=CoverageState.NOT_CHECKED,
-            message=error.safe_message,
+        return (
+            (),
+            Coverage(
+                check_id="directory_text_inventory",
+                label="LDAP metin alanları",
+                state=CoverageState.NOT_CHECKED,
+                message=error.safe_message,
+            ),
         )
 
-    seen: set[tuple[str, str, str]] = set()
+    entries: list[DirectoryTextEntry] = []
     for record in query:
         cancellation.raise_if_requested()
         subject = (
             record.first_text("dNSHostName")
             or record.first_text("sAMAccountName")
+            or record.first_text("displayName")
+            or record.first_text("name")
             or _rdn(record)
         )
-        subject_type = (
-            "computer"
-            if any(
-                value.casefold() == "computer"
-                for value in record.text_values("objectClass")
-            )
-            else "user"
-        )
+        subject_type = _directory_object_type(record)
         for attribute in _DIRECTORY_TEXT_ATTRIBUTES:
             for value in record.text_values(attribute):
+                signals: list[DirectoryTextSignal] = []
+                seen_rules: set[str] = set()
                 lines = value.splitlines() or (value,)
                 for line_number, line in enumerate(lines, start=1):
                     for match in detect_patterns(
@@ -430,43 +436,60 @@ def _inspect_exposed_directory_credentials(
                         line_number,
                         rules=_DIRECTORY_TEXT_RULES,
                     ):
-                        key = (record.distinguished_name, attribute, match.rule_id)
-                        if key in seen:
+                        if match.rule_id in seen_rules:
                             continue
-                        seen.add(key)
-                        add_capability(
-                            AccessCapability(
-                                capability_id="ldap_exposed_credential",
-                                kind=CapabilityKind.SECRET_READ,
-                                evidence_state=EvidenceState.VERIFIED,
-                                title="LDAP alanında olası kimlik bilgisi okunuyor",
-                                summary=(
-                                    f"{attribute} alanı {match.title} kuralıyla "
-                                    "eşleşti. Değer sonuçlara alınmadı ve "
-                                    "geçerliliği denenmedi."
-                                ),
-                                subject=subject,
-                                subject_type=subject_type,
-                                via_principal=identity.principal,
-                                rights=(attribute, match.title),
-                                next_step=(
-                                    "Alanın içeriğini yetkili bir LDAP sorgusuyla "
-                                    "doğrula ve ilgili hesabın parolasını döndür."
-                                ),
+                        seen_rules.add(match.rule_id)
+                        signals.append(
+                            DirectoryTextSignal(
+                                rule_id=match.rule_id,
+                                title=match.title,
+                                category=match.category,
+                                confidence=match.confidence.value,
+                                line_number=line_number,
                             )
                         )
+                entries.append(
+                    DirectoryTextEntry(
+                        distinguished_name=record.distinguished_name,
+                        subject=subject,
+                        subject_type=subject_type,
+                        attribute=attribute,
+                        value=value,
+                        signals=tuple(signals),
+                    )
+                )
 
-    return Coverage(
-        check_id="exposed_directory_credentials",
-        label="LDAP alanlarındaki kimlik bilgileri",
-        state=CoverageState.COMPLETED if query.complete else CoverageState.PARTIAL,
-        records_seen=len(query),
-        message=(
-            None
-            if query.complete
-            else "Sorgu sonuç sınırına ulaştı; kapsam eksik."
+    return (
+        tuple(entries),
+        Coverage(
+            check_id="directory_text_inventory",
+            label="LDAP metin alanları",
+            state=CoverageState.COMPLETED if query.complete else CoverageState.PARTIAL,
+            records_seen=len(query),
+            message=(
+                None
+                if query.complete
+                else "Sorgu sonuç sınırına ulaştı; kapsam eksik."
+            ),
         ),
     )
+
+
+def _directory_object_type(record: DirectoryRecord) -> str:
+    classes = {value.casefold() for value in record.text_values("objectClass")}
+    for class_name, label in (
+        ("computer", "computer"),
+        ("group", "group"),
+        ("grouppolicycontainer", "gpo"),
+        ("organizationalunit", "organizational_unit"),
+        ("contact", "contact"),
+        ("user", "user"),
+        ("domaindns", "domain"),
+        ("container", "container"),
+    ):
+        if class_name in classes:
+            return label
+    return "directory_object"
 
 
 def _sid(record: DirectoryRecord) -> str | None:

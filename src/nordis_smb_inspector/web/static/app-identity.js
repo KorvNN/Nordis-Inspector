@@ -29,7 +29,6 @@ const IDENTITY_EVIDENCE_LABELS = {
 const EN_CAPABILITY_TITLES = {
   laps_secret_read: "LAPS password data is readable",
   gmsa_secret_read: "gMSA password data is readable",
-  ldap_exposed_credential: "A possible credential is readable in an LDAP field",
   directory_replication_read: "Domain password data can be replicated",
   password_reset: "An account password can be reset",
   group_membership_write: "Group membership can be changed",
@@ -311,14 +310,6 @@ function capabilitySummary(capability) {
   if (capability.capability_id === "gmsa_secret_read") {
     return currentLanguage === "en"
       ? "LDAP returned the managed password blob for this identity. The value was not retained."
-      : displayValue(capability.summary);
-  }
-  if (capability.capability_id === "ldap_exposed_credential") {
-    const rights = Array.isArray(capability.rights) ? capability.rights : [];
-    const attribute = displayValue(rights[0]);
-    const rule = displayValue(rights[1]);
-    return currentLanguage === "en"
-      ? `The ${attribute} field matched ${rule}. The value was not retained or validated.`
       : displayValue(capability.summary);
   }
   if (String(capability.evidence_state).toLowerCase() === "inferred") {

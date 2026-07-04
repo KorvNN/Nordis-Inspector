@@ -1,4 +1,4 @@
-"""Secret-free contracts for one supplied identity's directory capabilities."""
+"""Contracts for one supplied identity's directory access and visible text."""
 
 from __future__ import annotations
 
@@ -30,6 +30,62 @@ class CapabilityKind(StrEnum):
     OBJECT_CONTROL = "object_control"
     AUTHENTICATION_MATERIAL_WRITE = "authentication_material_write"
     DELEGATION_WRITE = "delegation_write"
+
+
+@dataclass(frozen=True, slots=True)
+class DirectoryTextSignal:
+    """One non-authoritative marker attached to readable LDAP text."""
+
+    rule_id: str
+    title: str
+    category: str
+    confidence: str
+    line_number: int
+
+    def public_payload(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "title": self.title,
+            "category": self.category,
+            "confidence": self.confidence,
+            "line_number": self.line_number,
+        }
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class DirectoryTextEntry:
+    """One readable LDAP text value retained only in the live server process."""
+
+    distinguished_name: str
+    subject: str
+    subject_type: str
+    attribute: str
+    value: str = field(repr=False)
+    signals: tuple[DirectoryTextSignal, ...] = field(default_factory=tuple)
+
+    @property
+    def flagged(self) -> bool:
+        return bool(self.signals)
+
+    def metadata_payload(self) -> dict[str, object]:
+        """Return filterable metadata without copying the raw value."""
+
+        return {
+            "distinguished_name": self.distinguished_name,
+            "subject": self.subject,
+            "subject_type": self.subject_type,
+            "attribute": self.attribute,
+            "size": len(self.value.encode("utf-8")),
+            "flagged": self.flagged,
+            "signals": [signal.public_payload() for signal in self.signals],
+        }
+
+    def __repr__(self) -> str:
+        return (
+            f"DirectoryTextEntry(subject={self.subject!r}, "
+            f"subject_type={self.subject_type!r}, attribute={self.attribute!r}, "
+            f"value=<redacted {len(self.value)} chars>, signals={len(self.signals)!r})"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +186,10 @@ class IdentityAccessReport:
     identity: DirectoryIdentity
     capabilities: tuple[AccessCapability, ...] = field(default_factory=tuple, repr=False)
     coverage: tuple[Coverage, ...] = field(default_factory=tuple, repr=False)
+    directory_text: tuple[DirectoryTextEntry, ...] = field(
+        default_factory=tuple,
+        repr=False,
+    )
 
     @property
     def partial(self) -> bool:
@@ -142,6 +202,10 @@ class IdentityAccessReport:
             "identity": self.identity.public_payload(),
             "capabilities": [item.public_payload() for item in self.capabilities],
             "coverage": [item.public_payload() for item in self.coverage],
+            "directory_text_count": len(self.directory_text),
+            "flagged_directory_text_count": sum(
+                item.flagged for item in self.directory_text
+            ),
             "partial": self.partial,
         }
 
