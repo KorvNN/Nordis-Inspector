@@ -8,8 +8,10 @@ import json
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
 from importlib.resources import files
+from pathlib import PureWindowsPath
 from threading import RLock, Thread
 from typing import Any, Protocol
+from urllib.parse import quote
 
 import anyio
 from jinja2 import Environment, PackageLoader, select_autoescape
@@ -96,6 +98,14 @@ from nordis_smb_inspector.web.audit import (
     WordlistUploadValidator,
     create_private_upload_file,
 )
+from nordis_smb_inspector.web.content import (
+    ContentAccessError,
+    ContentCatalog,
+    LdapContentReference,
+    SmbContentReference,
+    open_smb_reader,
+    smb_text_preview,
+)
 from nordis_smb_inspector.web.events import InvalidEventCursor, SseEventBroker
 from nordis_smb_inspector.web.security import (
     CSRF_HEADER_NAME,
@@ -144,6 +154,7 @@ class WebRuntime:
     identity_access_inspector: Any = field(repr=False)
     directory_hostname_resolver: Callable[[str], str | None] = field(repr=False)
     hash_tools: CredentialAuditManager = field(repr=False)
+    contents: ContentCatalog = field(repr=False)
     kerberos_hostname_resolver: Callable[[ExpandedTarget], str | None] = field(
         repr=False
     )
@@ -244,6 +255,7 @@ class WebRuntime:
             self._identity_message = None
             self._identity_error = None
             self._identity_report = report
+            self.contents.register_directory(generation, report.directory_text)
             return True
 
     def set_identity_error(
@@ -382,6 +394,7 @@ def create_app(
         identity_access_inspector=identity_access_inspector,
         directory_hostname_resolver=directory_hostname_resolver,
         hash_tools=hash_tool_manager or CredentialAuditManager(),
+        contents=ContentCatalog(),
         kerberos_hostname_resolver=kerberos_hostname_resolver,
     )
     routes = [
@@ -392,6 +405,9 @@ def create_app(
         Route("/scan/events", scan_events, methods=["GET"]),
         Route("/inventory", inventory_results, methods=["GET"]),
         Route("/findings", finding_results, methods=["GET"]),
+        Route("/contents", content_results, methods=["GET"]),
+        Route("/contents/{content_id}/preview", content_preview, methods=["GET"]),
+        Route("/contents/{content_id}/download", content_download, methods=["GET"]),
         Route("/hash-tools", hash_tools_snapshot, methods=["GET"]),
         Route("/hash-tools/wordlist", hash_wordlist_upload, methods=["PUT"]),
         Route("/hash-tools/jobs", hash_tools_start, methods=["POST"]),
@@ -434,6 +450,127 @@ async def inventory_results(request: Request) -> JSONResponse:
 
 async def finding_results(request: Request) -> JSONResponse:
     return JSONResponse(_result_page_payload(request, findings=True))
+
+
+async def content_results(request: Request) -> JSONResponse:
+    runtime = _runtime(request)
+    generation = runtime.sessions.snapshot.generation
+    items = list(runtime.contents.snapshot(generation))
+    source = request.query_params.get("source")
+    if source is not None:
+        if source not in {"smb", "ldap"}:
+            raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
+        items = [item for item in items if item.get("source") == source]
+    flagged = request.query_params.get("flagged")
+    if flagged is not None:
+        if flagged not in {"true", "false"}:
+            raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
+        expected = flagged == "true"
+        items = [item for item in items if item.get("flagged") is expected]
+    page = _positive_query_integer(request, "page", default=1)
+    page_size = _positive_query_integer(request, "page_size", default=100)
+    if page_size > runtime.sessions.limits.max_page_size:
+        raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
+    start = (page - 1) * page_size
+    selected = items[start : start + page_size]
+    total_pages = (len(items) + page_size - 1) // page_size if items else 0
+    return JSONResponse(
+        {
+            "items": selected,
+            "page": page,
+            "page_size": page_size,
+            "total_items": len(items),
+            "total_pages": total_pages,
+        }
+    )
+
+
+async def content_preview(request: Request) -> JSONResponse:
+    runtime = _runtime(request)
+    try:
+        reference, credential = runtime.contents.resolve(
+            runtime.sessions.snapshot.generation,
+            request.path_params["content_id"],
+        )
+        if isinstance(reference, LdapContentReference):
+            return JSONResponse(
+                {
+                    "text": reference.entry.value,
+                    "encoding": "utf-8",
+                    "truncated": False,
+                    "size": len(reference.entry.value.encode("utf-8")),
+                }
+            )
+
+        def load_preview() -> dict[str, object]:
+            lease = open_smb_reader(
+                reference,
+                credential,
+                connector=runtime.connector,
+                authenticator=runtime.authenticator,
+                file_adapter=runtime.file_adapter,
+            )
+            return smb_text_preview(lease, reference.path)
+
+        payload = await anyio.to_thread.run_sync(load_preview)
+        return JSONResponse(payload)
+    except ContentAccessError as error:
+        return JSONResponse(error.public_payload(), status_code=error.status_code)
+
+
+async def content_download(request: Request) -> Response:
+    runtime = _runtime(request)
+    try:
+        reference, credential = runtime.contents.resolve(
+            runtime.sessions.snapshot.generation,
+            request.path_params["content_id"],
+        )
+        filename = _content_filename(reference)
+        headers = {"Content-Disposition": _attachment_header(filename)}
+        if isinstance(reference, LdapContentReference):
+            return Response(
+                reference.entry.value.encode("utf-8"),
+                media_type="text/plain; charset=utf-8",
+                headers=headers,
+            )
+
+        lease = await anyio.to_thread.run_sync(
+            lambda: open_smb_reader(
+                reference,
+                credential,
+                connector=runtime.connector,
+                authenticator=runtime.authenticator,
+                file_adapter=runtime.file_adapter,
+            )
+        )
+        return StreamingResponse(
+            lease.iter_bytes(),
+            media_type="application/octet-stream",
+            headers=headers,
+        )
+    except ContentAccessError as error:
+        return JSONResponse(error.public_payload(), status_code=error.status_code)
+
+
+def _content_filename(reference: SmbContentReference | LdapContentReference) -> str:
+    if isinstance(reference, SmbContentReference):
+        return PureWindowsPath(reference.path).name or "nordis-content.bin"
+    subject = "".join(
+        character if character.isalnum() or character in "._-" else "_"
+        for character in reference.entry.subject
+    ).strip("._")
+    return f"{subject or 'directory-object'}-{reference.entry.attribute}.txt"
+
+
+def _attachment_header(filename: str) -> str:
+    cleaned = "".join(
+        character for character in filename if character not in {'"', "\\", "\r", "\n"}
+    ) or "nordis-content.bin"
+    fallback = "".join(
+        character if character.isascii() and (character.isalnum() or character in "._-") else "_"
+        for character in cleaned
+    )
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(cleaned)}"
 
 
 async def hash_tools_snapshot(request: Request) -> JSONResponse:
@@ -605,6 +742,7 @@ async def scan_start(request: Request) -> JSONResponse:
     runtime.hash_tools.clear()
 
     runtime.reset_targets(handle.token.generation)
+    runtime.contents.reset(handle.token.generation, credential)
     phase_total = (
         plan.known_address_count
         if plan.hostname_count == 0
@@ -669,6 +807,7 @@ def _snapshot_payload(runtime: WebRuntime) -> dict[str, object]:
         "scan_id": state.scan_id,
         "inventory_count": state.inventory_count,
         "finding_count": state.finding_count,
+        "content_count": runtime.contents.count(state.generation),
         "partial": state.partial,
         "terminal_reason": state.terminal_reason.value if state.terminal_reason else None,
         "terminal_error": runtime.terminal_error_snapshot(state.generation),
@@ -805,7 +944,16 @@ def _run_access_scan(
 
         def publish_inventory(entry: InventoryEntry) -> None:
             remember_directory_candidate(entry, kerberos_hostname)
-            payload = _inventory_payload(entry, generation=handle.token.generation)
+            content_id = runtime.contents.register_smb(
+                handle.token.generation,
+                entry,
+                kerberos_hostname=kerberos_hostname,
+            )
+            payload = _inventory_payload(
+                entry,
+                generation=handle.token.generation,
+                content_id=content_id,
+            )
             runtime.sessions.upsert_inventory(
                 handle.token,
                 (entry.target, entry.share_name, entry.relative_path, entry.kind.value),
@@ -815,6 +963,12 @@ def _run_access_scan(
             runtime.events.publish("snapshot", _snapshot_payload(runtime))
 
         def publish_finding(finding: ContentFinding) -> None:
+            runtime.contents.flag_smb(
+                handle.token.generation,
+                target=finding.target,
+                share=finding.share,
+                path=finding.path,
+            )
             payload = _finding_payload(finding, generation=handle.token.generation)
             runtime.sessions.add_finding(handle.token, payload)
             runtime.events.publish("finding.added", payload)
@@ -1236,6 +1390,7 @@ def _inventory_payload(
     entry: InventoryEntry,
     *,
     generation: int,
+    content_id: str | None = None,
 ) -> dict[str, object]:
     read_access = (
         "allowed"
@@ -1267,6 +1422,7 @@ def _inventory_payload(
         "raw_error_code": entry.error.raw_code if entry.error is not None else None,
         "error_name": entry.error.symbolic_name if entry.error is not None else None,
         "error_message": entry.error.safe_message if entry.error is not None else None,
+        "content_id": content_id,
     }
 
 
