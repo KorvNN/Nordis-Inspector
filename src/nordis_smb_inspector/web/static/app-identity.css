@@ -131,7 +131,7 @@
 }
 .identity-results-layout {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 12px;
 }
@@ -150,79 +150,7 @@
   font-size: .68rem;
   line-height: 1.5;
 }
-.identity-capability-list,
-.identity-smb-list { display: grid; gap: 8px; }
-.identity-smb-access {
-  border: 1px solid var(--line-strong);
-  border-left: 3px solid var(--accent);
-  border-radius: 9px;
-  padding: 12px 13px;
-  background: #0d1917;
-}
-.identity-smb-access.is-limited { border-left-color: var(--warning); }
-.identity-smb-access header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.identity-smb-access h4 {
-  margin: 0;
-  color: var(--text);
-  font: 700 .74rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
-  overflow-wrap: anywhere;
-}
-.identity-smb-access header span {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 3px 7px;
-  color: var(--accent);
-  background: var(--accent-dark);
-  font-size: .59rem;
-  font-weight: 850;
-  text-transform: uppercase;
-}
-.identity-smb-access.is-limited header span {
-  color: var(--warning);
-  background: var(--finding-dark);
-}
-.identity-smb-access p {
-  margin: 8px 0 0;
-  color: #cbd8d5;
-  font-size: .69rem;
-  line-height: 1.5;
-}
-.identity-smb-paths,
-.identity-denied-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 9px;
-}
-.identity-smb-paths code,
-.identity-denied-list code {
-  max-width: 100%;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 4px 6px;
-  color: #cbdad6;
-  background: #111f1d;
-  font-size: .62rem;
-  overflow-wrap: anywhere;
-  text-overflow: ellipsis;
-}
-.identity-denied-access {
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
-}
-.identity-denied-access summary {
-  width: fit-content;
-  color: var(--muted);
-  font-size: .66rem;
-  font-weight: 750;
-  cursor: pointer;
-}
+.identity-capability-list { display: grid; gap: 8px; }
 .identity-capability {
   border: 1px solid var(--line-strong);
   border-left: 3px solid #8cdcf2;
@@ -330,7 +258,6 @@
 
 @media (max-width: 560px) {
   .identity-panel-heading,
-  .identity-smb-access header,
   .identity-capability-header { flex-direction: column; }
   .identity-facts { grid-template-columns: 1fr; }
 }

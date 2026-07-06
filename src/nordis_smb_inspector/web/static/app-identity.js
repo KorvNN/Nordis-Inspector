@@ -39,11 +39,10 @@ const EN_CAPABILITY_TITLES = {
 
 let displayValue;
 let statusTone;
-let inventoryItems = () => [];
 let identityAccessSnapshot = null;
 
 function configureIdentityAccess(dependencies) {
-  ({displayValue, statusTone, inventoryItems} = dependencies);
+  ({displayValue, statusTone} = dependencies);
 }
 
 function currentIdentityAccess() {
@@ -59,7 +58,7 @@ function identityStateCopy(status) {
     tr: {
       pending: [
         "Kimlik erişimi bekliyor.",
-        "SMB taraması tamamlandıktan sonra uygun bir domain controller görülürse inceleme başlayacak.",
+        "Hedef incelemesi tamamlandıktan sonra uygun bir domain controller bulunursa AD incelemesi başlayacak.",
       ],
       running: [
         "Kimlik erişimi inceleniyor.",
@@ -67,7 +66,7 @@ function identityStateCopy(status) {
       ],
       failed: [
         "Kimlik erişimi tamamlanamadı.",
-        "SMB sonuçları geçerlidir; yalnızca bu kimlik incelemesi tamamlanamadı.",
+        "Hedef tarama sonuçları geçerlidir; yalnızca AD kimlik incelemesi tamamlanamadı.",
       ],
       not_checked: [
         "Kimlik erişimi incelenmedi.",
@@ -77,7 +76,7 @@ function identityStateCopy(status) {
     en: {
       pending: [
         "Identity access is pending.",
-        "Inspection will start after the SMB scan if an eligible domain controller is observed.",
+        "AD inspection will start after target inspection if an eligible domain controller is found.",
       ],
       running: [
         "Inspecting identity access.",
@@ -85,7 +84,7 @@ function identityStateCopy(status) {
       ],
       failed: [
         "Identity access could not be completed.",
-        "The SMB results remain valid; only this identity inspection could not be completed.",
+        "The target scan results remain valid; only the AD identity inspection could not be completed.",
       ],
       not_checked: [
         "Identity access was not inspected.",
@@ -178,118 +177,6 @@ function identitySummary(report) {
     }
     details.append(summary, list);
     card.append(details);
-  }
-  return card;
-}
-
-function normalizedInventoryValue(value) {
-  return String(value ?? "").trim().toLowerCase();
-}
-
-function inventoryAccessEvidence() {
-  const records = inventoryItems();
-  const groups = new Map();
-  for (const record of Array.isArray(records) ? records : []) {
-    if (!record || typeof record !== "object" || Array.isArray(record)) continue;
-    const target = String(record.target ?? "").trim();
-    const share = String(record.share ?? "").trim();
-    if (!target || !share) continue;
-    const key = `${target.toLocaleLowerCase()}\u001f${share.toLocaleLowerCase()}`;
-    if (!groups.has(key)) groups.set(key, {target, share, records: []});
-    groups.get(key).records.push(record);
-  }
-
-  const evidence = {usable: [], limited: [], denied: []};
-  for (const group of groups.values()) {
-    const shareRecord = group.records.find(
-      (record) => normalizedInventoryValue(record.type) === "share",
-    );
-    if (!shareRecord) continue;
-    const shareStatus = normalizedInventoryValue(shareRecord.status);
-    const shareRead = normalizedInventoryValue(shareRecord.readAccess);
-    if (shareStatus === "non_file_share") continue;
-
-    const rootListingDenied = group.records.some((record) => (
-      normalizedInventoryValue(record.type) === "directory"
-      && !String(record.path ?? "").trim()
-      && (
-        normalizedInventoryValue(record.status).includes("denied")
-        || normalizedInventoryValue(record.readAccess) === "denied"
-      )
-    ));
-    const readableChildren = group.records.filter((record) => (
-      String(record.path ?? "").trim()
-      && normalizedInventoryValue(record.readAccess) === "allowed"
-      && !normalizedInventoryValue(record.status).includes("denied")
-    ));
-    const item = {
-      target: group.target,
-      share: group.share,
-      paths: readableChildren.map((record) => String(record.path)).slice(0, 3),
-      readableFiles: readableChildren.filter(
-        (record) => normalizedInventoryValue(record.type) === "file",
-      ).length,
-      readableEntries: readableChildren.length,
-    };
-
-    if (shareStatus.includes("denied") || shareRead === "denied") {
-      evidence.denied.push(item);
-    } else if (shareStatus === "share_connected" && rootListingDenied) {
-      evidence.limited.push(item);
-    } else if (shareStatus === "share_connected" && shareRead === "allowed") {
-      evidence.usable.push(item);
-    }
-  }
-
-  for (const items of Object.values(evidence)) {
-    items.sort((left, right) => (
-      `${left.target}\\${left.share}`.localeCompare(`${right.target}\\${right.share}`)
-    ));
-  }
-  return evidence;
-}
-
-function smbAccessCard(item, state) {
-  const card = document.createElement("article");
-  card.className = `identity-smb-access is-${state}`;
-  const header = document.createElement("header");
-  const title = document.createElement("h4");
-  title.textContent = `\\\\${item.target}\\${item.share}`;
-  const badge = document.createElement("span");
-  badge.textContent = state === "usable"
-    ? currentLanguage === "en" ? "Readable" : "Okunabiliyor"
-    : currentLanguage === "en" ? "Limited" : "Sınırlı";
-  header.append(title, badge);
-
-  const copy = document.createElement("p");
-  if (state === "limited") {
-    copy.textContent = currentLanguage === "en"
-      ? "The share connection succeeded, but listing its root directory was denied."
-      : "Share bağlantısı kuruldu ancak kök dizin listesi reddedildi.";
-  } else if (item.readableFiles > 0) {
-    copy.textContent = currentLanguage === "en"
-      ? `${item.readableFiles.toLocaleString(numberLocale())} readable files were observed.`
-      : `${item.readableFiles.toLocaleString(numberLocale())} okunabilir dosya görüldü.`;
-  } else if (item.readableEntries > 0) {
-    copy.textContent = currentLanguage === "en"
-      ? `${item.readableEntries.toLocaleString(numberLocale())} readable entries were observed.`
-      : `${item.readableEntries.toLocaleString(numberLocale())} okunabilir kayıt görüldü.`;
-  } else {
-    copy.textContent = currentLanguage === "en"
-      ? "Share access and an empty root listing were confirmed."
-      : "Share erişimi ve boş kök dizin listesi doğrulandı.";
-  }
-  card.append(header, copy);
-
-  if (item.paths.length > 0) {
-    const paths = document.createElement("div");
-    paths.className = "identity-smb-paths";
-    for (const pathValue of item.paths) {
-      const path = document.createElement("code");
-      path.textContent = pathValue;
-      paths.append(path);
-    }
-    card.append(paths);
   }
   return card;
 }
@@ -540,9 +427,7 @@ function renderIdentityAccess(payload) {
   const capabilities = (Array.isArray(report?.capabilities) ? report.capabilities : [])
     .filter((item) => item && typeof item === "object" && !Array.isArray(item));
   const capabilityGroups = groupCapabilities(capabilities);
-  const smbEvidence = inventoryAccessEvidence();
-  const usefulEvidenceCount = capabilityGroups.length + smbEvidence.usable.length;
-  identityTabCount.textContent = usefulEvidenceCount.toLocaleString(numberLocale());
+  identityTabCount.textContent = capabilityGroups.length.toLocaleString(numberLocale());
 
   const reportIsPartial = status === "completed" && report?.partial === true;
   identityAccessStatus.textContent = reportIsPartial
@@ -572,45 +457,6 @@ function renderIdentityAccess(payload) {
   identityAccessContent.append(identitySummary(report));
   const layout = document.createElement("div");
   layout.className = "identity-results-layout";
-  const smbSection = resultSection(
-    currentLanguage === "en" ? "Usable SMB access" : "Kullanılabilir SMB erişimleri",
-    currentLanguage === "en"
-      ? "Only observed access for the supplied identity is shown."
-      : "Yalnızca girilen kimlikle gözlenen erişimler gösterilir.",
-  );
-  const smbList = document.createElement("div");
-  smbList.className = "identity-smb-list";
-  for (const item of smbEvidence.usable) smbList.append(smbAccessCard(item, "usable"));
-  if (smbEvidence.usable.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "identity-no-capability";
-    const title = document.createElement("strong");
-    title.textContent = currentLanguage === "en"
-      ? "No readable SMB share was confirmed"
-      : "Okunabilir SMB share doğrulanmadı";
-    empty.append(title);
-    smbList.append(empty);
-  }
-  for (const item of smbEvidence.limited) smbList.append(smbAccessCard(item, "limited"));
-  if (smbEvidence.denied.length > 0) {
-    const denied = document.createElement("details");
-    denied.className = "identity-denied-access";
-    const summary = document.createElement("summary");
-    summary.textContent = currentLanguage === "en"
-      ? `${smbEvidence.denied.length.toLocaleString(numberLocale())} denied shares`
-      : `${smbEvidence.denied.length.toLocaleString(numberLocale())} reddedilen share`;
-    const list = document.createElement("div");
-    list.className = "identity-denied-list";
-    for (const item of smbEvidence.denied) {
-      const path = document.createElement("code");
-      path.textContent = `\\\\${item.target}\\${item.share}`;
-      list.append(path);
-    }
-    denied.append(summary, list);
-    smbList.append(denied);
-  }
-  smbSection.append(smbList);
-
   const capabilitySection = resultSection(
     currentLanguage === "en" ? "Usable AD access" : "Kullanılabilir AD erişimleri",
     currentLanguage === "en"
@@ -639,7 +485,7 @@ function renderIdentityAccess(payload) {
   }
   capabilitySection.append(capabilityList);
 
-  layout.append(smbSection, capabilitySection);
+  layout.append(capabilitySection);
   identityAccessContent.append(layout);
 }
 

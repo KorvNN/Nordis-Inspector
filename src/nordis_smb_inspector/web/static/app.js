@@ -1889,7 +1889,6 @@ configureHashTools({
 configureIdentityAccess({
   displayValue,
   statusTone,
-  inventoryItems: () => [...inventoryStore.values()],
 });
 configureHistory({
   activateResultTab,

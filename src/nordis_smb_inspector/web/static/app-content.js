@@ -39,6 +39,24 @@ function sourceLabel(source) {
   return "SMB";
 }
 
+function attributeLabel(attribute) {
+  const key = String(attribute ?? "").toLowerCase();
+  const labels = currentLanguage === "en"
+    ? {
+      description: "Description",
+      info: "Notes",
+      comment: "Comment",
+      admindescription: "Administrative description",
+    }
+    : {
+      description: "Açıklama",
+      info: "Notlar",
+      comment: "Yorum",
+      admindescription: "Yönetim açıklaması",
+    };
+  return labels[key] ?? displayValue(attribute);
+}
+
 function typeLabel(type) {
   const labels = currentLanguage === "en"
     ? {
@@ -81,7 +99,7 @@ function contentRecord(raw) {
 
 function contentLocation(record) {
   if (record.source === "ldap") {
-    return `${displayValue(record.attribute)} · ${displayValue(record.distinguishedName)}`;
+    return `${attributeLabel(record.attribute)} · ${displayValue(record.distinguishedName)}`;
   }
   return `\\\\${displayValue(record.target)}\\${displayValue(record.share)}\\${displayValue(record.path)}`;
 }
@@ -97,6 +115,7 @@ function contentSearchText(record) {
     record.subject,
     record.subjectType,
     record.attribute,
+    attributeLabel(record.attribute),
     ...record.signals.flatMap((signal) => [signal.title, signal.category, signal.rule_id]),
   ].map(displayValue).join(" ").toLocaleLowerCase(currentLanguage === "en" ? "en-US" : "tr-TR");
 }
@@ -157,7 +176,7 @@ function renderContents() {
     row.append(textCell(sourceLabel(record.source), "content-source-value"));
     row.append(textCell(record.title, "content-title-value"));
     row.append(textCell(
-      record.source === "ldap" ? record.attribute : contentLocation(record),
+      record.source === "ldap" ? attributeLabel(record.attribute) : contentLocation(record),
       "content-location-value",
     ));
     row.append(textCell(formatSize(record.size)));
@@ -230,7 +249,10 @@ function renderContentDetail(record) {
   if (record.source === "ldap") {
     metadata.append(
       detailRow(currentLanguage === "en" ? "Object type" : "Nesne türü", typeLabel(record.subjectType)),
-      detailRow(currentLanguage === "en" ? "Attribute" : "Alan", record.attribute, true),
+      detailRow(
+        currentLanguage === "en" ? "Attribute" : "Alan",
+        attributeLabel(record.attribute),
+      ),
     );
   }
 
