@@ -540,7 +540,7 @@ const LANGUAGE_TEXT = {
     "Filtre": "Filter",
     "İçerik kaynağı": "Content source",
     "Tüm kaynaklar": "All sources",
-    "Yalnızca Bak": "Review only",
+    "Yalnızca İncele": "Review only",
     "Dosya / Nesne": "File / Object",
     "Konum / Alan": "Location / Attribute",
     "Boyut": "Size",

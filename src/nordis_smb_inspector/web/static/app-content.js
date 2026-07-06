@@ -116,7 +116,7 @@ function visibleContents() {
 function marker() {
   const value = document.createElement("span");
   value.className = "content-review-marker";
-  value.textContent = currentLanguage === "en" ? "Review" : "Bak";
+  value.textContent = currentLanguage === "en" ? "Review" : "İncele";
   return value;
 }
 
@@ -205,7 +205,6 @@ function renderContentDetail(record) {
   heading.className = "detail-heading";
   heading.textContent = displayValue(record.title);
   header.append(heading);
-  if (record.flagged) header.append(marker());
 
   const actions = document.createElement("div");
   actions.className = "content-detail-actions";
@@ -253,29 +252,9 @@ function renderContentDetail(record) {
   const sections = [header];
   if (actions.childElementCount > 0) sections.push(actions);
   sections.push(metadata);
-  if (record.signals.length > 0) sections.push(signalList(record.signals));
   sections.push(preview);
   contentSelectionDetail.replaceChildren(...sections);
   if (record.previewAvailable) loadPreview(record, code, sequence);
-}
-
-function signalList(signals) {
-  const section = document.createElement("section");
-  section.className = "content-signals";
-  const heading = document.createElement("strong");
-  heading.textContent = currentLanguage === "en" ? "Why review" : "Neden bakmalı";
-  const list = document.createElement("ul");
-  for (const signal of signals) {
-    const item = document.createElement("li");
-    const title = displayValue(signal.title ?? signal.rule_id);
-    const line = Number(signal.line_number);
-    item.textContent = Number.isFinite(line)
-      ? `${title} · ${currentLanguage === "en" ? "line" : "satır"} ${line}`
-      : title;
-    list.append(item);
-  }
-  section.append(heading, list);
-  return section;
 }
 
 async function loadPreview(record, code, sequence) {
