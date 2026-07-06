@@ -8,6 +8,11 @@ import {
   setHashScanActive,
 } from "./app-hash-tools.js";
 import {
+  clearContents,
+  refreshContents,
+  scheduleContentRefresh,
+} from "./app-content.js";
+import {
   configureHistory,
   renderHistory,
   setSelectedHistoryKey,
@@ -115,6 +120,7 @@ let selectedTargetKey = null;
 let selectedInventoryKey = null;
 let selectedFindingKey = null;
 let latestGeneration = null;
+let latestContentCount = null;
 let pendingScanInputs = null;
 const scanInputSnapshots = new Map();
 
@@ -1195,6 +1201,7 @@ function clearResults() {
   renderInventory();
   renderFindings();
   renderIdentityAccess(null);
+  clearContents();
 }
 
 function showErrors(errors) {
@@ -1766,6 +1773,11 @@ function setScanState(state) {
 
   document.querySelector("#inventory-count").textContent = state.inventory_count ?? 0;
   document.querySelector("#finding-count").textContent = state.finding_count ?? 0;
+  const contentCount = Number(state.content_count ?? 0);
+  if (contentCount !== latestContentCount) {
+    latestContentCount = contentCount;
+    scheduleContentRefresh();
+  }
   const active = ["running", "cancelling"].includes(status);
   startScanButton.disabled = active;
   cancelScanButton.disabled = !active || status === "cancelling";
@@ -1807,6 +1819,7 @@ async function refreshResultPanels() {
     const [inventory, findings] = await Promise.all([
       fetchResultArray("/inventory", ["inventory", "inventory_items"]),
       fetchResultArray("/findings", ["findings", "finding_items"]),
+      refreshContents(),
     ]);
     if (inventory) replaceInventory(inventory);
     if (findings) replaceFindings(findings);
@@ -1846,8 +1859,14 @@ function handleServerEvent(event) {
   try {
     const payload = JSON.parse(event.data);
     if (event.type === "target.changed") upsertTarget(payload);
-    if (event.type === "inventory.added") upsertInventory(payload);
-    if (event.type === "finding.added") upsertFinding(payload);
+    if (event.type === "inventory.added") {
+      upsertInventory(payload);
+      scheduleContentRefresh();
+    }
+    if (event.type === "finding.added") {
+      upsertFinding(payload);
+      scheduleContentRefresh();
+    }
     if (event.type === "snapshot") {
       setScanState(payload);
       targetsFromSnapshot(payload);
@@ -1874,6 +1893,7 @@ configureIdentityAccess({
 });
 configureHistory({
   activateResultTab,
+  clearContents,
   detailList,
   detectionRulePackLabel,
   displayValue,

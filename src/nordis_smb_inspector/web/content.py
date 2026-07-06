@@ -46,6 +46,24 @@ class ContentSource(StrEnum):
     LDAP = "ldap"
 
 
+@dataclass(frozen=True, slots=True)
+class ContentSignal:
+    title: str
+    rule_id: str | None = None
+    category: str | None = None
+    confidence: str | None = None
+    line_number: int | None = None
+
+    def public_payload(self) -> dict[str, object]:
+        return {
+            "title": self.title,
+            "rule_id": self.rule_id,
+            "category": self.category,
+            "confidence": self.confidence,
+            "line_number": self.line_number,
+        }
+
+
 class ContentAccessError(RuntimeError):
     """A normalized error safe to display in the local panel."""
 
@@ -76,6 +94,7 @@ class SmbContentReference:
     size: int | None
     kerberos_hostname: str | None = field(default=None, repr=False)
     flagged: bool = False
+    signals: tuple[ContentSignal, ...] = ()
 
     def public_payload(self) -> dict[str, object]:
         kind = document_kind(self.path)
@@ -88,7 +107,7 @@ class SmbContentReference:
             "path": self.path,
             "size": self.size,
             "flagged": self.flagged,
-            "signals": [],
+            "signals": [signal.public_payload() for signal in self.signals],
             "preview_available": kind not in {
                 DocumentKind.ZIP_ARCHIVE,
                 DocumentKind.TAR_ARCHIVE,
@@ -193,6 +212,7 @@ class ContentCatalog:
         target: str,
         share: str,
         path: str,
+        signal: ContentSignal | None = None,
     ) -> None:
         remote_path = path.split("!/", 1)[0]
         key = (target, share, remote_path)
@@ -201,8 +221,16 @@ class ContentCatalog:
                 return
             content_id = self._smb_keys.get(key)
             current = self._items.get(content_id) if content_id is not None else None
-            if isinstance(current, SmbContentReference) and not current.flagged:
-                self._items[content_id] = replace(current, flagged=True)
+            if isinstance(current, SmbContentReference):
+                signals = current.signals
+                if signal is not None and signal not in signals:
+                    signals = (*signals, signal)
+                if not current.flagged or signals != current.signals:
+                    self._items[content_id] = replace(
+                        current,
+                        flagged=True,
+                        signals=signals,
+                    )
 
     def register_directory(
         self,

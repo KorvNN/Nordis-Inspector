@@ -194,6 +194,10 @@
             aria-selected="false" aria-controls="inventory-panel" data-result-tab="inventory">
             Envanter <strong id="inventory-tab-count">0</strong>
           </button>
+          <button id="content-tab" class="result-tab" type="button" role="tab"
+            aria-selected="false" aria-controls="content-panel" data-result-tab="content">
+            İçerikler <strong id="content-tab-count">0</strong>
+          </button>
           <button id="findings-tab" class="result-tab" type="button" role="tab"
             aria-selected="false" aria-controls="findings-panel" data-result-tab="findings">
             Bulgular <strong id="findings-tab-count">0</strong>
@@ -309,6 +313,50 @@
             <aside id="inventory-selection-detail" class="selection-detail"
               aria-label="Envanter ayrıntısı">
               <p class="selection-placeholder">Ayrıntı için bir kayıt seç.</p>
+            </aside>
+          </div>
+        </section>
+
+        <section id="content-panel" class="result-tab-panel" role="tabpanel"
+          aria-labelledby="content-tab" data-result-panel="content" hidden>
+          <div class="panel-toolbar content-toolbar">
+            <div class="table-toolbar content-filter-toolbar">
+              <label for="content-filter">Filtre</label>
+              <input id="content-filter" type="search" autocomplete="off">
+              <select id="content-source-filter" aria-label="İçerik kaynağı">
+                <option value="all">Tüm kaynaklar</option>
+                <option value="smb">SMB</option>
+                <option value="ldap">LDAP</option>
+              </select>
+              <label class="content-flagged-control" for="content-flagged-filter">
+                <input id="content-flagged-filter" type="checkbox">
+                Yalnızca Bak
+              </label>
+            </div>
+            <span id="content-visible-count" class="summary">0 kayıt</span>
+          </div>
+          <div class="result-split content-split">
+            <div class="table-frame content-table-frame">
+              <table class="content-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Kaynak</th>
+                    <th scope="col">Dosya / Nesne</th>
+                    <th scope="col">Konum / Alan</th>
+                    <th scope="col">Boyut</th>
+                    <th scope="col">İşaret</th>
+                  </tr>
+                </thead>
+                <tbody id="content-table-body">
+                  <tr class="table-empty-row">
+                    <td colspan="5">Henüz canlı içerik yok.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <aside id="content-selection-detail" class="selection-detail content-detail"
+              aria-label="İçerik ayrıntısı">
+              <p class="selection-placeholder">İçeriğini görmek için bir kayıt seç.</p>
             </aside>
           </div>
         </section>

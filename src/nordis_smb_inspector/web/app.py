@@ -101,6 +101,7 @@ from nordis_smb_inspector.web.audit import (
 from nordis_smb_inspector.web.content import (
     ContentAccessError,
     ContentCatalog,
+    ContentSignal,
     LdapContentReference,
     SmbContentReference,
     open_smb_reader,
@@ -123,6 +124,7 @@ _MAX_DIRECTORY_CANDIDATES = 3
 _DEFAULT_MAX_DEPTH = 32
 _STATIC_ASSETS: dict[str, str] = {
     "app.css": "text/css; charset=utf-8",
+    "app-content.js": "text/javascript; charset=utf-8",
     "app-identity.css": "text/css; charset=utf-8",
     "app-hash-tools.js": "text/javascript; charset=utf-8",
     "app-history.js": "text/javascript; charset=utf-8",
@@ -968,6 +970,17 @@ def _run_access_scan(
                 target=finding.target,
                 share=finding.share,
                 path=finding.path,
+                signal=ContentSignal(
+                    title=finding.term,
+                    rule_id=finding.rule_id,
+                    category=finding.category,
+                    confidence=(
+                        finding.confidence.value
+                        if finding.confidence is not None
+                        else None
+                    ),
+                    line_number=finding.line_number,
+                ),
             )
             payload = _finding_payload(finding, generation=handle.token.generation)
             runtime.sessions.add_finding(handle.token, payload)

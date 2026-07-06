@@ -26,6 +26,7 @@ let selectedHistoryKey = null;
 let configured = false;
 
 let activateResultTab;
+let clearContents;
 let detailList;
 let detectionRulePackLabel;
 let displayValue;
@@ -40,6 +41,7 @@ function configureHistory(dependencies) {
   if (configured) return;
   ({
     activateResultTab,
+    clearContents,
     detailList,
     detectionRulePackLabel,
     displayValue,
@@ -384,6 +386,9 @@ function loadHistoryItem(item) {
   replaceInventory(item.inventory_items ?? []);
   replaceFindings(item.finding_items ?? []);
   replaceIdentityAccess(item.identity_access ?? null);
+  clearContents(currentLanguage === "en"
+    ? "Content preview and download are available only for the live scan."
+    : "İçerik önizleme ve indirme yalnızca canlı taramada kullanılabilir.");
   activateResultTab("findings");
 }
 
