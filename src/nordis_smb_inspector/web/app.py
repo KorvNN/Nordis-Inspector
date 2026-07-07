@@ -30,7 +30,6 @@ from nordis_smb_inspector.core.access_pipeline import (
     AccessPipelineExecutor,
     AccessPipelineSettings,
 )
-from nordis_smb_inspector.core.credential_audit import classify_audit_material
 from nordis_smb_inspector.core.credentials import (
     AuthMode,
     Credential,
@@ -88,16 +87,6 @@ from nordis_smb_inspector.smb.models import (
 from nordis_smb_inspector.smb.smbprotocol_adapter import SmbProtocolConnector
 from nordis_smb_inspector.smb.smbprotocol_auth_adapter import SmbProtocolAuthenticator
 from nordis_smb_inspector.smb.smbprotocol_files import SmbProtocolFileAdapter
-from nordis_smb_inspector.web.audit import (
-    MAX_WORDLIST_UPLOAD_BYTES,
-    AuditAlreadyRunning,
-    AuditInvalidTransition,
-    AuditRequestError,
-    AuditToolUnavailable,
-    CredentialAuditManager,
-    WordlistUploadValidator,
-    create_private_upload_file,
-)
 from nordis_smb_inspector.web.content import (
     ContentAccessError,
     ContentCatalog,
@@ -126,7 +115,6 @@ _STATIC_ASSETS: dict[str, str] = {
     "app.css": "text/css; charset=utf-8",
     "app-content.js": "text/javascript; charset=utf-8",
     "app-identity.css": "text/css; charset=utf-8",
-    "app-hash-tools.js": "text/javascript; charset=utf-8",
     "app-history.js": "text/javascript; charset=utf-8",
     "app-identity.js": "text/javascript; charset=utf-8",
     "app-i18n.js": "text/javascript; charset=utf-8",
@@ -155,7 +143,6 @@ class WebRuntime:
     access_inspector: Any = field(repr=False)
     identity_access_inspector: Any = field(repr=False)
     directory_hostname_resolver: Callable[[str], str | None] = field(repr=False)
-    hash_tools: CredentialAuditManager = field(repr=False)
     contents: ContentCatalog = field(repr=False)
     kerberos_hostname_resolver: Callable[[ExpandedTarget], str | None] = field(
         repr=False
@@ -373,7 +360,6 @@ def create_app(
     authenticator: Any | None = None,
     file_adapter: Any | None = None,
     share_discoverer: Any | None = None,
-    hash_tool_manager: CredentialAuditManager | None = None,
     kerberos_hostname_resolver: Callable[
         [ExpandedTarget], str | None
     ] = resolve_kerberos_hostname,
@@ -395,7 +381,6 @@ def create_app(
         access_inspector=access_inspector,
         identity_access_inspector=identity_access_inspector,
         directory_hostname_resolver=directory_hostname_resolver,
-        hash_tools=hash_tool_manager or CredentialAuditManager(),
         contents=ContentCatalog(),
         kerberos_hostname_resolver=kerberos_hostname_resolver,
     )
@@ -410,10 +395,6 @@ def create_app(
         Route("/contents", content_results, methods=["GET"]),
         Route("/contents/{content_id}/preview", content_preview, methods=["GET"]),
         Route("/contents/{content_id}/download", content_download, methods=["GET"]),
-        Route("/hash-tools", hash_tools_snapshot, methods=["GET"]),
-        Route("/hash-tools/wordlist", hash_wordlist_upload, methods=["PUT"]),
-        Route("/hash-tools/jobs", hash_tools_start, methods=["POST"]),
-        Route("/hash-tools/jobs/cancel", hash_tools_cancel, methods=["POST"]),
         Route("/favicon.ico", favicon, methods=["GET"]),
         Route("/static/{asset_name}", static_asset, methods=["GET"]),
     ]
@@ -575,113 +556,10 @@ def _attachment_header(filename: str) -> str:
     return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(cleaned)}"
 
 
-async def hash_tools_snapshot(request: Request) -> JSONResponse:
-    return JSONResponse(_hash_tools_payload(_runtime(request)))
-
-
-async def hash_wordlist_upload(request: Request) -> JSONResponse:
-    runtime = _runtime(request)
-    _protect_post(request, runtime)
-    if runtime.sessions.snapshot.active:
-        return _hash_tools_error("SCAN_IN_PROGRESS", status_code=409)
-    content_type = request.headers.get("content-type", "").partition(";")[0].strip()
-    if content_type.casefold() not in {"application/octet-stream", "text/plain"}:
-        return _hash_tools_error("INVALID_WORDLIST")
-    raw_length = request.headers.get("content-length")
-    if raw_length is not None:
-        try:
-            content_length = int(raw_length)
-        except ValueError:
-            return _hash_tools_error("INVALID_WORDLIST")
-        if content_length > MAX_WORDLIST_UPLOAD_BYTES:
-            return _hash_tools_error("WORDLIST_TOO_LARGE", status_code=413)
-
-    try:
-        handle = runtime.hash_tools.begin_wordlist_upload()
-    except AuditAlreadyRunning:
-        return _hash_tools_error("HASH_TOOL_IN_PROGRESS", status_code=409)
-    validator = WordlistUploadValidator()
-    try:
-        create_private_upload_file(handle.path)
-        with handle.path.open("wb") as target:
-            async for chunk in request.stream():
-                validator.consume(chunk)
-                target.write(chunk)
-        size_bytes, entry_count = validator.finish()
-        runtime.hash_tools.complete_wordlist_upload(
-            handle,
-            size_bytes=size_bytes,
-            entry_count=entry_count,
-        )
-    except AuditRequestError as exc:
-        runtime.hash_tools.abort_wordlist_upload(handle)
-        code = _safe_hash_tool_error(exc)
-        return _hash_tools_error(
-            code,
-            status_code=413 if code == "WORDLIST_TOO_LARGE" else 422,
-        )
-    except Exception:
-        runtime.hash_tools.abort_wordlist_upload(handle)
-        return _hash_tools_error("WORDLIST_UPLOAD_FAILED", status_code=500)
-    return JSONResponse(_hash_tools_payload(runtime), status_code=201)
-
-
-async def hash_tools_start(request: Request) -> JSONResponse:
-    runtime = _runtime(request)
-    _protect_post(request, runtime)
-    body = await _read_json(request)
-    if runtime.sessions.snapshot.active:
-        return _hash_tools_error("SCAN_IN_PROGRESS", status_code=409)
-    materials = classify_audit_material(body.get("rule_id"), body.get("full_line"))
-    variant = body.get("variant")
-    if not isinstance(variant, str):
-        return _hash_tools_error("INVALID_CANDIDATE")
-    material = next(
-        (candidate for candidate in materials if candidate.variant == variant),
-        None,
-    )
-    if material is None:
-        return _hash_tools_error("UNSUPPORTED_CANDIDATE")
-    try:
-        runtime.hash_tools.start(
-            material=material,
-            tool_id=body.get("tool_id"),
-            wordlist_upload_id=body.get("wordlist_upload_id"),
-            runtime_seconds=body.get("runtime_seconds"),
-        )
-    except AuditAlreadyRunning:
-        return _hash_tools_error("HASH_TOOL_IN_PROGRESS", status_code=409)
-    except AuditToolUnavailable:
-        return _hash_tools_error("TOOL_UNAVAILABLE", status_code=409)
-    except AuditRequestError as exc:
-        return _hash_tools_error(_safe_hash_tool_error(exc))
-    return JSONResponse(_hash_tools_payload(runtime), status_code=202)
-
-
-async def hash_tools_cancel(request: Request) -> JSONResponse:
-    runtime = _runtime(request)
-    _protect_post(request, runtime)
-    try:
-        runtime.hash_tools.cancel()
-    except AuditInvalidTransition:
-        return _hash_tools_error("HASH_TOOL_NOT_RUNNING", status_code=409)
-    return JSONResponse(_hash_tools_payload(runtime), status_code=202)
-
-
 async def scan_start(request: Request) -> JSONResponse:
     runtime = _runtime(request)
     _protect_post(request, runtime)
     body = await _read_json(request)
-    if runtime.hash_tools.active:
-        return JSONResponse(
-            {
-                "ok": False,
-                "errors": [
-                    {"value": "Hash tools", "reason": "HASH_TOOL_IN_PROGRESS"}
-                ],
-            },
-            status_code=409,
-        )
     target_expression = body.get("targets")
     if not isinstance(target_expression, str):
         raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
@@ -740,8 +618,6 @@ async def scan_start(request: Request) -> JSONResponse:
         handle = runtime.sessions.begin_scan()
     except ScanAlreadyRunning as exc:
         raise SafeHttpError(HttpErrorCode.CONFLICT) from exc
-
-    runtime.hash_tools.clear()
 
     runtime.reset_targets(handle.token.generation)
     runtime.contents.reset(handle.token.generation, credential)
@@ -829,45 +705,6 @@ def _snapshot_payload(runtime: WebRuntime) -> dict[str, object]:
             "message": progress.message,
         },
     }
-
-
-_HASH_TOOL_ERROR_CODES = frozenset(
-    {
-        "INVALID_TOOL",
-        "INVALID_RUNTIME",
-        "INVALID_WORDLIST",
-        "WORDLIST_SIZE_INVALID",
-        "WORDLIST_ENTRY_COUNT_INVALID",
-        "WORDLIST_LINE_TOO_LONG",
-        "WORDLIST_TOO_LARGE",
-        "WORDLIST_NOT_FOUND",
-        "WORDLIST_UPLOAD_IN_PROGRESS",
-        "INCOMPATIBLE_TOOL",
-    }
-)
-
-
-def _hash_tools_payload(runtime: WebRuntime) -> dict[str, object]:
-    job = runtime.hash_tools.snapshot
-    wordlist = runtime.hash_tools.wordlist
-    return {
-        "ok": True,
-        "tools": [tool.public_payload() for tool in runtime.hash_tools.tools()],
-        "job": job.public_payload() if job is not None else None,
-        "wordlist": wordlist.public_payload() if wordlist is not None else None,
-    }
-
-
-def _hash_tools_error(code: str, *, status_code: int = 422) -> JSONResponse:
-    return JSONResponse(
-        {"ok": False, "error": code},
-        status_code=status_code,
-    )
-
-
-def _safe_hash_tool_error(error: AuditRequestError) -> str:
-    code = str(error)
-    return code if code in _HASH_TOOL_ERROR_CODES else "INVALID_REQUEST"
 
 
 def _run_access_scan(
@@ -1451,10 +1288,6 @@ def _finding_payload(
     *,
     generation: int,
 ) -> dict[str, object]:
-    audit_candidates = tuple(
-        material.public_metadata()
-        for material in classify_audit_material(finding.rule_id, finding.full_line)
-    )
     return {
         "generation": generation,
         "target": finding.target,
@@ -1470,7 +1303,6 @@ def _finding_payload(
         "confidence": (
             finding.confidence.value if finding.confidence is not None else None
         ),
-        "audit_candidates": audit_candidates,
     }
 
 

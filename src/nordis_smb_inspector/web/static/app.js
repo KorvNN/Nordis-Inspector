@@ -1,13 +1,6 @@
 "use strict";
 
 import {
-  configureHashTools,
-  hashToolErrorMessage,
-  refreshHashTools,
-  renderHashCandidates,
-  setHashScanActive,
-} from "./app-hash-tools.js";
-import {
   clearContents,
   refreshContents,
   scheduleContentRefresh,
@@ -28,8 +21,6 @@ import {
   EN_CATEGORY_LABELS,
   EN_FINDING_METHOD_LABELS,
   EN_FINDING_RULE_LABELS,
-  EN_HASH_FORMAT_LABELS,
-  EN_HASH_JOB_LABELS,
   EN_PHASE_LABELS,
   EN_SCAN_STATUS_LABELS,
   EN_STATUS_LABELS,
@@ -37,8 +28,6 @@ import {
   ERROR_MESSAGE_LABELS,
   FINDING_METHOD_LABELS,
   FINDING_RULE_LABELS,
-  HASH_FORMAT_LABELS,
-  HASH_JOB_LABELS,
   LANGUAGE_KEY,
   MESSAGE_LABELS,
   PHASE_LABELS,
@@ -55,9 +44,6 @@ import {
 
 const body = document.body;
 const languageSelect = document.querySelector("#language-select");
-const workspaceNavigationItems = [...document.querySelectorAll("[data-workspace-view]")];
-const scanWorkspace = document.querySelector("#scan-workspace");
-const hashToolsWorkspace = document.querySelector("#hash-tools-workspace");
 const csrfToken = body.dataset.csrfToken;
 const origin = body.dataset.origin;
 const targets = document.querySelector("#targets");
@@ -243,21 +229,6 @@ function activateResultTab(name) {
   }
 }
 
-function activateWorkspace(name) {
-  const hashToolsActive = name === "hash-tools";
-  scanWorkspace.hidden = hashToolsActive;
-  hashToolsWorkspace.hidden = !hashToolsActive;
-  for (const item of workspaceNavigationItems) {
-    const active = item.dataset.workspaceView === name;
-    item.classList.toggle("is-active", active);
-    item.setAttribute("aria-pressed", String(active));
-  }
-  if (hashToolsActive) {
-    renderHashCandidates();
-    void refreshHashTools();
-  }
-}
-
 function displayValue(value) {
   if (value === null || value === undefined || value === "") return "—";
   const raw = String(value);
@@ -285,19 +256,6 @@ function categoryLabel(value) {
   const raw = String(value);
   const labels = currentLanguage === "en" ? EN_CATEGORY_LABELS : TR_CATEGORY_LABELS;
   return labels[raw] ?? raw;
-}
-
-function hashFormatLabel(value) {
-  if (value === null || value === undefined || value === "") return "—";
-  const key = String(value);
-  const labels = currentLanguage === "en" ? EN_HASH_FORMAT_LABELS : HASH_FORMAT_LABELS;
-  return labels[key] ?? key;
-}
-
-function hashJobLabel(value) {
-  const key = value === null || value === undefined ? "idle" : String(value);
-  const labels = currentLanguage === "en" ? EN_HASH_JOB_LABELS : HASH_JOB_LABELS;
-  return labels[key] ?? key;
 }
 
 function confidenceLabel(value) {
@@ -677,34 +635,6 @@ function renderInventoryDetail(record) {
   ]);
 }
 
-function normalizedAuditCandidates(candidate) {
-  const source = candidate?.auditCandidates ?? candidate?.audit_candidates;
-  if (!Array.isArray(source)) return [];
-  const candidates = [];
-  for (const item of source) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    if (
-      typeof item.id !== "string"
-      || typeof item.variant !== "string"
-      || typeof item.format !== "string"
-    ) continue;
-    const tools = Array.isArray(item.tools)
-      ? item.tools
-        .filter((tool) => (
-          tool
-          && typeof tool === "object"
-          && !Array.isArray(tool)
-          && typeof tool.id === "string"
-          && typeof tool.format === "string"
-        ))
-        .map((tool) => ({id: tool.id, format: tool.format}))
-      : [];
-    if (tools.length === 0) continue;
-    candidates.push({id: item.id, variant: item.variant, format: item.format, tools});
-  }
-  return candidates;
-}
-
 function findingRecord(payload) {
   const candidate = nestedRecord(payload, ["finding", "item", "record"]);
   if (!candidate) return null;
@@ -734,7 +664,6 @@ function findingRecord(payload) {
     ruleId: firstValue(candidate, ["ruleId", "rule_id", "rule"]),
     category: firstValue(candidate, ["category", "rule_category"]),
     confidence: firstValue(candidate, ["confidence", "confidence_level"]),
-    auditCandidates: normalizedAuditCandidates(candidate),
   };
 }
 
@@ -1129,7 +1058,6 @@ function renderFindings() {
     ? `${visibleRecords.length.toLocaleString(numberLocale())} findings`
     : `${visibleRecords.length.toLocaleString(numberLocale())} bulgu`;
   findingsTabCount.textContent = findingStore.size.toLocaleString(numberLocale());
-  renderHashCandidates();
 }
 
 
@@ -1208,11 +1136,8 @@ function showErrors(errors) {
   previewErrors.replaceChildren();
   for (const error of errors) {
     const line = document.createElement("p");
-    const rawReason = String(error.reason ?? "");
-    const reason = rawReason.startsWith("HASH_TOOL_")
-      ? hashToolErrorMessage(rawReason)
-      : rawReason;
-    const value = error.value === "Hash tools" ? uiText("Hash Araçları") : error.value;
+    const reason = String(error.reason ?? "");
+    const value = error.value;
     line.textContent = `${value || (currentLanguage === "en" ? "Input" : "Girdi")}: ${reason}`;
     previewErrors.append(line);
   }
@@ -1781,7 +1706,6 @@ function setScanState(state) {
   const active = ["running", "cancelling"].includes(status);
   startScanButton.disabled = active;
   cancelScanButton.disabled = !active || status === "cancelling";
-  setHashScanActive(active);
 }
 
 function terminalFailureMessage(state) {
@@ -1878,14 +1802,6 @@ function handleServerEvent(event) {
   }
 }
 
-configureHashTools({
-  displayValue,
-  findingStore,
-  formatFileSize,
-  hashFormatLabel,
-  hashJobLabel,
-  mutationHeaders,
-});
 configureIdentityAccess({
   displayValue,
   statusTone,
@@ -1931,10 +1847,6 @@ for (const tab of resultTabs) {
   });
 }
 
-for (const item of workspaceNavigationItems) {
-  item.addEventListener("click", () => activateWorkspace(item.dataset.workspaceView));
-}
-
 toggleTermGenerator.addEventListener("click", openTermGeneratorDialog);
 closeTermGeneratorButton.addEventListener("click", closeTermGeneratorDialog);
 cancelTermGeneratorButton.addEventListener("click", closeTermGeneratorDialog);
@@ -1962,11 +1874,9 @@ languageSelect.value = currentLanguage;
 if (currentLanguage === "en") applyLanguage(currentLanguage);
 syncCredentialControls();
 syncRulePackControls();
-activateWorkspace("scan");
 activateResultTab("targets");
 refreshSnapshot();
 refreshResultPanels();
-refreshHashTools();
 
 const scanEvents = new EventSource("/scan/events");
 for (const eventName of [
