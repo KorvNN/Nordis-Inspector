@@ -5,22 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Nordis Inspector</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/nordis-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/app-identity.css">
 </head>
 <body data-csrf-token="{{ csrf_token }}" data-origin="{{ app_origin }}">
   <header class="topbar">
-    <h1>Nordis Inspector</h1>
-    <nav class="workspace-navigation" aria-label="Çalışma alanları">
-      <button class="workspace-navigation-item is-active" type="button"
-        data-workspace-view="scan" aria-pressed="true">SMB Tarama</button>
-      <button class="workspace-navigation-item" type="button"
-        data-workspace-view="ad" aria-pressed="false">AD İnceleme</button>
-      <button class="workspace-navigation-item" type="button"
-        data-workspace-view="hash-tools" aria-pressed="false">
-        Hash Araçları <strong id="hash-tools-navigation-count">0</strong>
-      </button>
-    </nav>
+    <div class="brand">
+      <img class="brand-icon" src="/static/nordis-icon.svg" alt="" width="40" height="40">
+      <h1>Nordis Inspector</h1>
+    </div>
     <label class="language-switcher" for="language-select">
       <svg class="language-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" stroke-width="1.8">
@@ -111,7 +105,7 @@
           aria-live="polite"></span>
         <label class="option-control" for="detect-patterns">
           <input id="detect-patterns" type="checkbox" checked>
-          <span>Otomatik Kelime Tespiti</span>
+          <span>Otomatik Kural Tespiti</span>
         </label>
         <details id="rule-pack-selector" class="rule-pack-selector">
           <summary>
@@ -184,9 +178,17 @@
             aria-selected="true" aria-controls="targets-panel" data-result-tab="targets">
             Hedefler <strong data-workspace-count="targets">0</strong>
           </button>
+          <button id="identity-tab" class="result-tab" type="button" role="tab"
+            aria-selected="false" aria-controls="identity-panel" data-result-tab="identity">
+            Kimlik erişimi <strong id="identity-tab-count">0</strong>
+          </button>
           <button id="inventory-tab" class="result-tab" type="button" role="tab"
             aria-selected="false" aria-controls="inventory-panel" data-result-tab="inventory">
             Envanter <strong id="inventory-tab-count">0</strong>
+          </button>
+          <button id="content-tab" class="result-tab" type="button" role="tab"
+            aria-selected="false" aria-controls="content-panel" data-result-tab="content">
+            İçerikler <strong id="content-tab-count">0</strong>
           </button>
           <button id="findings-tab" class="result-tab" type="button" role="tab"
             aria-selected="false" aria-controls="findings-panel" data-result-tab="findings">
@@ -253,6 +255,23 @@
           </div>
         </section>
 
+        <section id="identity-panel" class="result-tab-panel identity-panel" role="tabpanel"
+          aria-labelledby="identity-tab" data-result-panel="identity" hidden>
+          <header class="identity-panel-heading">
+            <div>
+              <h3>AD kimlik erişimi</h3>
+              <p>Girilen kimlik için LDAP yanıtlarından doğrulanan veya ACL kayıtlarından çıkarılan AD erişimlerini gösterir.</p>
+            </div>
+            <span id="identity-access-status" class="status-value">İncelenmedi</span>
+          </header>
+          <div id="identity-access-content" class="identity-access-content" aria-live="polite">
+            <div class="identity-empty-state">
+              <strong>Henüz AD kimlik incelemesi yok.</strong>
+              <p>Önce bir tarama başlatın.</p>
+            </div>
+          </div>
+        </section>
+
         <section id="history-panel" class="result-tab-panel" role="tabpanel"
           aria-labelledby="history-tab" data-result-panel="history" hidden>
           <div class="panel-toolbar">
@@ -290,6 +309,50 @@
           </div>
         </section>
 
+        <section id="content-panel" class="result-tab-panel" role="tabpanel"
+          aria-labelledby="content-tab" data-result-panel="content" hidden>
+          <div class="panel-toolbar content-toolbar">
+            <div class="table-toolbar content-filter-toolbar">
+              <label for="content-filter">Filtre</label>
+              <input id="content-filter" type="search" autocomplete="off">
+              <select id="content-source-filter" aria-label="İçerik kaynağı">
+                <option value="all">Tüm kaynaklar</option>
+                <option value="smb">SMB</option>
+                <option value="ldap">LDAP</option>
+              </select>
+              <label class="content-flagged-control" for="content-flagged-filter">
+                <input id="content-flagged-filter" type="checkbox">
+                Yalnızca İncele
+              </label>
+            </div>
+            <span id="content-visible-count" class="summary">0 kayıt</span>
+          </div>
+          <div class="result-split content-split">
+            <div class="table-frame content-table-frame">
+              <table class="content-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Kaynak</th>
+                    <th scope="col">Dosya / Nesne</th>
+                    <th scope="col">Konum / Alan</th>
+                    <th scope="col">Boyut</th>
+                    <th scope="col">İncele</th>
+                  </tr>
+                </thead>
+                <tbody id="content-table-body">
+                  <tr class="table-empty-row">
+                    <td colspan="5">Henüz canlı içerik yok.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <aside id="content-selection-detail" class="selection-detail content-detail"
+              aria-label="İçerik ayrıntısı">
+              <p class="selection-placeholder">İçeriğini görmek için bir kayıt seç.</p>
+            </aside>
+          </div>
+        </section>
+
         <section id="findings-panel" class="result-tab-panel" role="tabpanel"
           aria-labelledby="findings-tab" data-result-panel="findings" hidden>
           <div class="panel-toolbar">
@@ -310,229 +373,6 @@
           </div>
         </section>
       </article>
-    </section>
-  </main>
-
-  <main id="ad-workspace" class="ad-shell" hidden>
-    <aside class="panel ad-sidebar" aria-labelledby="ad-form-heading">
-      <div class="section-heading">
-        <div>
-          <h2 id="ad-form-heading">Active Directory incelemesi</h2>
-          <p class="hint">Girilen kimliğin LDAP üzerinden görebildiği ve kullanabileceği alanları inceler.</p>
-        </div>
-      </div>
-
-      <label for="ad-controller">Domain controller</label>
-      <input id="ad-controller" type="text" autocomplete="off" spellcheck="false"
-        placeholder="dc01.xxxx.local" required>
-      <label for="ad-domain">Domain</label>
-      <input id="ad-domain" type="text" autocomplete="off" spellcheck="false"
-        placeholder="xxxx.local" required>
-
-      <fieldset class="credential-block ad-credential-block">
-        <legend>Kimlik bilgisi</legend>
-        <div class="credential-grid">
-          <div class="form-field ad-username-field">
-            <label id="ad-username-label" for="ad-username">Kullanıcı</label>
-            <input id="ad-username" type="text" autocomplete="off" spellcheck="false"
-              required>
-          </div>
-          <div class="form-field">
-            <label for="ad-credential-kind">Credential türü</label>
-            <select id="ad-credential-kind">
-              <option value="password">Parola</option>
-              <option value="nt_hash">NT hash</option>
-              <option value="ccache">CCache</option>
-            </select>
-          </div>
-          <div id="ad-secret-field" class="form-field credential-secret-field">
-            <label id="ad-secret-label" for="ad-secret">Parola</label>
-            <input id="ad-secret" type="password" autocomplete="new-password"
-              spellcheck="false" required>
-          </div>
-          <div id="ad-ccache-field" class="form-field credential-file-field" hidden>
-            <label for="ad-ccache">CCache dosyası</label>
-            <input id="ad-ccache" type="file" accept=".ccache" disabled>
-          </div>
-          <div class="form-field credential-auth-field">
-            <label for="ad-auth-mode">Kimlik doğrulama</label>
-            <select id="ad-auth-mode">
-              <option value="kerberos_only">Kerberos (Önerilen)</option>
-              <option value="ntlm_only">NTLM</option>
-            </select>
-          </div>
-          <div id="ad-kerberos-hostname-field" class="form-field credential-auth-field">
-            <label for="ad-kerberos-hostname">Kerberos hostname</label>
-            <input id="ad-kerberos-hostname" type="text" autocomplete="off"
-              spellcheck="false" placeholder="dc01.xxxx.local">
-            <p class="hint">Domain controller alanında IP kullanılıyorsa gereklidir.</p>
-          </div>
-        </div>
-      </fieldset>
-
-      <div class="actions">
-        <button id="start-ad-scan" type="button">İncelemeyi başlat</button>
-        <button id="cancel-ad-scan" class="secondary-button" type="button" disabled>
-          İptal et
-        </button>
-      </div>
-      <div id="ad-errors" class="error-list" hidden aria-live="polite"></div>
-    </aside>
-
-    <section class="ad-workspace" aria-label="Active Directory çalışma alanı">
-      <article class="panel ad-status-panel">
-        <div class="ad-status-copy">
-          <span id="ad-status-badge" class="state idle">Hazır</span>
-          <div>
-            <h2 id="ad-phase">İnceleme yok</h2>
-            <p id="ad-progress-message" class="hint">Henüz Active Directory incelemesi başlatılmadı.</p>
-          </div>
-        </div>
-        <div class="metric-grid ad-metrics">
-          <div><strong id="ad-capability-count">0</strong><span>Yapılabilen</span></div>
-          <div><strong id="ad-environment-count">0</strong><span>Ortam</span></div>
-          <div><strong id="ad-computer-count">0</strong><span>Bilgisayar</span></div>
-        </div>
-      </article>
-
-      <article id="ad-identity-panel" class="panel ad-identity-panel" hidden>
-        <div>
-          <span>Bağlanan kimlik</span>
-          <strong id="ad-identity-principal"></strong>
-        </div>
-        <div>
-          <span>Kimlik doğrulama</span>
-          <strong id="ad-identity-auth"></strong>
-        </div>
-        <div>
-          <span>Etkin grup</span>
-          <strong id="ad-identity-groups"></strong>
-        </div>
-      </article>
-
-      <article class="panel ad-results">
-        <div class="result-tabs" role="tablist" aria-label="Active Directory sonuçları">
-          <button class="result-tab is-active" type="button" role="tab"
-            aria-selected="true" data-ad-tab="capability">
-            Bu kimlikle yapılabilenler <strong id="ad-capability-tab-count">0</strong>
-          </button>
-          <button class="result-tab" type="button" role="tab" aria-selected="false"
-            data-ad-tab="environment">
-            Ortam zayıflıkları <strong id="ad-environment-tab-count">0</strong>
-          </button>
-          <button class="result-tab" type="button" role="tab" aria-selected="false"
-            data-ad-tab="computers">
-            Bilgisayarlar <strong id="ad-computer-tab-count">0</strong>
-          </button>
-          <button class="result-tab" type="button" role="tab" aria-selected="false"
-            data-ad-tab="coverage">Kapsam <strong id="ad-coverage-tab-count">0</strong></button>
-        </div>
-        <section class="ad-result-panel" data-ad-panel="capability">
-          <div id="ad-capability-list" class="ad-finding-list">
-            <p class="group-empty-state">Henüz sonuç yok.</p>
-          </div>
-        </section>
-        <section class="ad-result-panel" data-ad-panel="environment" hidden>
-          <div id="ad-environment-list" class="ad-finding-list">
-            <p class="group-empty-state">Henüz sonuç yok.</p>
-          </div>
-        </section>
-        <section class="ad-result-panel" data-ad-panel="computers" hidden>
-          <div class="table-frame ad-computer-frame">
-            <table class="ad-computer-table">
-              <thead><tr><th>Hostname</th><th>Hesap</th><th>İşletim sistemi</th><th>Durum</th></tr></thead>
-              <tbody id="ad-computer-body">
-                <tr class="table-empty-row"><td colspan="4">Henüz bilgisayar envanteri yok.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-        <section class="ad-result-panel" data-ad-panel="coverage" hidden>
-          <div id="ad-coverage-list" class="ad-coverage-list">
-            <p class="group-empty-state">Henüz kontrol çalıştırılmadı.</p>
-          </div>
-        </section>
-      </article>
-    </section>
-  </main>
-
-  <main id="hash-tools-workspace" class="hash-tools-shell" hidden>
-    <section class="hash-tools-heading" aria-labelledby="hash-tools-heading">
-      <div>
-        <h2 id="hash-tools-heading">Hash Araçları</h2>
-        <p>Uygun bulguyu seçtiğin yerel araca aktarır. Bulgu ve wordlist dış servise gönderilmez.</p>
-      </div>
-      <div id="hash-tool-availability" class="hash-tool-availability"
-        aria-label="Yerel araç durumu" aria-live="polite">
-        <span class="hash-tool-checking">Yerel araçlar kontrol ediliyor.</span>
-      </div>
-    </section>
-
-    <section class="hash-tools-layout">
-      <section class="hash-candidates" aria-labelledby="hash-candidates-heading">
-        <header class="hash-column-heading">
-          <div>
-            <h3 id="hash-candidates-heading">Çözülebilir bulgular</h3>
-            <p>Yalnız desteklenen çevrimdışı parola hash’leri gösterilir.</p>
-          </div>
-          <strong id="hash-candidate-count">0</strong>
-        </header>
-        <div id="hash-candidate-list" class="hash-candidate-list">
-          <p class="hash-empty-state">Uygun bulgu yok.</p>
-        </div>
-      </section>
-
-      <section class="hash-runner" aria-labelledby="hash-runner-heading">
-        <header class="hash-column-heading">
-          <div>
-            <h3 id="hash-runner-heading">Çalıştırma</h3>
-            <p id="hash-selection-summary">Önce bir bulgu seç.</p>
-          </div>
-          <span id="hash-job-state" class="status-value">Hazır</span>
-        </header>
-
-        <div class="hash-runner-fields">
-          <div class="form-field">
-            <label for="hash-tool-select">Yerel araç</label>
-            <select id="hash-tool-select" disabled>
-              <option value="">Kullanılabilir araç yok</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="hash-runtime-select">Süre sınırı</label>
-            <select id="hash-runtime-select">
-              <option value="30">30 saniye</option>
-              <option value="120" selected>2 dakika</option>
-              <option value="300">5 dakika</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="hash-wordlist-field">
-          <span class="hash-field-label">Wordlist</span>
-          <div class="hash-wordlist-control">
-            <label class="file-import-button" for="hash-wordlist-file">TXT seç</label>
-            <input id="hash-wordlist-file" class="visually-hidden" type="file"
-              accept=".txt,text/plain">
-            <span id="hash-wordlist-summary">—</span>
-          </div>
-        </div>
-
-        <div class="hash-runner-actions">
-          <button id="start-hash-tool" type="button" disabled>Çalıştır</button>
-          <button id="cancel-hash-tool" class="secondary-button" type="button" disabled>
-            Durdur
-          </button>
-        </div>
-        <p id="hash-tool-message" class="hash-tool-message" aria-live="polite"></p>
-
-        <section id="hash-tool-result" class="hash-tool-result" hidden
-          aria-labelledby="hash-tool-result-label">
-          <span id="hash-tool-result-label">Bulunan parola</span>
-          <code id="hash-tool-plaintext"></code>
-          <p>Sonuç yalnız bu uygulama oturumunda bellekte tutulur.</p>
-        </section>
-      </section>
     </section>
   </main>
 

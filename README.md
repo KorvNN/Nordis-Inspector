@@ -1,5 +1,5 @@
 <p>
-  <img src="src/nordis_smb_inspector/web/static/favicon.svg?v=2" alt="Nordis Inspector" width="96" align="left">
+  <img src="src/nordis_smb_inspector/web/static/nordis-icon.svg" alt="Nordis Inspector" width="96" align="left">
 </p>
 
 # Nordis Inspector<br><sup><sup><em>"What is visible, accessible, and potentially usable."</em></sup></sup>

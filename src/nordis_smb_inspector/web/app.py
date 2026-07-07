@@ -8,8 +8,10 @@ import json
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
 from importlib.resources import files
+from pathlib import PureWindowsPath
 from threading import RLock, Thread
 from typing import Any, Protocol
+from urllib.parse import quote
 
 import anyio
 from jinja2 import Environment, PackageLoader, select_autoescape
@@ -20,17 +22,6 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from nordis_smb_inspector.ad.inspection import inspect_directory
-from nordis_smb_inspector.ad.ldap_adapter import (
-    AdInspectionError,
-    domain_to_base_dn,
-    valid_directory_host,
-)
-from nordis_smb_inspector.ad.models import (
-    AdComputer,
-    AdFinding,
-    AdInspectionReport,
-)
 from nordis_smb_inspector.core.access_pipeline import (
     AccessEventKind as PipelineEventKind,
 )
@@ -39,7 +30,6 @@ from nordis_smb_inspector.core.access_pipeline import (
     AccessPipelineExecutor,
     AccessPipelineSettings,
 )
-from nordis_smb_inspector.core.credential_audit import classify_audit_material
 from nordis_smb_inspector.core.credentials import (
     AuthMode,
     Credential,
@@ -72,6 +62,10 @@ from nordis_smb_inspector.core.targets import (
     TargetPlan,
     parse_targets,
 )
+from nordis_smb_inspector.identity_access.directory import DirectoryAccessError
+from nordis_smb_inspector.identity_access.hostname import discover_directory_hostname
+from nordis_smb_inspector.identity_access.inspection import inspect_identity_access
+from nordis_smb_inspector.identity_access.models import IdentityAccessReport
 from nordis_smb_inspector.smb.cancellation import (
     ScanCancelled as SmbScanCancelled,
 )
@@ -86,21 +80,21 @@ from nordis_smb_inspector.smb.inspection import (
 )
 from nordis_smb_inspector.smb.models import (
     InventoryEntry,
+    InventoryEntryKind,
     TargetStage,
     TargetStatus,
 )
 from nordis_smb_inspector.smb.smbprotocol_adapter import SmbProtocolConnector
 from nordis_smb_inspector.smb.smbprotocol_auth_adapter import SmbProtocolAuthenticator
 from nordis_smb_inspector.smb.smbprotocol_files import SmbProtocolFileAdapter
-from nordis_smb_inspector.web.audit import (
-    MAX_WORDLIST_UPLOAD_BYTES,
-    AuditAlreadyRunning,
-    AuditInvalidTransition,
-    AuditRequestError,
-    AuditToolUnavailable,
-    CredentialAuditManager,
-    WordlistUploadValidator,
-    create_private_upload_file,
+from nordis_smb_inspector.web.content import (
+    ContentAccessError,
+    ContentCatalog,
+    ContentSignal,
+    LdapContentReference,
+    SmbContentReference,
+    open_smb_reader,
+    smb_text_preview,
 )
 from nordis_smb_inspector.web.events import InvalidEventCursor, SseEventBroker
 from nordis_smb_inspector.web.security import (
@@ -115,16 +109,19 @@ from nordis_smb_inspector.web.security import (
 _MAX_CCACHE_BYTES = 1024 * 1024
 _MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
 _MAX_TARGET_WORKERS = 32
+_MAX_DIRECTORY_CANDIDATES = 3
 _DEFAULT_MAX_DEPTH = 32
 _STATIC_ASSETS: dict[str, str] = {
     "app.css": "text/css; charset=utf-8",
-    "app-ad.js": "text/javascript; charset=utf-8",
-    "app-hash-tools.js": "text/javascript; charset=utf-8",
+    "app-content.js": "text/javascript; charset=utf-8",
+    "app-identity.css": "text/css; charset=utf-8",
     "app-history.js": "text/javascript; charset=utf-8",
+    "app-identity.js": "text/javascript; charset=utf-8",
     "app-i18n.js": "text/javascript; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
-    "favicon.svg": "image/svg+xml",
+    "nordis-icon.svg": "image/svg+xml",
 }
+_STATIC_ASSET_ALIASES = {"favicon.svg": "nordis-icon.svg"}
 
 _templates = Environment(
     loader=PackageLoader("nordis_smb_inspector.web", "templates"),
@@ -144,9 +141,9 @@ class WebRuntime:
     file_adapter: Any = field(repr=False)
     share_discoverer: Any = field(repr=False)
     access_inspector: Any = field(repr=False)
-    ad_inspector: Any = field(repr=False)
-    ad_sessions: ScanSessionManager = field(repr=False)
-    hash_tools: CredentialAuditManager = field(repr=False)
+    identity_access_inspector: Any = field(repr=False)
+    directory_hostname_resolver: Callable[[str], str | None] = field(repr=False)
+    contents: ContentCatalog = field(repr=False)
     kerberos_hostname_resolver: Callable[[ExpandedTarget], str | None] = field(
         repr=False
     )
@@ -154,20 +151,25 @@ class WebRuntime:
     _target_generation: int = field(default=0, repr=False)
     _targets: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
     _terminal_error: dict[str, str] | None = field(default=None, repr=False)
+    _identity_status: str = field(default="not_checked", repr=False)
+    _identity_controller: str | None = field(default=None, repr=False)
+    _identity_message: str | None = field(
+        default="Henüz tarama başlatılmadı.", repr=False
+    )
+    _identity_error: dict[str, str] | None = field(default=None, repr=False)
+    _identity_report: IdentityAccessReport | None = field(default=None, repr=False)
     worker: Thread | None = field(default=None, repr=False)
-    ad_worker: Thread | None = field(default=None, repr=False)
-    _ad_lock: RLock = field(default_factory=RLock, repr=False)
-    _ad_generation: int = field(default=0, repr=False)
-    _ad_identity: dict[str, object] | None = field(default=None, repr=False)
-    _ad_coverage: list[dict[str, object]] = field(default_factory=list, repr=False)
-    _ad_authentication_method: str | None = field(default=None, repr=False)
-    _ad_terminal_error: dict[str, str] | None = field(default=None, repr=False)
 
     def reset_targets(self, generation: int) -> None:
         with self._target_lock:
             self._target_generation = generation
             self._targets.clear()
             self._terminal_error = None
+            self._identity_status = "pending"
+            self._identity_controller = None
+            self._identity_message = "SMB taraması tamamlandıktan sonra değerlendirilecek."
+            self._identity_error = None
+            self._identity_report = None
 
     def update_target(self, generation: int, payload: dict[str, object]) -> bool:
         key = str(payload["address"])
@@ -218,42 +220,85 @@ class WebRuntime:
                 return None
             return dict(self._terminal_error)
 
-    def reset_ad(self, generation: int) -> None:
-        with self._ad_lock:
-            self._ad_generation = generation
-            self._ad_identity = None
-            self._ad_coverage.clear()
-            self._ad_authentication_method = None
-            self._ad_terminal_error = None
+    def set_identity_running(self, generation: int, controller: str) -> bool:
+        with self._target_lock:
+            if generation != self._target_generation:
+                return False
+            self._identity_status = "running"
+            self._identity_controller = controller
+            self._identity_message = "Verilen kimliğin doğrudan erişimleri inceleniyor."
+            self._identity_error = None
+            self._identity_report = None
+            return True
 
-    def set_ad_report(self, generation: int, report: AdInspectionReport) -> None:
-        with self._ad_lock:
-            if generation != self._ad_generation:
-                return
-            self._ad_identity = report.identity.public_payload()
-            self._ad_coverage = [item.public_payload() for item in report.coverage]
-            self._ad_authentication_method = report.authentication_method
+    def set_identity_report(
+        self,
+        generation: int,
+        report: IdentityAccessReport,
+    ) -> bool:
+        with self._target_lock:
+            if generation != self._target_generation:
+                return False
+            self._identity_status = "completed"
+            self._identity_controller = report.controller
+            self._identity_message = None
+            self._identity_error = None
+            self._identity_report = report
+            self.contents.register_directory(generation, report.directory_text)
+            return True
 
-    def set_ad_error(self, generation: int, code: str, message: str) -> None:
-        with self._ad_lock:
-            if generation == self._ad_generation:
-                self._ad_terminal_error = {"code": code, "message": message}
+    def set_identity_error(
+        self,
+        generation: int,
+        *,
+        controller: str | None,
+        code: str,
+        message: str,
+    ) -> bool:
+        with self._target_lock:
+            if generation != self._target_generation:
+                return False
+            self._identity_status = "failed"
+            self._identity_controller = controller
+            self._identity_message = None
+            self._identity_error = {"code": code, "message": message}
+            self._identity_report = None
+            return True
 
-    def ad_metadata(self, generation: int) -> dict[str, object]:
-        with self._ad_lock:
-            if generation != self._ad_generation:
+    def set_identity_not_checked(self, generation: int, message: str) -> bool:
+        with self._target_lock:
+            if generation != self._target_generation:
+                return False
+            self._identity_status = "not_checked"
+            self._identity_controller = None
+            self._identity_message = message
+            self._identity_error = None
+            self._identity_report = None
+            return True
+
+    def identity_snapshot(self, generation: int) -> dict[str, object]:
+        with self._target_lock:
+            if generation != self._target_generation:
                 return {
-                    "identity": None,
-                    "coverage": [],
-                    "authentication_method": None,
-                    "terminal_error": None,
+                    "status": "not_checked",
+                    "controller": None,
+                    "message": "Bu tarama nesli artık etkin değil.",
+                    "error": None,
+                    "report": None,
                 }
             return {
-                "identity": dict(self._ad_identity) if self._ad_identity else None,
-                "coverage": [dict(item) for item in self._ad_coverage],
-                "authentication_method": self._ad_authentication_method,
-                "terminal_error": (
-                    dict(self._ad_terminal_error) if self._ad_terminal_error else None
+                "status": self._identity_status,
+                "controller": self._identity_controller,
+                "message": self._identity_message,
+                "error": (
+                    dict(self._identity_error)
+                    if self._identity_error is not None
+                    else None
+                ),
+                "report": (
+                    self._identity_report.public_payload()
+                    if self._identity_report is not None
+                    else None
                 ),
             }
 
@@ -285,8 +330,14 @@ class AccessInspector(Protocol):
     def __call__(self, **kwargs: object) -> InspectionResult: ...
 
 
-class AdInspector(Protocol):
-    def __call__(self, **kwargs: object) -> AdInspectionReport: ...
+class IdentityAccessInspector(Protocol):
+    def __call__(self, **kwargs: object) -> IdentityAccessReport: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _DirectoryCandidate:
+    controller: str
+    kerberos_hostname: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,12 +360,14 @@ def create_app(
     authenticator: Any | None = None,
     file_adapter: Any | None = None,
     share_discoverer: Any | None = None,
-    hash_tool_manager: CredentialAuditManager | None = None,
     kerberos_hostname_resolver: Callable[
         [ExpandedTarget], str | None
     ] = resolve_kerberos_hostname,
     access_inspector: AccessInspector = inspect_target,
-    ad_inspector: AdInspector = inspect_directory,
+    identity_access_inspector: IdentityAccessInspector = inspect_identity_access,
+    directory_hostname_resolver: Callable[
+        [str], str | None
+    ] = discover_directory_hostname,
 ) -> Starlette:
     runtime = WebRuntime(
         port=port,
@@ -326,9 +379,9 @@ def create_app(
         file_adapter=file_adapter or SmbProtocolFileAdapter(),
         share_discoverer=share_discoverer or ImpacketShareDiscoverer(),
         access_inspector=access_inspector,
-        ad_inspector=ad_inspector,
-        ad_sessions=ScanSessionManager(),
-        hash_tools=hash_tool_manager or CredentialAuditManager(),
+        identity_access_inspector=identity_access_inspector,
+        directory_hostname_resolver=directory_hostname_resolver,
+        contents=ContentCatalog(),
         kerberos_hostname_resolver=kerberos_hostname_resolver,
     )
     routes = [
@@ -339,15 +392,9 @@ def create_app(
         Route("/scan/events", scan_events, methods=["GET"]),
         Route("/inventory", inventory_results, methods=["GET"]),
         Route("/findings", finding_results, methods=["GET"]),
-        Route("/ad/scan", ad_scan_start, methods=["POST"]),
-        Route("/ad/scan/cancel", ad_scan_cancel, methods=["POST"]),
-        Route("/ad/scan/snapshot", ad_scan_snapshot, methods=["GET"]),
-        Route("/ad/computers", ad_computer_results, methods=["GET"]),
-        Route("/ad/findings", ad_finding_results, methods=["GET"]),
-        Route("/hash-tools", hash_tools_snapshot, methods=["GET"]),
-        Route("/hash-tools/wordlist", hash_wordlist_upload, methods=["PUT"]),
-        Route("/hash-tools/jobs", hash_tools_start, methods=["POST"]),
-        Route("/hash-tools/jobs/cancel", hash_tools_cancel, methods=["POST"]),
+        Route("/contents", content_results, methods=["GET"]),
+        Route("/contents/{content_id}/preview", content_preview, methods=["GET"]),
+        Route("/contents/{content_id}/download", content_download, methods=["GET"]),
         Route("/favicon.ico", favicon, methods=["GET"]),
         Route("/static/{asset_name}", static_asset, methods=["GET"]),
     ]
@@ -388,360 +435,131 @@ async def finding_results(request: Request) -> JSONResponse:
     return JSONResponse(_result_page_payload(request, findings=True))
 
 
-async def ad_scan_snapshot(request: Request) -> JSONResponse:
-    return JSONResponse(_ad_snapshot_payload(_runtime(request)))
-
-
-async def ad_computer_results(request: Request) -> JSONResponse:
-    return JSONResponse(_ad_result_page_payload(request, findings=False))
-
-
-async def ad_finding_results(request: Request) -> JSONResponse:
-    return JSONResponse(_ad_result_page_payload(request, findings=True))
-
-
-async def ad_scan_start(request: Request) -> JSONResponse:
+async def content_results(request: Request) -> JSONResponse:
     runtime = _runtime(request)
-    _protect_post(request, runtime)
-    body = await _read_json(request)
-    if runtime.sessions.snapshot.active or runtime.hash_tools.active:
-        return JSONResponse(
-            {
-                "ok": False,
-                "error": (
-                    "SMB taraması veya hash aracı çalışırken AD incelemesi "
-                    "başlatılamaz."
-                ),
-            },
-            status_code=409,
-        )
-    controller = body.get("controller")
-    domain = body.get("domain")
-    kerberos_hostname = body.get("kerberos_hostname")
-    if not isinstance(controller, str) or not valid_directory_host(controller):
-        return _ad_request_error("Domain controller hostname veya IP adresi geçersiz.")
-    if not isinstance(domain, str):
-        return _ad_request_error("Domain FQDN biçiminde girilmelidir.")
-    if kerberos_hostname is not None and (
-        not isinstance(kerberos_hostname, str)
-        or not valid_directory_host(kerberos_hostname)
-    ):
-        return _ad_request_error("Kerberos hostname geçersiz.")
-    try:
-        domain_to_base_dn(domain.strip())
-        credential = _credential_from_body(body.get("credential"))
-    except (AdInspectionError, CredentialValidationError) as error:
-        return _ad_request_error(str(error))
-    if credential.auth_mode is AuthMode.AUTO:
-        return _ad_request_error("AD incelemesi için Kerberos veya NTLM seçilmelidir.")
-    if credential.auth_mode is AuthMode.KERBEROS_ONLY:
-        effective_hostname = (kerberos_hostname or controller).strip()
-        if not effective_hostname or all(
-            character.isdigit() or character == "." for character in effective_hostname
-        ):
-            return _ad_request_error(
-                "IP ile Kerberos kullanırken domain controller hostname gereklidir."
-            )
-    if credential.domain and credential.domain.casefold() != domain.strip().casefold():
-        return _ad_request_error("Kimlik bilgisi domaini ile incelenecek domain eşleşmiyor.")
-
-    try:
-        handle = runtime.ad_sessions.begin_scan()
-    except ScanAlreadyRunning as error:
-        raise SafeHttpError(HttpErrorCode.CONFLICT) from error
-    runtime.reset_ad(handle.token.generation)
-    handle.progress.set_phase(
-        ScanPhase.INSPECTION,
-        total=1,
-        message="Active Directory LDAP kontrolleri çalışıyor.",
-        overall_percent=0,
-        overall_is_estimate=False,
-    )
-    worker = Thread(
-        target=_run_ad_inspection,
-        args=(
-            runtime,
-            handle,
-            controller.strip(),
-            domain.strip(),
-            credential,
-            kerberos_hostname.strip() if kerberos_hostname else None,
-        ),
-        name=f"nordis-ad-{handle.token.generation}",
-        daemon=True,
-    )
-    runtime.ad_worker = worker
-    worker.start()
-    return JSONResponse(
-        {
-            "ok": True,
-            "scan_id": handle.token.scan_id,
-            "generation": handle.token.generation,
-        },
-        status_code=202,
-    )
-
-
-async def ad_scan_cancel(request: Request) -> JSONResponse:
-    runtime = _runtime(request)
-    _protect_post(request, runtime)
-    token = runtime.ad_sessions.snapshot.token
-    if token is None:
-        raise SafeHttpError(HttpErrorCode.CONFLICT)
-    try:
-        runtime.ad_sessions.request_cancel(token)
-    except InvalidScanTransition as error:
-        raise SafeHttpError(HttpErrorCode.CONFLICT) from error
-    return JSONResponse(_ad_snapshot_payload(runtime), status_code=202)
-
-
-def _run_ad_inspection(
-    runtime: WebRuntime,
-    handle: ScanHandle,
-    controller: str,
-    domain: str,
-    credential: Credential,
-    kerberos_hostname: str | None,
-) -> None:
-    def publish_computer(computer: AdComputer) -> None:
-        handle.cancellation.raise_if_requested()
-        payload = computer.public_payload()
-        payload["generation"] = handle.token.generation
-        runtime.ad_sessions.upsert_inventory(
-            handle.token,
-            computer.account_name.casefold(),
-            payload,
-        )
-
-    def publish_finding(finding: AdFinding) -> None:
-        handle.cancellation.raise_if_requested()
-        payload = finding.public_payload()
-        payload["generation"] = handle.token.generation
-        runtime.ad_sessions.add_finding(handle.token, payload)
-
-    try:
-        report = runtime.ad_inspector(
-            controller=controller,
-            domain=domain,
-            credential=credential,
-            kerberos_hostname=kerberos_hostname,
-            cancellation=handle.cancellation,
-            on_computer=publish_computer,
-            on_finding=publish_finding,
-        )
-        handle.cancellation.raise_if_requested()
-        runtime.set_ad_report(handle.token.generation, report)
-        handle.progress.update_progress(
-            1,
-            expected_phase=ScanPhase.INSPECTION,
-            total=1,
-            overall_percent=100,
-            overall_is_estimate=False,
-            message="Active Directory incelemesi tamamlandı.",
-        )
-        runtime.ad_sessions.complete(handle.token)
-    except SessionScanCancelled:
-        state = runtime.ad_sessions.snapshot
-        if state.active:
-            runtime.ad_sessions.mark_cancelled(handle.token)
-    except AdInspectionError as error:
-        state = runtime.ad_sessions.snapshot
-        if state.status.value == "cancelling":
-            runtime.ad_sessions.mark_cancelled(handle.token)
-        else:
-            runtime.set_ad_error(handle.token.generation, error.code, error.safe_message)
-            if state.active:
-                runtime.ad_sessions.fail(handle.token)
-    except Exception:
-        state = runtime.ad_sessions.snapshot
-        if state.status.value == "cancelling":
-            runtime.ad_sessions.mark_cancelled(handle.token)
-        else:
-            runtime.set_ad_error(
-                handle.token.generation,
-                "AD_INSPECTION_FAILED",
-                "Active Directory incelemesi beklenmeyen bir uygulama hatasıyla durdu.",
-            )
-            if state.active:
-                runtime.ad_sessions.fail(handle.token)
-
-
-def _ad_snapshot_payload(runtime: WebRuntime) -> dict[str, object]:
-    state = runtime.ad_sessions.snapshot
-    progress = state.progress
-    payload: dict[str, object] = {
-        "status": state.status.value,
-        "generation": state.generation,
-        "scan_id": state.scan_id,
-        "computer_count": state.inventory_count,
-        "finding_count": state.finding_count,
-        "partial": state.partial,
-        "progress": None
-        if progress is None
-        else {
-            "phase": progress.phase.value,
-            "phase_completed": progress.phase_completed,
-            "phase_total": progress.phase_total,
-            "phase_percent": progress.phase_percent,
-            "message": progress.message,
-        },
-    }
-    payload.update(runtime.ad_metadata(state.generation))
-    return payload
-
-
-def _ad_result_page_payload(request: Request, *, findings: bool) -> dict[str, object]:
-    runtime = _runtime(request)
-    token = runtime.ad_sessions.snapshot.token
-    if token is None:
-        return {"items": [], "page": 1, "page_size": 100, "total_items": 0}
+    generation = runtime.sessions.snapshot.generation
+    items = list(runtime.contents.snapshot(generation))
+    source = request.query_params.get("source")
+    if source is not None:
+        if source not in {"smb", "ldap"}:
+            raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
+        items = [item for item in items if item.get("source") == source]
+    flagged = request.query_params.get("flagged")
+    if flagged is not None:
+        if flagged not in {"true", "false"}:
+            raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
+        expected = flagged == "true"
+        items = [item for item in items if item.get("flagged") is expected]
     page = _positive_query_integer(request, "page", default=1)
     page_size = _positive_query_integer(request, "page_size", default=100)
-    try:
-        result_page = (
-            runtime.ad_sessions.findings_page(token, page=page, page_size=page_size)
-            if findings
-            else runtime.ad_sessions.inventory_page(token, page=page, page_size=page_size)
-        )
-    except ValueError as error:
-        raise SafeHttpError(HttpErrorCode.BAD_REQUEST) from error
-    return {
-        "items": list(result_page.items),
-        "page": result_page.page,
-        "page_size": result_page.page_size,
-        "total_items": result_page.total_items,
-        "total_pages": result_page.total_pages,
-    }
-
-
-def _ad_request_error(message: str) -> JSONResponse:
-    return JSONResponse({"ok": False, "error": message}, status_code=422)
-
-
-async def hash_tools_snapshot(request: Request) -> JSONResponse:
-    return JSONResponse(_hash_tools_payload(_runtime(request)))
-
-
-async def hash_wordlist_upload(request: Request) -> JSONResponse:
-    runtime = _runtime(request)
-    _protect_post(request, runtime)
-    if runtime.sessions.snapshot.active:
-        return _hash_tools_error("SCAN_IN_PROGRESS", status_code=409)
-    if runtime.ad_sessions.snapshot.active:
-        return _hash_tools_error("AD_INSPECTION_IN_PROGRESS", status_code=409)
-    content_type = request.headers.get("content-type", "").partition(";")[0].strip()
-    if content_type.casefold() not in {"application/octet-stream", "text/plain"}:
-        return _hash_tools_error("INVALID_WORDLIST")
-    raw_length = request.headers.get("content-length")
-    if raw_length is not None:
-        try:
-            content_length = int(raw_length)
-        except ValueError:
-            return _hash_tools_error("INVALID_WORDLIST")
-        if content_length > MAX_WORDLIST_UPLOAD_BYTES:
-            return _hash_tools_error("WORDLIST_TOO_LARGE", status_code=413)
-
-    try:
-        handle = runtime.hash_tools.begin_wordlist_upload()
-    except AuditAlreadyRunning:
-        return _hash_tools_error("HASH_TOOL_IN_PROGRESS", status_code=409)
-    validator = WordlistUploadValidator()
-    try:
-        create_private_upload_file(handle.path)
-        with handle.path.open("wb") as target:
-            async for chunk in request.stream():
-                validator.consume(chunk)
-                target.write(chunk)
-        size_bytes, entry_count = validator.finish()
-        runtime.hash_tools.complete_wordlist_upload(
-            handle,
-            size_bytes=size_bytes,
-            entry_count=entry_count,
-        )
-    except AuditRequestError as exc:
-        runtime.hash_tools.abort_wordlist_upload(handle)
-        code = _safe_hash_tool_error(exc)
-        return _hash_tools_error(
-            code,
-            status_code=413 if code == "WORDLIST_TOO_LARGE" else 422,
-        )
-    except Exception:
-        runtime.hash_tools.abort_wordlist_upload(handle)
-        return _hash_tools_error("WORDLIST_UPLOAD_FAILED", status_code=500)
-    return JSONResponse(_hash_tools_payload(runtime), status_code=201)
-
-
-async def hash_tools_start(request: Request) -> JSONResponse:
-    runtime = _runtime(request)
-    _protect_post(request, runtime)
-    body = await _read_json(request)
-    if runtime.sessions.snapshot.active:
-        return _hash_tools_error("SCAN_IN_PROGRESS", status_code=409)
-    if runtime.ad_sessions.snapshot.active:
-        return _hash_tools_error("AD_INSPECTION_IN_PROGRESS", status_code=409)
-    materials = classify_audit_material(body.get("rule_id"), body.get("full_line"))
-    variant = body.get("variant")
-    if not isinstance(variant, str):
-        return _hash_tools_error("INVALID_CANDIDATE")
-    material = next(
-        (candidate for candidate in materials if candidate.variant == variant),
-        None,
+    if page_size > runtime.sessions.limits.max_page_size:
+        raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
+    start = (page - 1) * page_size
+    selected = items[start : start + page_size]
+    total_pages = (len(items) + page_size - 1) // page_size if items else 0
+    return JSONResponse(
+        {
+            "items": selected,
+            "page": page,
+            "page_size": page_size,
+            "total_items": len(items),
+            "total_pages": total_pages,
+        }
     )
-    if material is None:
-        return _hash_tools_error("UNSUPPORTED_CANDIDATE")
-    try:
-        runtime.hash_tools.start(
-            material=material,
-            tool_id=body.get("tool_id"),
-            wordlist_upload_id=body.get("wordlist_upload_id"),
-            runtime_seconds=body.get("runtime_seconds"),
-        )
-    except AuditAlreadyRunning:
-        return _hash_tools_error("HASH_TOOL_IN_PROGRESS", status_code=409)
-    except AuditToolUnavailable:
-        return _hash_tools_error("TOOL_UNAVAILABLE", status_code=409)
-    except AuditRequestError as exc:
-        return _hash_tools_error(_safe_hash_tool_error(exc))
-    return JSONResponse(_hash_tools_payload(runtime), status_code=202)
 
 
-async def hash_tools_cancel(request: Request) -> JSONResponse:
+async def content_preview(request: Request) -> JSONResponse:
     runtime = _runtime(request)
-    _protect_post(request, runtime)
     try:
-        runtime.hash_tools.cancel()
-    except AuditInvalidTransition:
-        return _hash_tools_error("HASH_TOOL_NOT_RUNNING", status_code=409)
-    return JSONResponse(_hash_tools_payload(runtime), status_code=202)
+        reference, credential = runtime.contents.resolve(
+            runtime.sessions.snapshot.generation,
+            request.path_params["content_id"],
+        )
+        if isinstance(reference, LdapContentReference):
+            return JSONResponse(
+                {
+                    "text": reference.entry.value,
+                    "encoding": "utf-8",
+                    "truncated": False,
+                    "size": len(reference.entry.value.encode("utf-8")),
+                }
+            )
+
+        def load_preview() -> dict[str, object]:
+            lease = open_smb_reader(
+                reference,
+                credential,
+                connector=runtime.connector,
+                authenticator=runtime.authenticator,
+                file_adapter=runtime.file_adapter,
+            )
+            return smb_text_preview(lease, reference.path)
+
+        payload = await anyio.to_thread.run_sync(load_preview)
+        return JSONResponse(payload)
+    except ContentAccessError as error:
+        return JSONResponse(error.public_payload(), status_code=error.status_code)
+
+
+async def content_download(request: Request) -> Response:
+    runtime = _runtime(request)
+    try:
+        reference, credential = runtime.contents.resolve(
+            runtime.sessions.snapshot.generation,
+            request.path_params["content_id"],
+        )
+        filename = _content_filename(reference)
+        headers = {"Content-Disposition": _attachment_header(filename)}
+        if isinstance(reference, LdapContentReference):
+            return Response(
+                reference.entry.value.encode("utf-8"),
+                media_type="text/plain; charset=utf-8",
+                headers=headers,
+            )
+
+        lease = await anyio.to_thread.run_sync(
+            lambda: open_smb_reader(
+                reference,
+                credential,
+                connector=runtime.connector,
+                authenticator=runtime.authenticator,
+                file_adapter=runtime.file_adapter,
+            )
+        )
+        return StreamingResponse(
+            lease.iter_bytes(),
+            media_type="application/octet-stream",
+            headers=headers,
+        )
+    except ContentAccessError as error:
+        return JSONResponse(error.public_payload(), status_code=error.status_code)
+
+
+def _content_filename(reference: SmbContentReference | LdapContentReference) -> str:
+    if isinstance(reference, SmbContentReference):
+        return PureWindowsPath(reference.path).name or "nordis-content.bin"
+    subject = "".join(
+        character if character.isalnum() or character in "._-" else "_"
+        for character in reference.entry.subject
+    ).strip("._")
+    return f"{subject or 'directory-object'}-{reference.entry.attribute}.txt"
+
+
+def _attachment_header(filename: str) -> str:
+    cleaned = "".join(
+        character for character in filename if character not in {'"', "\\", "\r", "\n"}
+    ) or "nordis-content.bin"
+    fallback = "".join(
+        character if character.isascii() and (character.isalnum() or character in "._-") else "_"
+        for character in cleaned
+    )
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(cleaned)}"
 
 
 async def scan_start(request: Request) -> JSONResponse:
     runtime = _runtime(request)
     _protect_post(request, runtime)
     body = await _read_json(request)
-    if runtime.hash_tools.active:
-        return JSONResponse(
-            {
-                "ok": False,
-                "errors": [
-                    {"value": "Hash tools", "reason": "HASH_TOOL_IN_PROGRESS"}
-                ],
-            },
-            status_code=409,
-        )
-    if runtime.ad_sessions.snapshot.active:
-        return JSONResponse(
-            {
-                "ok": False,
-                "errors": [
-                    {
-                        "value": "AD İnceleme",
-                        "reason": "Active Directory incelemesi devam ediyor.",
-                    }
-                ],
-            },
-            status_code=409,
-        )
     target_expression = body.get("targets")
     if not isinstance(target_expression, str):
         raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
@@ -801,9 +619,8 @@ async def scan_start(request: Request) -> JSONResponse:
     except ScanAlreadyRunning as exc:
         raise SafeHttpError(HttpErrorCode.CONFLICT) from exc
 
-    runtime.hash_tools.clear()
-
     runtime.reset_targets(handle.token.generation)
+    runtime.contents.reset(handle.token.generation, credential)
     phase_total = (
         plan.known_address_count
         if plan.hostname_count == 0
@@ -868,9 +685,11 @@ def _snapshot_payload(runtime: WebRuntime) -> dict[str, object]:
         "scan_id": state.scan_id,
         "inventory_count": state.inventory_count,
         "finding_count": state.finding_count,
+        "content_count": runtime.contents.count(state.generation),
         "partial": state.partial,
         "terminal_reason": state.terminal_reason.value if state.terminal_reason else None,
         "terminal_error": runtime.terminal_error_snapshot(state.generation),
+        "identity_access": runtime.identity_snapshot(state.generation),
         "targets": runtime.target_snapshot(state.generation),
         "progress": None
         if progress is None
@@ -888,45 +707,6 @@ def _snapshot_payload(runtime: WebRuntime) -> dict[str, object]:
     }
 
 
-_HASH_TOOL_ERROR_CODES = frozenset(
-    {
-        "INVALID_TOOL",
-        "INVALID_RUNTIME",
-        "INVALID_WORDLIST",
-        "WORDLIST_SIZE_INVALID",
-        "WORDLIST_ENTRY_COUNT_INVALID",
-        "WORDLIST_LINE_TOO_LONG",
-        "WORDLIST_TOO_LARGE",
-        "WORDLIST_NOT_FOUND",
-        "WORDLIST_UPLOAD_IN_PROGRESS",
-        "INCOMPATIBLE_TOOL",
-    }
-)
-
-
-def _hash_tools_payload(runtime: WebRuntime) -> dict[str, object]:
-    job = runtime.hash_tools.snapshot
-    wordlist = runtime.hash_tools.wordlist
-    return {
-        "ok": True,
-        "tools": [tool.public_payload() for tool in runtime.hash_tools.tools()],
-        "job": job.public_payload() if job is not None else None,
-        "wordlist": wordlist.public_payload() if wordlist is not None else None,
-    }
-
-
-def _hash_tools_error(code: str, *, status_code: int = 422) -> JSONResponse:
-    return JSONResponse(
-        {"ok": False, "error": code},
-        status_code=status_code,
-    )
-
-
-def _safe_hash_tool_error(error: AuditRequestError) -> str:
-    code = str(error)
-    return code if code in _HASH_TOOL_ERROR_CODES else "INVALID_REQUEST"
-
-
 def _run_access_scan(
     runtime: WebRuntime,
     handle: ScanHandle,
@@ -939,9 +719,29 @@ def _run_access_scan(
     completed = 0
     pipeline_failed = False
     cancellation = _CancellationBridge(handle.cancellation)
+    candidate_lock = RLock()
+    directory_candidates: dict[str, _DirectoryCandidate] = {}
     executor = AccessPipelineExecutor(
         AccessPipelineSettings(max_concurrency=_MAX_TARGET_WORKERS)
     )
+
+    def remember_directory_candidate(
+        entry: InventoryEntry,
+        kerberos_hostname: str | None,
+    ) -> None:
+        if not _is_directory_candidate_share(entry):
+            return
+        candidate = _DirectoryCandidate(
+            controller=entry.target,
+            kerberos_hostname=kerberos_hostname,
+        )
+        with candidate_lock:
+            current = directory_candidates.get(candidate.controller)
+            if current is None or (
+                current.kerberos_hostname is None
+                and candidate.kerberos_hostname is not None
+            ):
+                directory_candidates[candidate.controller] = candidate
 
     def inspect_one(
         target: ExpandedTarget,
@@ -982,7 +782,17 @@ def _run_access_scan(
                 runtime.events.publish("target.changed", payload)
 
         def publish_inventory(entry: InventoryEntry) -> None:
-            payload = _inventory_payload(entry, generation=handle.token.generation)
+            remember_directory_candidate(entry, kerberos_hostname)
+            content_id = runtime.contents.register_smb(
+                handle.token.generation,
+                entry,
+                kerberos_hostname=kerberos_hostname,
+            )
+            payload = _inventory_payload(
+                entry,
+                generation=handle.token.generation,
+                content_id=content_id,
+            )
             runtime.sessions.upsert_inventory(
                 handle.token,
                 (entry.target, entry.share_name, entry.relative_path, entry.kind.value),
@@ -992,6 +802,23 @@ def _run_access_scan(
             runtime.events.publish("snapshot", _snapshot_payload(runtime))
 
         def publish_finding(finding: ContentFinding) -> None:
+            runtime.contents.flag_smb(
+                handle.token.generation,
+                target=finding.target,
+                share=finding.share,
+                path=finding.path,
+                signal=ContentSignal(
+                    title=finding.term,
+                    rule_id=finding.rule_id,
+                    category=finding.category,
+                    confidence=(
+                        finding.confidence.value
+                        if finding.confidence is not None
+                        else None
+                    ),
+                    line_number=finding.line_number,
+                ),
+            )
             payload = _finding_payload(finding, generation=handle.token.generation)
             runtime.sessions.add_finding(handle.token, payload)
             runtime.events.publish("finding.added", payload)
@@ -1069,9 +896,23 @@ def _run_access_scan(
         state = runtime.sessions.snapshot
         if state.active:
             if pipeline_failed:
+                runtime.set_identity_not_checked(
+                    handle.token.generation,
+                    "SMB taraması uygulama hatasıyla durduğu için kimlik erişimi "
+                    "incelenmedi.",
+                )
                 runtime.sessions.fail(handle.token)
             else:
-                runtime.sessions.complete(handle.token)
+                with candidate_lock:
+                    candidates = tuple(directory_candidates.values())
+                _run_identity_access_stage(
+                    runtime,
+                    handle,
+                    credential,
+                    candidates,
+                )
+                if runtime.sessions.snapshot.active:
+                    runtime.sessions.complete(handle.token)
     except Exception:
         runtime.set_terminal_error(
             handle.token.generation,
@@ -1083,8 +924,142 @@ def _run_access_scan(
         if state.active:
             runtime.sessions.fail(handle.token)
     finally:
+        identity = runtime.identity_snapshot(handle.token.generation)
+        if identity["status"] in {"pending", "running"}:
+            runtime.set_identity_not_checked(
+                handle.token.generation,
+                "SMB taraması tamamlanamadığı için kimlik erişimi incelenmedi.",
+            )
         _ensure_terminal_error(runtime, handle)
         runtime.events.publish("snapshot", _snapshot_payload(runtime))
+
+
+def _run_identity_access_stage(
+    runtime: WebRuntime,
+    handle: ScanHandle,
+    credential: Credential,
+    candidates: tuple[_DirectoryCandidate, ...],
+) -> None:
+    generation = handle.token.generation
+    try:
+        handle.cancellation.raise_if_requested()
+    except SessionScanCancelled:
+        runtime.set_identity_not_checked(
+            generation,
+            "Tarama iptal edildiği için kimlik erişimi incelenmedi.",
+        )
+        return
+
+    resolved_candidates: list[_DirectoryCandidate] = []
+    for candidate in candidates:
+        kerberos_hostname = candidate.kerberos_hostname
+        if kerberos_hostname is None and credential.auth_mode is not AuthMode.NTLM_ONLY:
+            try:
+                kerberos_hostname = runtime.directory_hostname_resolver(
+                    candidate.controller
+                )
+            except Exception:
+                kerberos_hostname = None
+        resolved_candidates.append(
+            _DirectoryCandidate(
+                controller=candidate.controller,
+                kerberos_hostname=kerberos_hostname,
+            )
+        )
+
+    ordered = sorted(
+        resolved_candidates,
+        key=lambda candidate: (
+            candidate.kerberos_hostname is None,
+            candidate.controller,
+        ),
+    )
+    if credential.auth_mode is AuthMode.KERBEROS_ONLY:
+        ordered = [
+            candidate
+            for candidate in ordered
+            if candidate.kerberos_hostname is not None
+        ]
+    usable = tuple(ordered[:_MAX_DIRECTORY_CANDIDATES])
+    if not usable:
+        if candidates and credential.auth_mode is AuthMode.KERBEROS_ONLY:
+            message = (
+                "Kerberos için doğrulanmış bir domain controller FQDN'i "
+                "çözümlenemedi."
+            )
+        else:
+            message = (
+                "SMB taramasında SYSVOL veya NETLOGON share'i görülen bir "
+                "domain controller bulunamadı."
+            )
+        runtime.set_identity_not_checked(generation, message)
+        return
+
+    handle.progress.set_phase(
+        ScanPhase.IDENTITY_ACCESS,
+        total=len(usable),
+        message="Verilen kimliğin doğrudan directory erişimleri inceleniyor.",
+        overall_is_estimate=False,
+    )
+    runtime.events.publish("snapshot", _snapshot_payload(runtime))
+
+    last_error = (
+        "IDENTITY_ACCESS_UNAVAILABLE",
+        "Kimlik erişimi incelemesi tamamlanamadı.",
+        None,
+    )
+    for index, candidate in enumerate(usable, start=1):
+        try:
+            handle.cancellation.raise_if_requested()
+            runtime.set_identity_running(generation, candidate.controller)
+            runtime.events.publish("snapshot", _snapshot_payload(runtime))
+            report = runtime.identity_access_inspector(
+                controller=candidate.controller,
+                kerberos_hostname=candidate.kerberos_hostname,
+                credential=credential,
+                cancellation=handle.cancellation,
+            )
+        except SessionScanCancelled:
+            runtime.set_identity_not_checked(
+                generation,
+                "Tarama iptal edildiği için kimlik erişimi tamamlanmadı.",
+            )
+            return
+        except DirectoryAccessError as error:
+            last_error = (error.code, error.safe_message, candidate.controller)
+        except Exception:
+            last_error = (
+                "IDENTITY_ACCESS_FAILED",
+                "Kimlik erişimi incelemesi beklenmeyen bir uygulama hatasıyla durdu.",
+                candidate.controller,
+            )
+        else:
+            handle.progress.update_progress(
+                index,
+                expected_phase=ScanPhase.IDENTITY_ACCESS,
+                total=index,
+                message="Kimliğin doğrudan erişimleri incelendi.",
+            )
+            runtime.set_identity_report(generation, report)
+            runtime.events.publish("snapshot", _snapshot_payload(runtime))
+            return
+
+        handle.progress.update_progress(
+            index,
+            expected_phase=ScanPhase.IDENTITY_ACCESS,
+            total=len(usable),
+            message=f"{index} domain controller adayı denendi.",
+        )
+        runtime.events.publish("snapshot", _snapshot_payload(runtime))
+
+    code, message, controller = last_error
+    runtime.set_identity_error(
+        generation,
+        controller=controller,
+        code=code,
+        message=message,
+    )
+    runtime.events.publish("snapshot", _snapshot_payload(runtime))
 
 
 def _ensure_terminal_error(runtime: WebRuntime, handle: ScanHandle) -> None:
@@ -1265,6 +1240,7 @@ def _inventory_payload(
     entry: InventoryEntry,
     *,
     generation: int,
+    content_id: str | None = None,
 ) -> dict[str, object]:
     read_access = (
         "allowed"
@@ -1296,7 +1272,15 @@ def _inventory_payload(
         "raw_error_code": entry.error.raw_code if entry.error is not None else None,
         "error_name": entry.error.symbolic_name if entry.error is not None else None,
         "error_message": entry.error.safe_message if entry.error is not None else None,
+        "content_id": content_id,
     }
+
+
+def _is_directory_candidate_share(entry: InventoryEntry) -> bool:
+    return (
+        entry.kind is InventoryEntryKind.SHARE
+        and entry.share_name.casefold() in {"sysvol", "netlogon"}
+    )
 
 
 def _finding_payload(
@@ -1304,10 +1288,6 @@ def _finding_payload(
     *,
     generation: int,
 ) -> dict[str, object]:
-    audit_candidates = tuple(
-        material.public_metadata()
-        for material in classify_audit_material(finding.rule_id, finding.full_line)
-    )
     return {
         "generation": generation,
         "target": finding.target,
@@ -1323,7 +1303,6 @@ def _finding_payload(
         "confidence": (
             finding.confidence.value if finding.confidence is not None else None
         ),
-        "audit_candidates": audit_candidates,
     }
 
 
@@ -1487,6 +1466,7 @@ async def scan_events(request: Request) -> StreamingResponse:
 
 
 def _static_asset_response(asset_name: str) -> Response:
+    asset_name = _STATIC_ASSET_ALIASES.get(asset_name, asset_name)
     media_type = _STATIC_ASSETS.get(asset_name)
     if media_type is None:
         raise SafeHttpError(HttpErrorCode.NOT_FOUND)

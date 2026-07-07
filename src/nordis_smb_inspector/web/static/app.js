@@ -1,16 +1,10 @@
 "use strict";
 
 import {
-  configureAdInspector,
-  refreshAdInspector,
-} from "./app-ad.js";
-import {
-  configureHashTools,
-  hashToolErrorMessage,
-  refreshHashTools,
-  renderHashCandidates,
-  setHashScanActive,
-} from "./app-hash-tools.js";
+  clearContents,
+  refreshContents,
+  scheduleContentRefresh,
+} from "./app-content.js";
 import {
   configureHistory,
   renderHistory,
@@ -19,11 +13,14 @@ import {
   writeHistory,
 } from "./app-history.js";
 import {
+  configureIdentityAccess,
+  currentIdentityAccess,
+  renderIdentityAccess,
+} from "./app-identity.js";
+import {
   EN_CATEGORY_LABELS,
   EN_FINDING_METHOD_LABELS,
   EN_FINDING_RULE_LABELS,
-  EN_HASH_FORMAT_LABELS,
-  EN_HASH_JOB_LABELS,
   EN_PHASE_LABELS,
   EN_SCAN_STATUS_LABELS,
   EN_STATUS_LABELS,
@@ -31,8 +28,6 @@ import {
   ERROR_MESSAGE_LABELS,
   FINDING_METHOD_LABELS,
   FINDING_RULE_LABELS,
-  HASH_FORMAT_LABELS,
-  HASH_JOB_LABELS,
   LANGUAGE_KEY,
   MESSAGE_LABELS,
   PHASE_LABELS,
@@ -49,10 +44,6 @@ import {
 
 const body = document.body;
 const languageSelect = document.querySelector("#language-select");
-const workspaceNavigationItems = [...document.querySelectorAll("[data-workspace-view]")];
-const scanWorkspace = document.querySelector("#scan-workspace");
-const adWorkspace = document.querySelector("#ad-workspace");
-const hashToolsWorkspace = document.querySelector("#hash-tools-workspace");
 const csrfToken = body.dataset.csrfToken;
 const origin = body.dataset.origin;
 const targets = document.querySelector("#targets");
@@ -115,6 +106,7 @@ let selectedTargetKey = null;
 let selectedInventoryKey = null;
 let selectedFindingKey = null;
 let latestGeneration = null;
+let latestContentCount = null;
 let pendingScanInputs = null;
 const scanInputSnapshots = new Map();
 
@@ -237,24 +229,6 @@ function activateResultTab(name) {
   }
 }
 
-function activateWorkspace(name) {
-  const hashToolsActive = name === "hash-tools";
-  const adActive = name === "ad";
-  scanWorkspace.hidden = name !== "scan";
-  adWorkspace.hidden = !adActive;
-  hashToolsWorkspace.hidden = !hashToolsActive;
-  for (const item of workspaceNavigationItems) {
-    const active = item.dataset.workspaceView === name;
-    item.classList.toggle("is-active", active);
-    item.setAttribute("aria-pressed", String(active));
-  }
-  if (hashToolsActive) {
-    renderHashCandidates();
-    void refreshHashTools();
-  }
-  if (adActive) void refreshAdInspector();
-}
-
 function displayValue(value) {
   if (value === null || value === undefined || value === "") return "—";
   const raw = String(value);
@@ -282,19 +256,6 @@ function categoryLabel(value) {
   const raw = String(value);
   const labels = currentLanguage === "en" ? EN_CATEGORY_LABELS : TR_CATEGORY_LABELS;
   return labels[raw] ?? raw;
-}
-
-function hashFormatLabel(value) {
-  if (value === null || value === undefined || value === "") return "—";
-  const key = String(value);
-  const labels = currentLanguage === "en" ? EN_HASH_FORMAT_LABELS : HASH_FORMAT_LABELS;
-  return labels[key] ?? key;
-}
-
-function hashJobLabel(value) {
-  const key = value === null || value === undefined ? "idle" : String(value);
-  const labels = currentLanguage === "en" ? EN_HASH_JOB_LABELS : HASH_JOB_LABELS;
-  return labels[key] ?? key;
 }
 
 function confidenceLabel(value) {
@@ -674,34 +635,6 @@ function renderInventoryDetail(record) {
   ]);
 }
 
-function normalizedAuditCandidates(candidate) {
-  const source = candidate?.auditCandidates ?? candidate?.audit_candidates;
-  if (!Array.isArray(source)) return [];
-  const candidates = [];
-  for (const item of source) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    if (
-      typeof item.id !== "string"
-      || typeof item.variant !== "string"
-      || typeof item.format !== "string"
-    ) continue;
-    const tools = Array.isArray(item.tools)
-      ? item.tools
-        .filter((tool) => (
-          tool
-          && typeof tool === "object"
-          && !Array.isArray(tool)
-          && typeof tool.id === "string"
-          && typeof tool.format === "string"
-        ))
-        .map((tool) => ({id: tool.id, format: tool.format}))
-      : [];
-    if (tools.length === 0) continue;
-    candidates.push({id: item.id, variant: item.variant, format: item.format, tools});
-  }
-  return candidates;
-}
-
 function findingRecord(payload) {
   const candidate = nestedRecord(payload, ["finding", "item", "record"]);
   if (!candidate) return null;
@@ -731,7 +664,6 @@ function findingRecord(payload) {
     ruleId: firstValue(candidate, ["ruleId", "rule_id", "rule"]),
     category: firstValue(candidate, ["category", "rule_category"]),
     confidence: firstValue(candidate, ["confidence", "confidence_level"]),
-    auditCandidates: normalizedAuditCandidates(candidate),
   };
 }
 
@@ -1126,7 +1058,6 @@ function renderFindings() {
     ? `${visibleRecords.length.toLocaleString(numberLocale())} findings`
     : `${visibleRecords.length.toLocaleString(numberLocale())} bulgu`;
   findingsTabCount.textContent = findingStore.size.toLocaleString(numberLocale());
-  renderHashCandidates();
 }
 
 
@@ -1137,6 +1068,9 @@ function upsertInventory(payload) {
   inventoryStore.set(key, record);
   if (selectedInventoryKey === key) renderInventoryDetail(record);
   renderInventory();
+  if (currentIdentityAccess() !== null) {
+    renderIdentityAccess(currentIdentityAccess());
+  }
   return true;
 }
 
@@ -1162,6 +1096,9 @@ function replaceInventory(records) {
     setSelectionPlaceholder(inventorySelectionDetail, "Ayrıntı için bir kayıt seç.");
   }
   renderInventory();
+  if (currentIdentityAccess() !== null) {
+    renderIdentityAccess(currentIdentityAccess());
+  }
   return true;
 }
 
@@ -1191,17 +1128,16 @@ function clearResults() {
   setSelectionPlaceholder(findingSelectionDetail, "Ayrıntı için bir bulgu seç.");
   renderInventory();
   renderFindings();
+  renderIdentityAccess(null);
+  clearContents();
 }
 
 function showErrors(errors) {
   previewErrors.replaceChildren();
   for (const error of errors) {
     const line = document.createElement("p");
-    const rawReason = String(error.reason ?? "");
-    const reason = rawReason.startsWith("HASH_TOOL_")
-      ? hashToolErrorMessage(rawReason)
-      : rawReason;
-    const value = error.value === "Hash tools" ? uiText("Hash Araçları") : error.value;
+    const reason = String(error.reason ?? "");
+    const value = error.value;
     line.textContent = `${value || (currentLanguage === "en" ? "Input" : "Girdi")}: ${reason}`;
     previewErrors.append(line);
   }
@@ -1563,12 +1499,14 @@ function saveCompletedScan(state) {
     targets_snapshot: [...targetStore.values()],
     inventory_items: [...inventoryStore.values()],
     finding_items: [...findingStore.values()],
+    identity_access: currentIdentityAccess(),
   };
   if (existing) {
     const resultsUnchanged = JSON.stringify({
       targets_snapshot: existing.targets_snapshot ?? [],
       inventory_items: existing.inventory_items ?? [],
       finding_items: existing.finding_items ?? [],
+      identity_access: existing.identity_access ?? null,
     }) === JSON.stringify(snapshot);
     const inputsUnchanged = capturedInputs === null || capturedInputs === undefined || JSON.stringify({
       name: existing.name ?? "",
@@ -1628,6 +1566,7 @@ function exportResults() {
     targets: [...targetStore.values()],
     inventory: [...inventoryStore.values()],
     findings: [...findingStore.values()],
+    identity_access: currentIdentityAccess(),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json"});
   const link = document.createElement("a");
@@ -1754,14 +1693,19 @@ function setScanState(state) {
       : localizedMap(STATUS_MESSAGES, EN_STATUS_MESSAGES, status) ?? "";
   }
   document.querySelector("#progress-message").textContent = progressMessage;
+  renderIdentityAccess(state.identity_access);
   saveCompletedScan(state);
 
   document.querySelector("#inventory-count").textContent = state.inventory_count ?? 0;
   document.querySelector("#finding-count").textContent = state.finding_count ?? 0;
+  const contentCount = Number(state.content_count ?? 0);
+  if (contentCount !== latestContentCount) {
+    latestContentCount = contentCount;
+    scheduleContentRefresh();
+  }
   const active = ["running", "cancelling"].includes(status);
   startScanButton.disabled = active;
   cancelScanButton.disabled = !active || status === "cancelling";
-  setHashScanActive(active);
 }
 
 function terminalFailureMessage(state) {
@@ -1799,6 +1743,7 @@ async function refreshResultPanels() {
     const [inventory, findings] = await Promise.all([
       fetchResultArray("/inventory", ["inventory", "inventory_items"]),
       fetchResultArray("/findings", ["findings", "finding_items"]),
+      refreshContents(),
     ]);
     if (inventory) replaceInventory(inventory);
     if (findings) replaceFindings(findings);
@@ -1838,8 +1783,14 @@ function handleServerEvent(event) {
   try {
     const payload = JSON.parse(event.data);
     if (event.type === "target.changed") upsertTarget(payload);
-    if (event.type === "inventory.added") upsertInventory(payload);
-    if (event.type === "finding.added") upsertFinding(payload);
+    if (event.type === "inventory.added") {
+      upsertInventory(payload);
+      scheduleContentRefresh();
+    }
+    if (event.type === "finding.added") {
+      upsertFinding(payload);
+      scheduleContentRefresh();
+    }
     if (event.type === "snapshot") {
       setScanState(payload);
       targetsFromSnapshot(payload);
@@ -1851,22 +1802,19 @@ function handleServerEvent(event) {
   }
 }
 
-configureHashTools({
+configureIdentityAccess({
   displayValue,
-  findingStore,
-  formatFileSize,
-  hashFormatLabel,
-  hashJobLabel,
-  mutationHeaders,
+  statusTone,
 });
-configureAdInspector({mutationHeaders});
 configureHistory({
   activateResultTab,
+  clearContents,
   detailList,
   detectionRulePackLabel,
   displayValue,
   formatFileSize,
   replaceFindings,
+  replaceIdentityAccess: renderIdentityAccess,
   replaceInventory,
   replaceTargets,
   setSelectionPlaceholder,
@@ -1899,10 +1847,6 @@ for (const tab of resultTabs) {
   });
 }
 
-for (const item of workspaceNavigationItems) {
-  item.addEventListener("click", () => activateWorkspace(item.dataset.workspaceView));
-}
-
 toggleTermGenerator.addEventListener("click", openTermGeneratorDialog);
 closeTermGeneratorButton.addEventListener("click", closeTermGeneratorDialog);
 cancelTermGeneratorButton.addEventListener("click", closeTermGeneratorDialog);
@@ -1930,11 +1874,9 @@ languageSelect.value = currentLanguage;
 if (currentLanguage === "en") applyLanguage(currentLanguage);
 syncCredentialControls();
 syncRulePackControls();
-activateWorkspace("scan");
 activateResultTab("targets");
 refreshSnapshot();
 refreshResultPanels();
-refreshHashTools();
 
 const scanEvents = new EventSource("/scan/events");
 for (const eventName of [
