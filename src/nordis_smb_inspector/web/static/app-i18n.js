@@ -430,6 +430,8 @@ const LANGUAGE_TEXT = {
     "Henüz AD kimlik incelemesi yok.": "No AD identity inspection yet.",
     "Önce bir tarama başlatın.": "Start a scan first.",
     "Bulgular": "Findings",
+    "SMB Envanteri": "SMB Inventory",
+    "İçerik Bulguları": "Content Findings",
     "Geçmiş": "History",
     "Sonuçları JSON indir": "Download results as JSON",
     "Görüntüle": "View",
