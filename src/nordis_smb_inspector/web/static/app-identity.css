@@ -4,7 +4,7 @@
   background: rgb(94 190 217 / 12%);
 }
 
-.identity-panel { min-height: 590px; }
+.identity-panel { min-height: 0; }
 .identity-panel-heading {
   display: flex;
   align-items: flex-start;
@@ -22,7 +22,12 @@
   font-size: .76rem;
   line-height: 1.5;
 }
-.identity-access-content { display: grid; gap: 12px; }
+.identity-access-content {
+  display: grid;
+  min-height: 0;
+  overflow: auto;
+  gap: 12px;
+}
 .identity-empty-state {
   display: grid;
   min-height: 450px;
