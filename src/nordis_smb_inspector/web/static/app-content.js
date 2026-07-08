@@ -9,11 +9,14 @@ const contentVisibleCount = document.querySelector("#content-visible-count");
 const contentTabCount = document.querySelector("#content-tab-count");
 const contentTableBody = document.querySelector("#content-table-body");
 const contentSelectionDetail = document.querySelector("#content-selection-detail");
+const contentSortButtons = [...document.querySelectorAll("[data-content-sort]")];
+const contentSortHeaders = [...document.querySelectorAll("[data-content-sort-header]")];
 
 const contentStore = new Map();
 let selectedContentId = null;
 let previewSequence = 0;
 let refreshTimer = null;
+let contentSort = {key: "title", direction: "asc"};
 
 function displayValue(value) {
   if (value === null || value === undefined || value === "") return "—";
@@ -120,6 +123,99 @@ function contentSearchText(record) {
   ].map(displayValue).join(" ").toLocaleLowerCase(currentLanguage === "en" ? "en-US" : "tr-TR");
 }
 
+function tableLocation(record) {
+  return record.source === "ldap" ? attributeLabel(record.attribute) : contentLocation(record);
+}
+
+function normalizedSize(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const size = Number(value);
+  return Number.isFinite(size) && size >= 0 ? size : null;
+}
+
+function sortValue(record, key) {
+  if (key === "source") return sourceLabel(record.source);
+  if (key === "location") return tableLocation(record);
+  if (key === "size") return normalizedSize(record.size);
+  if (key === "flagged") return record.flagged ? 1 : 0;
+  return displayValue(record.title);
+}
+
+function sortLabel(key) {
+  const labels = currentLanguage === "en"
+    ? {
+      source: "Source",
+      title: "File / Object",
+      location: "Location / Attribute",
+      size: "Size",
+      flagged: "Review",
+    }
+    : {
+      source: "Kaynak",
+      title: "Dosya / Nesne",
+      location: "Konum / Alan",
+      size: "Boyut",
+      flagged: "İncele",
+    };
+  return labels[key] ?? key;
+}
+
+function compareContents(left, right) {
+  const leftValue = sortValue(left, contentSort.key);
+  const rightValue = sortValue(right, contentSort.key);
+  const leftMissing = leftValue === null || leftValue === "—";
+  const rightMissing = rightValue === null || rightValue === "—";
+  if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
+
+  let result = 0;
+  if (typeof leftValue === "number" && typeof rightValue === "number") {
+    result = leftValue - rightValue;
+  } else {
+    result = String(leftValue).localeCompare(String(rightValue), numberLocale(), {
+      numeric: true,
+      sensitivity: "base",
+    });
+  }
+  if (result !== 0) return contentSort.direction === "asc" ? result : -result;
+
+  const titleResult = displayValue(left.title).localeCompare(
+    displayValue(right.title), numberLocale(), {numeric: true, sensitivity: "base"},
+  );
+  if (titleResult !== 0) return titleResult;
+  return left.id.localeCompare(right.id);
+}
+
+function updateSortIndicators() {
+  for (const header of contentSortHeaders) {
+    const active = header.dataset.contentSortHeader === contentSort.key;
+    header.setAttribute(
+      "aria-sort",
+      active ? contentSort.direction === "asc" ? "ascending" : "descending" : "none",
+    );
+  }
+  for (const button of contentSortButtons) {
+    const active = button.dataset.contentSort === contentSort.key;
+    button.classList.toggle("is-active", active);
+    const indicator = button.querySelector(".content-sort-indicator");
+    if (indicator) {
+      indicator.textContent = active ? contentSort.direction === "asc" ? "↑" : "↓" : "↕";
+    }
+    const label = sortLabel(button.dataset.contentSort);
+    button.setAttribute("aria-label", currentLanguage === "en"
+      ? `Sort by ${label}`
+      : `${label} sütununa göre sırala`);
+  }
+}
+
+function changeContentSort(key) {
+  if (contentSort.key === key) {
+    contentSort = {key, direction: contentSort.direction === "asc" ? "desc" : "asc"};
+  } else {
+    contentSort = {key, direction: ["size", "flagged"].includes(key) ? "desc" : "asc"};
+  }
+  renderContents();
+}
+
 function visibleContents() {
   const query = contentFilter.value.trim().toLocaleLowerCase(
     currentLanguage === "en" ? "en-US" : "tr-TR",
@@ -129,7 +225,7 @@ function visibleContents() {
     (source === "all" || record.source === source)
     && (!contentFlaggedFilter.checked || record.flagged)
     && (!query || contentSearchText(record).includes(query))
-  ));
+  )).sort(compareContents);
 }
 
 function marker() {
@@ -165,6 +261,7 @@ function bindRow(row, record) {
 
 function renderContents() {
   const records = visibleContents();
+  updateSortIndicators();
   if (!records.some((record) => record.id === selectedContentId)) {
     selectedContentId = records[0]?.id ?? null;
     if (records[0]) renderContentDetail(records[0]);
@@ -175,10 +272,7 @@ function renderContents() {
     const row = document.createElement("tr");
     row.append(textCell(sourceLabel(record.source), "content-source-value"));
     row.append(textCell(record.title, "content-title-value"));
-    row.append(textCell(
-      record.source === "ldap" ? attributeLabel(record.attribute) : contentLocation(record),
-      "content-location-value",
-    ));
+    row.append(textCell(tableLocation(record), "content-location-value"));
     row.append(textCell(formatSize(record.size)));
     const signalCell = document.createElement("td");
     if (record.flagged) signalCell.append(marker());
@@ -371,6 +465,9 @@ function scheduleContentRefresh() {
 contentFilter.addEventListener("input", renderContents);
 contentSourceFilter.addEventListener("change", renderContents);
 contentFlaggedFilter.addEventListener("change", renderContents);
+for (const button of contentSortButtons) {
+  button.addEventListener("click", () => changeContentSort(button.dataset.contentSort));
+}
 renderContents();
 
 export {

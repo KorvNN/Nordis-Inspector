@@ -444,6 +444,7 @@ const LANGUAGE_TEXT = {
     "Dosya / Nesne": "File / Object",
     "Konum / Alan": "Location / Attribute",
     "Boyut": "Size",
+    "İncele": "Review",
     "İşaret": "Marker",
     "Henüz canlı içerik yok.": "No live content yet.",
     "İçeriğini görmek için bir kayıt seç.": "Select an entry to view its content.",

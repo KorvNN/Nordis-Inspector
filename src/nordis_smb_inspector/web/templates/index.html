@@ -332,11 +332,31 @@
               <table class="content-table">
                 <thead>
                   <tr>
-                    <th scope="col">Kaynak</th>
-                    <th scope="col">Dosya / Nesne</th>
-                    <th scope="col">Konum / Alan</th>
-                    <th scope="col">Boyut</th>
-                    <th scope="col">İncele</th>
+                    <th scope="col" data-content-sort-header="source" aria-sort="none">
+                      <button class="content-sort-button" type="button" data-content-sort="source">
+                        <span>Kaynak</span><span class="content-sort-indicator" aria-hidden="true">↕</span>
+                      </button>
+                    </th>
+                    <th scope="col" data-content-sort-header="title" aria-sort="ascending">
+                      <button class="content-sort-button is-active" type="button" data-content-sort="title">
+                        <span>Dosya / Nesne</span><span class="content-sort-indicator" aria-hidden="true">↑</span>
+                      </button>
+                    </th>
+                    <th scope="col" data-content-sort-header="location" aria-sort="none">
+                      <button class="content-sort-button" type="button" data-content-sort="location">
+                        <span>Konum / Alan</span><span class="content-sort-indicator" aria-hidden="true">↕</span>
+                      </button>
+                    </th>
+                    <th scope="col" data-content-sort-header="size" aria-sort="none">
+                      <button class="content-sort-button" type="button" data-content-sort="size">
+                        <span>Boyut</span><span class="content-sort-indicator" aria-hidden="true">↕</span>
+                      </button>
+                    </th>
+                    <th scope="col" data-content-sort-header="flagged" aria-sort="none">
+                      <button class="content-sort-button" type="button" data-content-sort="flagged">
+                        <span>İncele</span><span class="content-sort-indicator" aria-hidden="true">↕</span>
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody id="content-table-body">

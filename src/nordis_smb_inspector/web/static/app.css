@@ -603,6 +603,40 @@ th {
 }
 th,
 td { padding: 11px 10px; border-bottom: 1px solid var(--line); }
+.content-table th { padding: 0; }
+.content-sort-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  border-radius: 0;
+  padding: 11px 10px;
+  color: var(--muted);
+  background: transparent;
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+}
+.content-sort-button:hover {
+  color: var(--text);
+  background: rgb(95 225 183 / 7%);
+  filter: none;
+}
+.content-sort-button:focus-visible {
+  position: relative;
+  z-index: 2;
+  outline-offset: -2px;
+}
+.content-sort-button.is-active { color: var(--accent); }
+.content-sort-indicator {
+  flex: 0 0 auto;
+  color: var(--line-strong);
+  font-size: .82rem;
+  line-height: 1;
+}
+.content-sort-button.is-active .content-sort-indicator { color: var(--accent); }
 td {
   overflow: hidden;
   text-overflow: ellipsis;
