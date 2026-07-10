@@ -638,6 +638,9 @@ function renderInventoryDetail(record) {
 function findingRecord(payload) {
   const candidate = nestedRecord(payload, ["finding", "item", "record"]);
   if (!candidate) return null;
+  const distinguishedName = firstValue(candidate, ["distinguishedName", "distinguished_name", "dn"]);
+  const source = firstValue(candidate, ["source", "content_source"])
+    ?? (distinguishedName === null ? "smb" : "ldap");
   const file = firstValue(candidate, ["file", "filename", "file_path", "unc_path", "path"]);
   const lineNumber = firstValue(candidate, ["lineNumber", "line_number", "line_no", "line_index"]);
   const term = firstValue(candidate, ["term", "matched_term", "search_term", "rule_id"]);
@@ -654,9 +657,16 @@ function findingRecord(payload) {
   if (file === null && term === null && fullLine === null) return null;
   return {
     id: firstValue(candidate, ["id", "finding_id", "record_id"]),
+    contentId: firstValue(candidate, ["contentId", "content_id"]),
+    source,
     target: firstValue(candidate, ["target", "ip", "address", "hostname"]),
     share: firstValue(candidate, ["share", "share_name"]),
+    path: firstValue(candidate, ["path", "file_path"]),
     file,
+    title: firstValue(candidate, ["title", "subject", "name"]) ?? file,
+    distinguishedName,
+    subjectType: firstValue(candidate, ["subjectType", "subject_type", "object_type"]),
+    attribute: firstValue(candidate, ["attribute", "field"]),
     lineNumber,
     term,
     fullLine,
@@ -670,6 +680,8 @@ function findingRecord(payload) {
 function findingKey(record) {
   if (record.id !== null) return `id:${String(record.id)}`;
   return [
+    record.source,
+    record.contentId,
     record.target,
     record.share,
     record.file,
@@ -682,12 +694,49 @@ function findingKey(record) {
     .join("\u001f");
 }
 
+function findingSourceLabel(record) {
+  return String(record.source).toLowerCase() === "ldap" ? "LDAP" : "SMB";
+}
+
+function findingAttributeLabel(attribute) {
+  const labels = currentLanguage === "en"
+    ? {
+      description: "Description",
+      info: "Notes",
+      comment: "Comment",
+      admindescription: "Administrative description",
+    }
+    : {
+      description: "Açıklama",
+      info: "Notlar",
+      comment: "Yorum",
+      admindescription: "Yönetim açıklaması",
+    };
+  const key = String(attribute ?? "").toLowerCase();
+  return labels[key] ?? displayValue(attribute);
+}
+
+function findingLocation(record) {
+  if (String(record.source).toLowerCase() === "ldap") {
+    return `${findingAttributeLabel(record.attribute)} · ${displayValue(record.distinguishedName)}`;
+  }
+  const suffix = record.lineNumber === null || record.lineNumber === undefined
+    ? ""
+    : ` · ${currentLanguage === "en" ? "line" : "satır"} ${record.lineNumber}`;
+  return `${displayValue(record.file)}${suffix}`;
+}
+
+function findingScope(record) {
+  const target = record.target === null ? displayValue(null) : String(record.target);
+  return `${findingSourceLabel(record)} · ${target}`;
+}
+
 function renderFindingDetail(record) {
   const header = document.createElement("header");
   header.className = "finding-detail-header";
   const heading = document.createElement("h3");
   heading.className = "detail-heading";
-  heading.textContent = displayValue(record.file);
+  heading.textContent = displayValue(record.title);
   header.append(heading);
 
   const detailSections = [header];
@@ -703,13 +752,19 @@ function renderFindingDetail(record) {
     detailSections.push(context);
   }
   const metadataFields = [
-    ["Hedef", record.target, "detail-code"],
-    ["Share", record.share, "detail-code"],
+    ["Kaynak", findingSourceLabel(record)],
+    [currentLanguage === "en" ? "Location" : "Konum", findingLocation(record), "detail-code"],
   ];
+  if (String(record.source).toLowerCase() === "ldap") {
+    metadataFields.push([
+      currentLanguage === "en" ? "Object type" : "Nesne türü",
+      record.subjectType,
+    ]);
+  }
   if (record.lineNumber !== null && record.lineNumber !== undefined) {
     metadataFields.push(["Satır no", record.lineNumber, "detail-code"]);
   }
-  metadataFields.push(["Kaynak", findingLabel(record.method, FINDING_METHOD_LABELS)]);
+  metadataFields.push(["Yöntem", findingLabel(record.method, FINDING_METHOD_LABELS)]);
   if (isStructuredFinding(record)) {
     metadataFields.push(
       ["Bulgu sınıfı", categoryLabel(record.category)],
@@ -721,12 +776,12 @@ function renderFindingDetail(record) {
   findingSelectionDetail.replaceChildren(...detailSections, metadata);
 }
 
-function recordsByTarget(records) {
+function findingsByScope(records) {
   const groups = new Map();
   for (const item of records) {
-    const target = item[1].target === null ? "Hedef bilinmiyor" : String(item[1].target);
-    if (!groups.has(target)) groups.set(target, []);
-    groups.get(target).push(item);
+    const scope = findingScope(item[1]);
+    if (!groups.has(scope)) groups.set(scope, []);
+    groups.get(scope).push(item);
   }
   return groups;
 }
@@ -998,8 +1053,14 @@ function renderFindings() {
     findingsFilter.value,
     [
       "target",
+      "source",
+      "title",
       "share",
+      "path",
       "file",
+      "distinguishedName",
+      "subjectType",
+      "attribute",
       "lineNumber",
       "term",
       "fullLine",
@@ -1014,7 +1075,7 @@ function renderFindings() {
     if (visibleRecords[0]) renderFindingDetail(visibleRecords[0][1]);
     else setSelectionPlaceholder(findingSelectionDetail, "Ayrıntı için bir bulgu seç.");
   }
-  const groups = recordsByTarget(visibleRecords);
+  const groups = findingsByScope(visibleRecords);
   findingsGroups.replaceChildren();
   let groupIndex = 0;
   for (const [target, records] of groups) {
@@ -1025,11 +1086,12 @@ function renderFindings() {
       defaultOpen: groupIndex === 0,
       countLabel: "bulgu",
       tableClass: "findings-table",
-      headings: ["Dosya", "Satır no", "Kaynak", "Bulgu"],
+      headings: ["Kaynak", "Dosya / Nesne", "Konum / Alan", "Yöntem", "Bulgu"],
       rowForRecord: ([key, record]) => {
         const row = document.createElement("tr");
-        row.append(textCell(record.file, "path-value"));
-        row.append(textCell(record.lineNumber, "code-value"));
+        row.append(textCell(findingSourceLabel(record), "content-source-value"));
+        row.append(textCell(record.title, "path-value"));
+        row.append(textCell(findingLocation(record), "path-value"));
         row.append(textCell(
           findingLabel(record.method, FINDING_METHOD_LABELS),
           `status-value ${statusTone(record.method)}`,
