@@ -77,6 +77,7 @@ const startScanButton = document.querySelector("#start-scan-button");
 const cancelScanButton = document.querySelector("#cancel-scan-button");
 const previewErrors = document.querySelector("#preview-errors");
 const scanPhase = document.querySelector("#scan-phase");
+const scanStatusValue = document.querySelector("#scan-status-value");
 const targetStatusBody = document.querySelector("#target-status-body");
 const visibleTargetCount = document.querySelector("#visible-target-count");
 const targetFilters = [...document.querySelectorAll("[data-target-filter]")];
@@ -1683,7 +1684,6 @@ async function startScan() {
     activateResultTab("targets");
     cancelScanButton.disabled = false;
     await refreshSnapshot();
-    await refreshHashTools();
   } catch (error) {
     if (pendingScanInputs === inputSnapshot) pendingScanInputs = null;
     if (error instanceof CredentialInputError) {
@@ -1718,6 +1718,11 @@ function setScanState(state) {
   const status = String(state.status ?? "idle").toLowerCase();
   const phase = String(state.progress?.phase ?? "").toLowerCase();
   const terminal = ["completed", "cancelled", "failed"].includes(status);
+  scanStatusValue.textContent = localizedMap(
+    SCAN_STATUS_LABELS,
+    EN_SCAN_STATUS_LABELS,
+    status,
+  ) ?? (currentLanguage === "en" ? "Unknown" : "Bilinmiyor");
   scanPhase.textContent = terminal
     ? localizedMap(SCAN_STATUS_LABELS, EN_SCAN_STATUS_LABELS, status)
     : localizedMap(PHASE_LABELS, EN_PHASE_LABELS, phase)
@@ -1726,17 +1731,12 @@ function setScanState(state) {
 
   if (state.progress) {
     const percent = state.progress.phase_percent;
-    const displayedPercent = status === "completed" ? 100 : percent;
-    document.querySelector("#phase-percent").textContent = displayedPercent === null
-      ? "—"
-      : `${Math.round(displayedPercent)}%`;
     const overallPercent = status === "completed"
       ? 100
       : state.progress.overall_percent ?? percent ?? 0;
     document.querySelector("#progress-bar").style.width = `${overallPercent}%`;
   }
   if (!state.progress) {
-    document.querySelector("#phase-percent").textContent = "—";
     document.querySelector("#progress-bar").style.width = "0%";
   }
   const rawMessage = state.progress?.message;
@@ -1758,8 +1758,15 @@ function setScanState(state) {
   renderIdentityAccess(state.identity_access);
   saveCompletedScan(state);
 
-  document.querySelector("#inventory-count").textContent = state.inventory_count ?? 0;
-  document.querySelector("#finding-count").textContent = state.finding_count ?? 0;
+  document.querySelector("#target-summary-count").textContent = Array.isArray(state.targets)
+    ? state.targets.length.toLocaleString(numberLocale())
+    : "0";
+  document.querySelector("#content-summary-count").textContent = Number(
+    state.content_count ?? 0,
+  ).toLocaleString(numberLocale());
+  document.querySelector("#finding-count").textContent = Number(
+    state.finding_count ?? 0,
+  ).toLocaleString(numberLocale());
   const contentCount = Number(state.content_count ?? 0);
   if (contentCount !== latestContentCount) {
     latestContentCount = contentCount;

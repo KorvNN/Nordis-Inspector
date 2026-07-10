@@ -351,18 +351,33 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
 .status-summary .hint { max-width: 52rem; overflow-wrap: anywhere; }
 .metric-grid { display: flex; flex: 0 0 auto; gap: 6px; }
 .metric-grid div {
+  min-width: 88px;
   border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 5px 9px;
+  border-radius: 8px;
+  padding: 6px 9px;
   background: #0a1513;
 }
+.metric-grid div:nth-child(2) { min-width: 118px; }
 .metric-grid strong,
-.metric-grid span { display: inline; }
-.metric-grid strong { font-size: .78rem; font-variant-numeric: tabular-nums; }
-.metric-grid span { margin-left: 4px; color: var(--muted); font-size: .61rem; }
+.metric-grid span { display: block; }
+.metric-grid strong {
+  margin-top: 2px;
+  color: var(--text);
+  font-size: .76rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.metric-grid span {
+  color: var(--muted);
+  font-size: .55rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
 .progress-track {
   height: 4px;
-  margin-top: 8px;
+  margin-top: 7px;
   overflow: hidden;
   border-radius: 99px;
   background: #06100e;
