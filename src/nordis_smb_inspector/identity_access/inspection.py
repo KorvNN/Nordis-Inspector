@@ -428,7 +428,7 @@ def _inspect_directory_text(
         for attribute in _DIRECTORY_TEXT_ATTRIBUTES:
             for value in record.text_values(attribute):
                 signals: list[DirectoryTextSignal] = []
-                seen_rules: set[str] = set()
+                seen_signals: set[tuple[str, int]] = set()
                 lines = value.splitlines() or (value,)
                 for line_number, line in enumerate(lines, start=1):
                     for match in detect_patterns(
@@ -436,9 +436,10 @@ def _inspect_directory_text(
                         line_number,
                         rules=_DIRECTORY_TEXT_RULES,
                     ):
-                        if match.rule_id in seen_rules:
+                        signal_key = (match.rule_id, line_number)
+                        if signal_key in seen_signals:
                             continue
-                        seen_rules.add(match.rule_id)
+                        seen_signals.add(signal_key)
                         signals.append(
                             DirectoryTextSignal(
                                 rule_id=match.rule_id,

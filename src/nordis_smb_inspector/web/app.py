@@ -65,7 +65,11 @@ from nordis_smb_inspector.core.targets import (
 from nordis_smb_inspector.identity_access.directory import DirectoryAccessError
 from nordis_smb_inspector.identity_access.hostname import discover_directory_hostname
 from nordis_smb_inspector.identity_access.inspection import inspect_identity_access
-from nordis_smb_inspector.identity_access.models import IdentityAccessReport
+from nordis_smb_inspector.identity_access.models import (
+    DirectoryTextEntry,
+    DirectoryTextSignal,
+    IdentityAccessReport,
+)
 from nordis_smb_inspector.smb.cancellation import (
     ScanCancelled as SmbScanCancelled,
 )
@@ -802,7 +806,7 @@ def _run_access_scan(
             runtime.events.publish("snapshot", _snapshot_payload(runtime))
 
         def publish_finding(finding: ContentFinding) -> None:
-            runtime.contents.flag_smb(
+            content_id = runtime.contents.flag_smb(
                 handle.token.generation,
                 target=finding.target,
                 share=finding.share,
@@ -819,7 +823,11 @@ def _run_access_scan(
                     line_number=finding.line_number,
                 ),
             )
-            payload = _finding_payload(finding, generation=handle.token.generation)
+            payload = _finding_payload(
+                finding,
+                generation=handle.token.generation,
+                content_id=content_id,
+            )
             runtime.sessions.add_finding(handle.token, payload)
             runtime.events.publish("finding.added", payload)
             runtime.events.publish("snapshot", _snapshot_payload(runtime))
@@ -1040,7 +1048,8 @@ def _run_identity_access_stage(
                 total=index,
                 message="Kimliğin doğrudan erişimleri incelendi.",
             )
-            runtime.set_identity_report(generation, report)
+            if runtime.set_identity_report(generation, report):
+                _publish_directory_findings(runtime, handle, report)
             runtime.events.publish("snapshot", _snapshot_payload(runtime))
             return
 
@@ -1287,12 +1296,17 @@ def _finding_payload(
     finding: ContentFinding,
     *,
     generation: int,
+    content_id: str | None,
 ) -> dict[str, object]:
+    title = PureWindowsPath(finding.path).name or finding.path
     return {
         "generation": generation,
+        "source": "smb",
+        "content_id": content_id,
         "target": finding.target,
         "share": finding.share,
         "path": finding.path,
+        "title": title,
         "file": f"\\\\{finding.target}\\{finding.share}\\{finding.path}",
         "line_number": finding.line_number,
         "term": finding.term,
@@ -1303,6 +1317,57 @@ def _finding_payload(
         "confidence": (
             finding.confidence.value if finding.confidence is not None else None
         ),
+    }
+
+
+def _publish_directory_findings(
+    runtime: WebRuntime,
+    handle: ScanHandle,
+    report: IdentityAccessReport,
+) -> None:
+    generation = handle.token.generation
+    for content_id, entry in runtime.contents.directory_entries(generation):
+        for signal in entry.signals:
+            payload = _directory_finding_payload(
+                entry,
+                signal,
+                generation=generation,
+                controller=report.controller,
+                content_id=content_id,
+            )
+            runtime.sessions.add_finding(handle.token, payload)
+            runtime.events.publish("finding.added", payload)
+
+
+def _directory_finding_payload(
+    entry: DirectoryTextEntry,
+    signal: DirectoryTextSignal,
+    *,
+    generation: int,
+    controller: str,
+    content_id: str,
+) -> dict[str, object]:
+    lines = entry.value.splitlines() or [entry.value]
+    line_index = signal.line_number - 1
+    full_line = lines[line_index] if 0 <= line_index < len(lines) else entry.value
+    return {
+        "generation": generation,
+        "source": "ldap",
+        "content_id": content_id,
+        "target": controller,
+        "title": entry.subject,
+        "file": entry.subject,
+        "line_number": signal.line_number,
+        "term": signal.title,
+        "full_line": full_line,
+        "method": "pattern",
+        "rule_id": signal.rule_id,
+        "category": signal.category,
+        "confidence": signal.confidence,
+        "distinguished_name": entry.distinguished_name,
+        "subject": entry.subject,
+        "subject_type": entry.subject_type,
+        "attribute": entry.attribute,
     }
 
 

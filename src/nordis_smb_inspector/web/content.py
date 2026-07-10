@@ -213,12 +213,12 @@ class ContentCatalog:
         share: str,
         path: str,
         signal: ContentSignal | None = None,
-    ) -> None:
+    ) -> str | None:
         remote_path = path.split("!/", 1)[0]
         key = (target, share, remote_path)
         with self._lock:
             if generation != self._generation:
-                return
+                return None
             content_id = self._smb_keys.get(key)
             current = self._items.get(content_id) if content_id is not None else None
             if isinstance(current, SmbContentReference):
@@ -231,6 +231,8 @@ class ContentCatalog:
                         flagged=True,
                         signals=signals,
                     )
+                return content_id
+            return None
 
     def register_directory(
         self,
@@ -256,6 +258,21 @@ class ContentCatalog:
             if generation != self._generation:
                 return ()
             return tuple(item.public_payload() for item in self._items.values())
+
+    def directory_entries(
+        self,
+        generation: int,
+    ) -> tuple[tuple[str, DirectoryTextEntry], ...]:
+        """Return current LDAP references for internal finding projection."""
+
+        with self._lock:
+            if generation != self._generation:
+                return ()
+            return tuple(
+                (content_id, item.entry)
+                for content_id, item in self._items.items()
+                if isinstance(item, LdapContentReference)
+            )
 
     def resolve(
         self,
