@@ -97,6 +97,14 @@ const exportResultsButton = document.querySelector("#export-results");
 const targetSelectionDetail = document.querySelector("#target-selection-detail");
 const inventorySelectionDetail = document.querySelector("#inventory-selection-detail");
 const findingSelectionDetail = document.querySelector("#finding-selection-detail");
+const inventoryContentDialog = document.querySelector("#inventory-content-dialog");
+const inventoryContentHeading = document.querySelector("#inventory-content-heading");
+const inventoryContentLocation = document.querySelector("#inventory-content-location");
+const inventoryContentPreview = document.querySelector("#inventory-content-preview");
+const inventoryContentPreviewNote = document.querySelector("#inventory-content-preview-note");
+const downloadInventoryContent = document.querySelector("#download-inventory-content");
+const closeInventoryContentButton = document.querySelector("#close-inventory-content");
+const cancelInventoryContentButton = document.querySelector("#cancel-inventory-content");
 const targetStore = new Map();
 const inventoryStore = new Map();
 const findingStore = new Map();
@@ -597,12 +605,15 @@ function inventoryRecord(payload) {
     "directory_path",
   ]);
   if (target === null && share === null && path === null) return null;
+  const contentId = firstValue(candidate, ["contentId", "content_id"]);
+  const previewAvailable = firstValue(candidate, ["previewAvailable", "preview_available"]);
+  const downloadAvailable = firstValue(candidate, ["downloadAvailable", "download_available"]);
   return {
     id: firstValue(candidate, ["id", "record_id", "inventory_id"]),
     generation: firstValue(candidate, ["generation"]),
-    contentId: firstValue(candidate, ["contentId", "content_id"]),
-    previewAvailable: candidate.preview_available === true || candidate.previewAvailable === true,
-    downloadAvailable: candidate.download_available === true || candidate.downloadAvailable === true,
+    contentId,
+    previewAvailable: previewAvailable === null ? contentId !== null : previewAvailable === true,
+    downloadAvailable: downloadAvailable === null ? contentId !== null : downloadAvailable === true,
     target,
     share,
     path,
@@ -627,8 +638,6 @@ function inventoryKey(record) {
 }
 
 function renderInventoryDetail(record) {
-  inventoryPreviewSequence += 1;
-  const previewSequence = inventoryPreviewSequence;
   renderSelectionDetail(inventorySelectionDetail, record.path || record.share, [
     ["Hedef", record.target],
     ["Share", record.share],
@@ -641,79 +650,99 @@ function renderInventoryDetail(record) {
     ["Değiştirilme", record.modifiedAt],
     ["Hata ayrıntısı", targetErrorDetail(record) ?? record.detail],
   ]);
-  if (record.contentId === null || String(record.type).toLowerCase() !== "file") return;
-
-  const liveGeneration = Number(record.generation) === Number(latestGeneration);
-  if (!liveGeneration) {
-    const note = document.createElement("p");
-    note.className = "content-preview-note inventory-preview-note";
-    note.textContent = currentLanguage === "en"
-      ? "This result is no longer live. Run the scan again to preview or download the file."
-      : "Bu sonuç artık canlı değil. Dosyayı açmak veya indirmek için taramayı yeniden çalıştırın.";
-    inventorySelectionDetail.append(note);
-    return;
-  }
-
-  const actions = document.createElement("div");
-  actions.className = "content-detail-actions inventory-content-actions";
-  if (record.downloadAvailable) {
-    const download = document.createElement("a");
-    download.className = "secondary-button content-download";
-    download.href = `/contents/${encodeURIComponent(record.contentId)}/download`;
-    download.textContent = currentLanguage === "en" ? "Download" : "İndir";
-    actions.append(download);
-  }
-  if (actions.childElementCount > 0) inventorySelectionDetail.append(actions);
-
-  const preview = document.createElement("section");
-  preview.className = "content-preview inventory-content-preview";
-  const previewHeading = document.createElement("div");
-  previewHeading.className = "content-preview-heading";
-  previewHeading.textContent = currentLanguage === "en" ? "Read-only preview" : "Salt okunur önizleme";
-  const pre = document.createElement("pre");
-  const code = document.createElement("code");
-  code.textContent = record.previewAvailable
-    ? currentLanguage === "en" ? "Loading…" : "Yükleniyor…"
-    : currentLanguage === "en"
-      ? "This file cannot be previewed here; download it to inspect."
-      : "Bu dosya panelde önizlenemiyor; incelemek için indirebilirsiniz.";
-  pre.append(code);
-  preview.append(previewHeading, pre);
-  inventorySelectionDetail.append(preview);
-  if (record.previewAvailable) {
-    loadInventoryPreview(record, preview, code, previewSequence);
-  }
 }
 
-async function loadInventoryPreview(record, preview, code, sequence) {
+function inventoryContentIsLive(record) {
+  return record.contentId !== null
+    && record.generation !== null
+    && latestGeneration !== null
+    && Number(record.generation) === Number(latestGeneration);
+}
+
+function closeInventoryContentDialog() {
+  inventoryPreviewSequence += 1;
+  if (inventoryContentDialog.open) inventoryContentDialog.close();
+}
+
+function openInventoryContentDialog(record) {
+  inventoryPreviewSequence += 1;
+  const sequence = inventoryPreviewSequence;
+  inventoryContentHeading.textContent = displayValue(record.path || record.share);
+  inventoryContentLocation.textContent = `\\\\${displayValue(record.target)}\\${displayValue(record.share)}\\${displayValue(record.path)}`;
+  inventoryContentPreview.textContent = currentLanguage === "en" ? "Loading…" : "Yükleniyor…";
+  inventoryContentPreviewNote.hidden = true;
+  inventoryContentPreviewNote.textContent = "";
+  downloadInventoryContent.href = `/contents/${encodeURIComponent(record.contentId)}/download`;
+  downloadInventoryContent.hidden = !record.downloadAvailable;
+  inventoryContentDialog.showModal();
+  loadInventoryPreview(record, sequence);
+}
+
+async function loadInventoryPreview(record, sequence) {
   try {
     const response = await fetch(`/contents/${encodeURIComponent(record.contentId)}/preview`, {
       cache: "no-store",
       credentials: "omit",
     });
     const payload = await response.json();
-    if (sequence !== inventoryPreviewSequence || selectedInventoryKey !== inventoryKey(record)) return;
+    if (sequence !== inventoryPreviewSequence || !inventoryContentDialog.open) return;
     if (!response.ok) {
-      code.textContent = payload?.error?.message
+      inventoryContentPreview.textContent = payload?.error?.message
         ?? (currentLanguage === "en" ? "The file could not be opened." : "Dosya açılamadı.");
       return;
     }
-    code.textContent = displayValue(payload.text);
+    inventoryContentPreview.textContent = displayValue(payload.text);
     if (payload.truncated === true) {
-      const note = document.createElement("p");
-      note.className = "content-preview-note";
-      note.textContent = currentLanguage === "en"
+      inventoryContentPreviewNote.hidden = false;
+      inventoryContentPreviewNote.textContent = currentLanguage === "en"
         ? "The preview is truncated; the download contains the complete file."
         : "Önizleme sınırlıdır; indirilen dosya tam içeriği içerir.";
-      preview.append(note);
     }
   } catch (_error) {
-    if (sequence === inventoryPreviewSequence && selectedInventoryKey === inventoryKey(record)) {
-      code.textContent = currentLanguage === "en"
+    if (sequence === inventoryPreviewSequence && inventoryContentDialog.open) {
+      inventoryContentPreview.textContent = currentLanguage === "en"
         ? "The local panel did not return the file content."
         : "Yerel panel dosya içeriğini döndürmedi.";
     }
   }
+}
+
+function inventoryFileAction(record) {
+  const cell = document.createElement("td");
+  cell.className = "inventory-action-cell";
+  if (!inventoryContentIsLive(record)) {
+    cell.textContent = "—";
+    return cell;
+  }
+
+  const stopRowInteraction = (event) => event.stopPropagation();
+  if (record.previewAvailable) {
+    const open = document.createElement("button");
+    open.className = "secondary-button inventory-row-action";
+    open.type = "button";
+    open.textContent = currentLanguage === "en" ? "Open" : "Aç";
+    open.addEventListener("keydown", stopRowInteraction);
+    open.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openInventoryContentDialog(record);
+    });
+    cell.append(open);
+    return cell;
+  }
+
+  if (record.downloadAvailable) {
+    const download = document.createElement("a");
+    download.className = "secondary-button content-download inventory-row-action";
+    download.href = `/contents/${encodeURIComponent(record.contentId)}/download`;
+    download.textContent = currentLanguage === "en" ? "Download" : "İndir";
+    download.addEventListener("keydown", stopRowInteraction);
+    download.addEventListener("click", stopRowInteraction);
+    cell.append(download);
+    return cell;
+  }
+
+  cell.textContent = "—";
+  return cell;
 }
 
 function findingRecord(payload) {
@@ -989,7 +1018,11 @@ function inventoryTable(kinds) {
   const table = document.createElement("table");
   table.className = "result-table inventory-table";
   const columns = document.createElement("colgroup");
-  for (const className of ["inventory-path-column", "inventory-status-column"]) {
+  for (const className of [
+    "inventory-path-column",
+    "inventory-status-column",
+    "inventory-action-column",
+  ]) {
     const column = document.createElement("col");
     column.className = className;
     columns.append(column);
@@ -1002,7 +1035,7 @@ function inventoryTable(kinds) {
     const kindRow = document.createElement("tr");
     kindRow.className = "inventory-kind-heading-row";
     const kindCell = document.createElement("th");
-    kindCell.colSpan = 2;
+    kindCell.colSpan = 3;
     kindCell.textContent = inventoryKindLabel(kind);
     kindRow.append(kindCell);
     body.append(kindRow);
@@ -1011,6 +1044,7 @@ function inventoryTable(kinds) {
       const row = document.createElement("tr");
       row.append(textCell(record.path || record.share, "path-value"));
       row.append(textCell(record.status, `status-value ${statusTone(record.status)}`));
+      row.append(inventoryFileAction(record));
       bindSelectableRow(row, {
         selected: selectedInventoryKey === key,
         select: () => {
@@ -1997,6 +2031,11 @@ for (const tab of resultTabs) {
 }
 
 toggleTermGenerator.addEventListener("click", openTermGeneratorDialog);
+closeInventoryContentButton.addEventListener("click", closeInventoryContentDialog);
+cancelInventoryContentButton.addEventListener("click", closeInventoryContentDialog);
+inventoryContentDialog.addEventListener("close", () => {
+  inventoryPreviewSequence += 1;
+});
 closeTermGeneratorButton.addEventListener("click", closeTermGeneratorDialog);
 cancelTermGeneratorButton.addEventListener("click", closeTermGeneratorDialog);
 termGenerator.addEventListener("close", () => {

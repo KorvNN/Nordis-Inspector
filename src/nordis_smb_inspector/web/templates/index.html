@@ -397,6 +397,28 @@
     </section>
   </main>
 
+  <dialog id="inventory-content-dialog" class="content-dialog"
+    aria-labelledby="inventory-content-heading">
+    <div class="dialog-heading">
+      <div>
+        <h2 id="inventory-content-heading">Dosya içeriği</h2>
+        <p id="inventory-content-location" class="content-dialog-location"></p>
+      </div>
+      <button id="close-inventory-content" class="icon-button" type="button"
+        aria-label="Kapat">×</button>
+    </div>
+    <section class="content-preview content-dialog-preview">
+      <div class="content-preview-heading">Salt okunur önizleme</div>
+      <pre><code id="inventory-content-preview"></code></pre>
+      <p id="inventory-content-preview-note" class="content-preview-note" hidden></p>
+    </section>
+    <div class="content-dialog-actions">
+      <button id="cancel-inventory-content" class="secondary-button" type="button">Kapat</button>
+      <a id="download-inventory-content" class="secondary-button content-download"
+        href="#">İndir</a>
+    </div>
+  </dialog>
+
   <dialog id="term-generator" class="term-generator-dialog"
     aria-labelledby="term-generator-heading" aria-describedby="term-generator-description">
     <div class="dialog-heading">

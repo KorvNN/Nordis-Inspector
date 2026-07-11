@@ -684,8 +684,9 @@ tbody tr:last-child td { border-bottom: 0; }
 .target-status-table th:nth-child(3) { width: 15%; }
 .target-status-table th:nth-child(4) { width: 25%; }
 .target-status-table th:nth-child(5) { width: 24%; }
-.inventory-path-column { width: 70%; }
-.inventory-status-column { width: 30%; }
+.inventory-path-column { width: 58%; }
+.inventory-status-column { width: 26%; }
+.inventory-action-column { width: 16%; }
 .inventory-table tbody tr.inventory-kind-heading-row {
   cursor: default;
   transition: none;
@@ -769,15 +770,14 @@ tbody tr:last-child td { border-bottom: 0; }
   gap: 8px;
   margin-bottom: 14px;
 }
-.inventory-content-actions {
-  margin-top: 14px;
-  margin-bottom: 0;
-}
-.inventory-content-preview { margin-top: 14px; }
-.inventory-preview-note {
-  margin-top: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+.inventory-action-cell { overflow: visible; text-align: right; }
+.inventory-row-action {
+  display: inline-flex;
+  min-width: 52px;
+  justify-content: center;
+  padding: 6px 9px;
+  font-size: .68rem;
+  text-decoration: none;
 }
 .content-download {
   display: inline-flex;
@@ -1012,7 +1012,8 @@ tbody tr:last-child td { border-bottom: 0; }
 }
 
 .confirm-dialog::backdrop,
-.term-generator-dialog::backdrop { background: rgb(2 8 7 / 76%); }
+.term-generator-dialog::backdrop,
+.content-dialog::backdrop { background: rgb(2 8 7 / 76%); }
 .dialog-heading { align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 .icon-button {
   display: grid;
@@ -1045,6 +1046,34 @@ tbody tr:last-child td { border-bottom: 0; }
   padding: 22px;
   color: var(--text);
   background: #0c1715;
+}
+.content-dialog {
+  width: min(920px, calc(100vw - 48px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  padding: 22px;
+  color: var(--text);
+  background: #0c1715;
+}
+.content-dialog .dialog-heading h2 { margin: 0; }
+.content-dialog-location {
+  max-width: 760px;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font: .7rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+.content-dialog-preview { margin-top: 18px; }
+.content-dialog-preview pre { min-height: 180px; max-height: 55dvh; }
+.content-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
 }
 .term-generator-dialog .dialog-heading h2 { margin: 0; }
 .term-generator-dialog-copy {
