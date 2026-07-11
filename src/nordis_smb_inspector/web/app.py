@@ -98,6 +98,7 @@ from nordis_smb_inspector.web.content import (
     LdapContentReference,
     SmbContentReference,
     open_smb_reader,
+    smb_preview_available,
     smb_text_preview,
 )
 from nordis_smb_inspector.web.events import InvalidEventCursor, SseEventBroker
@@ -1282,6 +1283,10 @@ def _inventory_payload(
         "error_name": entry.error.symbolic_name if entry.error is not None else None,
         "error_message": entry.error.safe_message if entry.error is not None else None,
         "content_id": content_id,
+        "preview_available": (
+            content_id is not None and smb_preview_available(entry.relative_path)
+        ),
+        "download_available": content_id is not None,
     }
 
 

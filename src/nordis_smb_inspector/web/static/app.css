@@ -769,6 +769,16 @@ tbody tr:last-child td { border-bottom: 0; }
   gap: 8px;
   margin-bottom: 14px;
 }
+.inventory-content-actions {
+  margin-top: 14px;
+  margin-bottom: 0;
+}
+.inventory-content-preview { margin-top: 14px; }
+.inventory-preview-note {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
 .content-download {
   display: inline-flex;
   align-items: center;

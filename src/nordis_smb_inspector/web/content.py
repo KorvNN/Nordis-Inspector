@@ -39,6 +39,13 @@ _PREVIEW_BYTE_LIMIT = 512 * 1024
 _STRUCTURED_PREVIEW_FILE_LIMIT = 32 * 1024 * 1024
 _PREVIEW_CHAR_LIMIT = 512 * 1024
 _STREAM_CHUNK_SIZE = 64 * 1024
+_NON_PREVIEWABLE_DOCUMENT_KINDS = frozenset(
+    {
+        DocumentKind.ZIP_ARCHIVE,
+        DocumentKind.TAR_ARCHIVE,
+        DocumentKind.GZIP_ARCHIVE,
+    }
+)
 
 
 class ContentSource(StrEnum):
@@ -97,7 +104,6 @@ class SmbContentReference:
     signals: tuple[ContentSignal, ...] = ()
 
     def public_payload(self) -> dict[str, object]:
-        kind = document_kind(self.path)
         return {
             "id": self.content_id,
             "source": ContentSource.SMB.value,
@@ -108,11 +114,7 @@ class SmbContentReference:
             "size": self.size,
             "flagged": self.flagged,
             "signals": [signal.public_payload() for signal in self.signals],
-            "preview_available": kind not in {
-                DocumentKind.ZIP_ARCHIVE,
-                DocumentKind.TAR_ARCHIVE,
-                DocumentKind.GZIP_ARCHIVE,
-            },
+            "preview_available": smb_preview_available(self.path),
             "download_available": True,
         }
 
@@ -146,6 +148,12 @@ class LdapContentReference:
 
 
 ContentReference = SmbContentReference | LdapContentReference
+
+
+def smb_preview_available(path: str) -> bool:
+    """Return whether the live panel can render a bounded SMB file preview."""
+
+    return document_kind(path) not in _NON_PREVIEWABLE_DOCUMENT_KINDS
 
 
 class ContentCatalog:

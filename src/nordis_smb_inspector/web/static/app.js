@@ -106,6 +106,7 @@ let selectedTargetFilter = "all";
 let selectedTargetKey = null;
 let selectedInventoryKey = null;
 let selectedFindingKey = null;
+let inventoryPreviewSequence = 0;
 let latestGeneration = null;
 let latestContentCount = null;
 let pendingScanInputs = null;
@@ -598,6 +599,10 @@ function inventoryRecord(payload) {
   if (target === null && share === null && path === null) return null;
   return {
     id: firstValue(candidate, ["id", "record_id", "inventory_id"]),
+    generation: firstValue(candidate, ["generation"]),
+    contentId: firstValue(candidate, ["contentId", "content_id"]),
+    previewAvailable: candidate.preview_available === true || candidate.previewAvailable === true,
+    downloadAvailable: candidate.download_available === true || candidate.downloadAvailable === true,
     target,
     share,
     path,
@@ -622,6 +627,8 @@ function inventoryKey(record) {
 }
 
 function renderInventoryDetail(record) {
+  inventoryPreviewSequence += 1;
+  const previewSequence = inventoryPreviewSequence;
   renderSelectionDetail(inventorySelectionDetail, record.path || record.share, [
     ["Hedef", record.target],
     ["Share", record.share],
@@ -630,10 +637,83 @@ function renderInventoryDetail(record) {
     ["Durum", record.status],
     ["Okuma", record.readAccess],
     ["Yazma", writeAccessLabel(record.writeAccess)],
-    ["Boyut", formatSize(record.size)],
+    ["Boyut", formatFileSize(record.size)],
     ["Değiştirilme", record.modifiedAt],
     ["Hata ayrıntısı", targetErrorDetail(record) ?? record.detail],
   ]);
+  if (record.contentId === null || String(record.type).toLowerCase() !== "file") return;
+
+  const liveGeneration = Number(record.generation) === Number(latestGeneration);
+  if (!liveGeneration) {
+    const note = document.createElement("p");
+    note.className = "content-preview-note inventory-preview-note";
+    note.textContent = currentLanguage === "en"
+      ? "This result is no longer live. Run the scan again to preview or download the file."
+      : "Bu sonuç artık canlı değil. Dosyayı açmak veya indirmek için taramayı yeniden çalıştırın.";
+    inventorySelectionDetail.append(note);
+    return;
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "content-detail-actions inventory-content-actions";
+  if (record.downloadAvailable) {
+    const download = document.createElement("a");
+    download.className = "secondary-button content-download";
+    download.href = `/contents/${encodeURIComponent(record.contentId)}/download`;
+    download.textContent = currentLanguage === "en" ? "Download" : "İndir";
+    actions.append(download);
+  }
+  if (actions.childElementCount > 0) inventorySelectionDetail.append(actions);
+
+  const preview = document.createElement("section");
+  preview.className = "content-preview inventory-content-preview";
+  const previewHeading = document.createElement("div");
+  previewHeading.className = "content-preview-heading";
+  previewHeading.textContent = currentLanguage === "en" ? "Read-only preview" : "Salt okunur önizleme";
+  const pre = document.createElement("pre");
+  const code = document.createElement("code");
+  code.textContent = record.previewAvailable
+    ? currentLanguage === "en" ? "Loading…" : "Yükleniyor…"
+    : currentLanguage === "en"
+      ? "This file cannot be previewed here; download it to inspect."
+      : "Bu dosya panelde önizlenemiyor; incelemek için indirebilirsiniz.";
+  pre.append(code);
+  preview.append(previewHeading, pre);
+  inventorySelectionDetail.append(preview);
+  if (record.previewAvailable) {
+    loadInventoryPreview(record, preview, code, previewSequence);
+  }
+}
+
+async function loadInventoryPreview(record, preview, code, sequence) {
+  try {
+    const response = await fetch(`/contents/${encodeURIComponent(record.contentId)}/preview`, {
+      cache: "no-store",
+      credentials: "omit",
+    });
+    const payload = await response.json();
+    if (sequence !== inventoryPreviewSequence || selectedInventoryKey !== inventoryKey(record)) return;
+    if (!response.ok) {
+      code.textContent = payload?.error?.message
+        ?? (currentLanguage === "en" ? "The file could not be opened." : "Dosya açılamadı.");
+      return;
+    }
+    code.textContent = displayValue(payload.text);
+    if (payload.truncated === true) {
+      const note = document.createElement("p");
+      note.className = "content-preview-note";
+      note.textContent = currentLanguage === "en"
+        ? "The preview is truncated; the download contains the complete file."
+        : "Önizleme sınırlıdır; indirilen dosya tam içeriği içerir.";
+      preview.append(note);
+    }
+  } catch (_error) {
+    if (sequence === inventoryPreviewSequence && selectedInventoryKey === inventoryKey(record)) {
+      code.textContent = currentLanguage === "en"
+        ? "The local panel did not return the file content."
+        : "Yerel panel dosya içeriğini döndürmedi.";
+    }
+  }
 }
 
 function findingRecord(payload) {
