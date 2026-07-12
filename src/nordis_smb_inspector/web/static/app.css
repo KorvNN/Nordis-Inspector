@@ -776,13 +776,24 @@ tbody tr:last-child td { border-bottom: 0; }
   justify-content: flex-end;
   gap: 8px;
 }
+.inventory-status-action-layout .status-value,
 .inventory-row-action {
   display: inline-flex;
+  box-sizing: border-box;
+  min-height: 30px;
+  align-items: center;
   min-width: 52px;
   justify-content: center;
+  border-radius: 8px;
   padding: 6px 9px;
+  font-family: inherit;
   font-size: .68rem;
+  font-weight: 800;
+  line-height: 1.25;
   text-decoration: none;
+}
+.inventory-status-action-layout .status-value {
+  border: 1px solid rgb(95 225 183 / 18%);
 }
 .content-download {
   display: inline-flex;
