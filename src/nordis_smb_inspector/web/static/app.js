@@ -707,11 +707,18 @@ async function loadInventoryPreview(record, sequence) {
   }
 }
 
-function inventoryFileAction(record) {
+function inventoryStatusActionCell(record) {
   const cell = document.createElement("td");
-  cell.className = "inventory-action-cell";
+  cell.className = "inventory-status-action-cell";
+  const layout = document.createElement("div");
+  layout.className = "inventory-status-action-layout";
+  const status = document.createElement("span");
+  status.className = `status-value ${statusTone(record.status)}`;
+  status.textContent = displayValue(record.status);
+  layout.append(status);
+  cell.append(layout);
+
   if (!inventoryContentIsLive(record)) {
-    cell.textContent = "—";
     return cell;
   }
 
@@ -726,7 +733,7 @@ function inventoryFileAction(record) {
       event.stopPropagation();
       openInventoryContentDialog(record);
     });
-    cell.append(open);
+    layout.append(open);
     return cell;
   }
 
@@ -737,7 +744,7 @@ function inventoryFileAction(record) {
     download.textContent = currentLanguage === "en" ? "Download" : "İndir";
     download.addEventListener("keydown", stopRowInteraction);
     download.addEventListener("click", stopRowInteraction);
-    cell.append(download);
+    layout.append(download);
     return cell;
   }
 
@@ -1021,7 +1028,6 @@ function inventoryTable(kinds) {
   for (const className of [
     "inventory-path-column",
     "inventory-status-column",
-    "inventory-action-column",
   ]) {
     const column = document.createElement("col");
     column.className = className;
@@ -1035,7 +1041,7 @@ function inventoryTable(kinds) {
     const kindRow = document.createElement("tr");
     kindRow.className = "inventory-kind-heading-row";
     const kindCell = document.createElement("th");
-    kindCell.colSpan = 3;
+    kindCell.colSpan = 2;
     kindCell.textContent = inventoryKindLabel(kind);
     kindRow.append(kindCell);
     body.append(kindRow);
@@ -1043,8 +1049,7 @@ function inventoryTable(kinds) {
     for (const [key, record] of records) {
       const row = document.createElement("tr");
       row.append(textCell(record.path || record.share, "path-value"));
-      row.append(textCell(record.status, `status-value ${statusTone(record.status)}`));
-      row.append(inventoryFileAction(record));
+      row.append(inventoryStatusActionCell(record));
       bindSelectableRow(row, {
         selected: selectedInventoryKey === key,
         select: () => {

@@ -684,9 +684,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .target-status-table th:nth-child(3) { width: 15%; }
 .target-status-table th:nth-child(4) { width: 25%; }
 .target-status-table th:nth-child(5) { width: 24%; }
-.inventory-path-column { width: 58%; }
-.inventory-status-column { width: 26%; }
-.inventory-action-column { width: 16%; }
+.inventory-path-column { width: 70%; }
+.inventory-status-column { width: 30%; }
 .inventory-table tbody tr.inventory-kind-heading-row {
   cursor: default;
   transition: none;
@@ -770,7 +769,13 @@ tbody tr:last-child td { border-bottom: 0; }
   gap: 8px;
   margin-bottom: 14px;
 }
-.inventory-action-cell { overflow: visible; text-align: right; }
+.inventory-status-action-cell { overflow: visible; }
+.inventory-status-action-layout {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .inventory-row-action {
   display: inline-flex;
   min-width: 52px;

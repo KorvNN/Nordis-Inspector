@@ -95,6 +95,27 @@ function identityStateCopy(status) {
   return copies[currentLanguage]?.[status] ?? copies.tr.not_checked;
 }
 
+function identityLoadingSkeleton() {
+  const skeleton = document.createElement("div");
+  skeleton.className = "identity-loading-skeleton";
+  skeleton.setAttribute("aria-hidden", "true");
+
+  for (let cardIndex = 0; cardIndex < 3; cardIndex += 1) {
+    const card = document.createElement("div");
+    card.className = "identity-skeleton-card";
+    const heading = document.createElement("span");
+    heading.className = "identity-skeleton-line is-heading";
+    card.append(heading);
+    for (let lineIndex = 0; lineIndex < 2; lineIndex += 1) {
+      const line = document.createElement("span");
+      line.className = "identity-skeleton-line";
+      card.append(line);
+    }
+    skeleton.append(card);
+  }
+  return skeleton;
+}
+
 function identityEmptyState(status, payload) {
   const state = document.createElement("div");
   state.className = `identity-empty-state ${status === "failed" ? "is-error" : ""} ${
@@ -105,7 +126,11 @@ function identityEmptyState(status, payload) {
   title.textContent = defaultTitle;
   const message = document.createElement("p");
   message.textContent = payload?.error?.message ?? payload?.message ?? defaultMessage;
-  state.append(title, message);
+  const copy = document.createElement("div");
+  copy.className = "identity-state-copy";
+  copy.append(title, message);
+  state.append(copy);
+  if (status === "running") state.append(identityLoadingSkeleton());
   const codeValue = payload?.error?.code;
   if (typeof codeValue === "string" && codeValue.trim() !== "") {
     const code = document.createElement("code");
