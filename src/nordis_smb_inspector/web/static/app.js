@@ -843,11 +843,6 @@ function findingLocation(record) {
   return `${displayValue(record.file)}${suffix}`;
 }
 
-function findingScope(record) {
-  const target = record.target === null ? displayValue(null) : String(record.target);
-  return `${findingSourceLabel(record)} · ${target}`;
-}
-
 function renderFindingDetail(record) {
   const header = document.createElement("header");
   header.className = "finding-detail-header";
@@ -893,14 +888,24 @@ function renderFindingDetail(record) {
   findingSelectionDetail.replaceChildren(...detailSections, metadata);
 }
 
-function findingsByScope(records) {
-  const groups = new Map();
+function findingsByTargetAndSource(records) {
+  const targets = new Map();
   for (const item of records) {
-    const scope = findingScope(item[1]);
-    if (!groups.has(scope)) groups.set(scope, []);
-    groups.get(scope).push(item);
+    const target = item[1].target === null ? displayValue(null) : String(item[1].target);
+    const source = findingSourceLabel(item[1]);
+    if (!targets.has(target)) targets.set(target, new Map());
+    const sources = targets.get(target);
+    if (!sources.has(source)) sources.set(source, []);
+    sources.get(source).push(item);
   }
-  return groups;
+  const sourceOrder = new Map([["SMB", 0], ["LDAP", 1]]);
+  for (const [target, sources] of targets) {
+    targets.set(target, new Map([...sources].sort(([left], [right]) => (
+      (sourceOrder.get(left) ?? sourceOrder.size) - (sourceOrder.get(right) ?? sourceOrder.size)
+        || left.localeCompare(right, currentLanguage)
+    ))));
+  }
+  return targets;
 }
 
 function inventorySections(records) {
@@ -1195,39 +1200,65 @@ function renderFindings() {
     if (visibleRecords[0]) renderFindingDetail(visibleRecords[0][1]);
     else setSelectionPlaceholder(findingSelectionDetail, "Ayrıntı için bir bulgu seç.");
   }
-  const groups = findingsByScope(visibleRecords);
+  const groups = findingsByTargetAndSource(visibleRecords);
   findingsGroups.replaceChildren();
   let groupIndex = 0;
-  for (const [target, records] of groups) {
-    findingsGroups.append(groupedResult({
-      target,
-      records,
-      openState: findingGroupOpenState,
-      defaultOpen: groupIndex === 0,
-      countLabel: "bulgu",
-      tableClass: "findings-table",
-      headings: ["Kaynak", "Dosya / Nesne", "Konum / Alan", "Yöntem", "Bulgu"],
-      rowForRecord: ([key, record]) => {
-        const row = document.createElement("tr");
-        row.append(textCell(findingSourceLabel(record), "content-source-value"));
-        row.append(textCell(record.title, "path-value"));
-        row.append(textCell(findingLocation(record), "path-value"));
-        row.append(textCell(
-          findingLabel(record.method, FINDING_METHOD_LABELS),
-          `status-value ${statusTone(record.method)}`,
-        ));
-        row.append(textCell(findingSignalValue(record), "finding-term-pill"));
-        bindSelectableRow(row, {
-          selected: selectedFindingKey === key,
-          select: () => {
-            selectedFindingKey = key;
-            renderFindings();
-            renderFindingDetail(record);
-          },
-        });
-        return row;
-      },
-    }));
+  for (const [target, sources] of groups) {
+    const targetStateKey = `target:${target}`;
+    const targetGroup = document.createElement("details");
+    targetGroup.className = "result-group finding-target-group";
+    targetGroup.open = findingGroupOpenState.has(targetStateKey)
+      ? findingGroupOpenState.get(targetStateKey)
+      : groupIndex === 0;
+    targetGroup.addEventListener("toggle", () => {
+      findingGroupOpenState.set(targetStateKey, targetGroup.open);
+    });
+
+    const targetSummary = document.createElement("summary");
+    const targetLabel = document.createElement("span");
+    targetLabel.className = "result-group-target";
+    targetLabel.textContent = target;
+    const targetCount = document.createElement("span");
+    targetCount.className = "result-group-count";
+    targetCount.textContent = `${nestedInventoryCount(sources).toLocaleString(numberLocale())} ${uiText("bulgu")}`;
+    targetSummary.append(targetLabel, targetCount);
+    targetGroup.append(targetSummary);
+
+    let sourceIndex = 0;
+    for (const [source, records] of sources) {
+      targetGroup.append(groupedResult({
+        target: source,
+        records,
+        openState: findingGroupOpenState,
+        defaultOpen: sourceIndex === 0,
+        stateKey: `${targetStateKey}|source:${source}`,
+        extraClass: `finding-source-group is-${source.toLowerCase()}`,
+        countLabel: "bulgu",
+        tableClass: "findings-table",
+        headings: ["Dosya / Nesne", "Konum / Alan", "Yöntem", "Bulgu"],
+        rowForRecord: ([key, record]) => {
+          const row = document.createElement("tr");
+          row.append(textCell(record.title, "path-value"));
+          row.append(textCell(findingLocation(record), "path-value"));
+          row.append(textCell(
+            findingLabel(record.method, FINDING_METHOD_LABELS),
+            `status-value ${statusTone(record.method)}`,
+          ));
+          row.append(textCell(findingSignalValue(record), "finding-term-pill"));
+          bindSelectableRow(row, {
+            selected: selectedFindingKey === key,
+            select: () => {
+              selectedFindingKey = key;
+              renderFindings();
+              renderFindingDetail(record);
+            },
+          });
+          return row;
+        },
+      }));
+      sourceIndex += 1;
+    }
+    findingsGroups.append(targetGroup);
     groupIndex += 1;
   }
   if (visibleRecords.length === 0) {
