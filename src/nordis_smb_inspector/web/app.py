@@ -443,7 +443,11 @@ async def finding_results(request: Request) -> JSONResponse:
 async def content_results(request: Request) -> JSONResponse:
     runtime = _runtime(request)
     generation = runtime.sessions.snapshot.generation
-    items = list(runtime.contents.snapshot(generation))
+    query = request.query_params.get("q")
+    if query is not None and len(query) > 256:
+        raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
+    items = list(runtime.contents.snapshot(generation, query=query))
+    total_available = runtime.contents.count(generation)
     source = request.query_params.get("source")
     if source is not None:
         if source not in {"smb", "ldap"}:
@@ -468,7 +472,9 @@ async def content_results(request: Request) -> JSONResponse:
             "page": page,
             "page_size": page_size,
             "total_items": len(items),
+            "total_available": total_available,
             "total_pages": total_pages,
+            "query_applied": query is not None,
         }
     )
 

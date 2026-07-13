@@ -261,11 +261,23 @@ class ContentCatalog:
                 content_id = uuid4().hex
                 self._items[content_id] = LdapContentReference(content_id, entry)
 
-    def snapshot(self, generation: int) -> tuple[dict[str, object], ...]:
+    def snapshot(
+        self,
+        generation: int,
+        *,
+        query: str | None = None,
+    ) -> tuple[dict[str, object], ...]:
         with self._lock:
             if generation != self._generation:
                 return ()
-            return tuple(item.public_payload() for item in self._items.values())
+            terms = tuple(part for part in (query or "").casefold().split() if part)
+            payloads: list[dict[str, object]] = []
+            for item in self._items.values():
+                payload = item.public_payload()
+                if terms and not _content_matches_terms(item, payload, terms):
+                    continue
+                payloads.append(payload)
+            return tuple(payloads)
 
     def directory_entries(
         self,
@@ -305,6 +317,30 @@ class ContentCatalog:
     def count(self, generation: int) -> int:
         with self._lock:
             return len(self._items) if generation == self._generation else 0
+
+
+def _content_matches_terms(
+    reference: ContentReference,
+    payload: dict[str, object],
+    terms: tuple[str, ...],
+) -> bool:
+    values: list[str] = []
+
+    def collect(value: object) -> None:
+        if isinstance(value, str):
+            values.append(value)
+        elif isinstance(value, dict):
+            for nested in value.values():
+                collect(nested)
+        elif isinstance(value, (list, tuple)):
+            for nested in value:
+                collect(nested)
+
+    collect(payload)
+    if isinstance(reference, LdapContentReference):
+        values.append(reference.entry.value)
+    haystack = "\n".join(values).casefold()
+    return all(term in haystack for term in terms)
 
 
 @dataclass(slots=True, repr=False)

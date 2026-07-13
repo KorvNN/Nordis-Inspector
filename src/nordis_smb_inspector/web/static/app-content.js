@@ -16,6 +16,9 @@ const contentStore = new Map();
 let selectedContentId = null;
 let previewSequence = 0;
 let refreshTimer = null;
+let refreshSequence = 0;
+let totalContentCount = 0;
+let contentQueryApplied = false;
 let contentSort = {key: "title", direction: "asc"};
 
 function displayValue(value) {
@@ -224,7 +227,7 @@ function visibleContents() {
   return [...contentStore.values()].filter((record) => (
     (source === "all" || record.source === source)
     && (!contentFlaggedFilter.checked || record.flagged)
-    && (!query || contentSearchText(record).includes(query))
+    && (!query || contentQueryApplied || contentSearchText(record).includes(query))
   )).sort(compareContents);
 }
 
@@ -295,7 +298,7 @@ function renderContents() {
   contentVisibleCount.textContent = currentLanguage === "en"
     ? `${records.length.toLocaleString(numberLocale())} entries`
     : `${records.length.toLocaleString(numberLocale())} kayıt`;
-  contentTabCount.textContent = contentStore.size.toLocaleString(numberLocale());
+  contentTabCount.textContent = totalContentCount.toLocaleString(numberLocale());
 }
 
 function detailRow(labelText, valueText, code = false) {
@@ -414,40 +417,57 @@ function renderEmptyDetail(message = null) {
   contentSelectionDetail.replaceChildren(placeholder);
 }
 
-function replaceContents(records) {
+function replaceContents(records, totalAvailable, queryApplied) {
   contentStore.clear();
   for (const raw of records ?? []) {
     const record = contentRecord(raw);
     if (record) contentStore.set(record.id, record);
   }
+  totalContentCount = Number.isFinite(Number(totalAvailable))
+    ? Number(totalAvailable)
+    : contentStore.size;
+  contentQueryApplied = queryApplied === true;
   if (!contentStore.has(selectedContentId)) selectedContentId = null;
   renderContents();
 }
 
 function clearContents(message = null) {
+  refreshSequence += 1;
   contentStore.clear();
+  totalContentCount = 0;
+  contentQueryApplied = false;
   selectedContentId = null;
   renderContents();
   if (message) renderEmptyDetail(message);
 }
 
 async function refreshContents() {
+  const sequence = ++refreshSequence;
+  const query = contentFilter.value.trim();
   try {
     const records = [];
     let page = 1;
+    let totalAvailable = 0;
+    let queryApplied = query === "";
     while (true) {
-      const response = await fetch(`/contents?page=${page}&page_size=500`, {
+      const parameters = new URLSearchParams({page: String(page), page_size: "500"});
+      if (query !== "") parameters.set("q", query);
+      const response = await fetch(`/contents?${parameters.toString()}`, {
         cache: "no-store",
         credentials: "omit",
       });
       if (!response.ok) return false;
       const payload = await response.json();
       if (!Array.isArray(payload.items)) return false;
+      if (sequence !== refreshSequence) return false;
       records.push(...payload.items);
+      totalAvailable = Number(payload.total_available ?? payload.total_items ?? records.length);
+      queryApplied = queryApplied || payload.query_applied === true;
       if (page >= Number(payload.total_pages ?? 0)) break;
       page += 1;
     }
-    replaceContents(records);
+    if (sequence !== refreshSequence) return false;
+    replaceContents(records, totalAvailable, queryApplied);
     return true;
   } catch (_error) {
     return false;
@@ -462,7 +482,7 @@ function scheduleContentRefresh() {
   }, 180);
 }
 
-contentFilter.addEventListener("input", renderContents);
+contentFilter.addEventListener("input", scheduleContentRefresh);
 contentSourceFilter.addEventListener("change", renderContents);
 contentFlaggedFilter.addEventListener("change", renderContents);
 for (const button of contentSortButtons) {
