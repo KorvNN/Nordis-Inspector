@@ -1,7 +1,7 @@
-#identity-tab.is-active { color: #8cdcf2; }
+#identity-tab.is-active { color: var(--info); }
 #identity-tab.is-active strong {
-  color: #8cdcf2;
-  background: rgb(94 190 217 / 12%);
+  color: var(--info);
+  background: var(--info-soft);
 }
 
 .identity-panel { min-height: 0; }
@@ -45,12 +45,15 @@
   font-size: .76rem;
   line-height: 1.55;
 }
-.identity-empty-state.is-error { border-color: #704044; background: #1b1213; }
+.identity-empty-state.is-error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+  background: var(--danger-dark);
+}
 .identity-empty-state.is-running {
   min-height: 450px;
   place-content: start stretch;
-  border-color: #6c592b;
-  background: #17150e;
+  border-color: var(--finding-line);
+  background: var(--warning-dark);
   text-align: left;
 }
 .identity-empty-state.is-running .identity-state-copy { text-align: center; }
@@ -75,7 +78,7 @@
   height: 9px;
   overflow: hidden;
   border-radius: 999px;
-  background: #302b1d;
+  background: color-mix(in srgb, var(--warning) 14%, var(--surface-raised));
 }
 .identity-skeleton-line.is-heading { width: 58%; height: 12px; }
 .identity-skeleton-line:last-child { width: 76%; }
@@ -103,7 +106,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 11px;
   padding: 15px 16px;
-  background: #0a1513;
+  background: var(--surface);
 }
 .identity-summary-top {
   display: flex;
@@ -114,7 +117,7 @@
 .identity-eyebrow {
   display: block;
   margin-bottom: 4px;
-  color: #8cdcf2;
+  color: var(--info);
   font-size: .61rem;
   font-weight: 850;
   letter-spacing: .09em;
@@ -137,7 +140,7 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 9px 10px;
-  background: #0d1917;
+  background: var(--panel-2);
 }
 .identity-fact span {
   display: block;
@@ -178,7 +181,7 @@
   border-radius: 999px;
   padding: 4px 7px;
   color: #cbdad6;
-  background: #111f1d;
+  background: var(--surface-raised);
   font: 600 .64rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 .identity-results-layout {
@@ -192,7 +195,7 @@
   border: 1px solid var(--line);
   border-radius: 11px;
   padding: 14px;
-  background: #0a1513;
+  background: var(--surface);
 }
 .identity-section-heading { margin-bottom: 11px; }
 .identity-section-heading h3 { margin: 0 0 4px; font-size: .85rem; }
@@ -208,7 +211,7 @@
   border-left: 3px solid #8cdcf2;
   border-radius: 9px;
   padding: 12px 13px;
-  background: #0d1917;
+  background: var(--panel-2);
 }
 .identity-capability-header {
   display: flex;
@@ -236,7 +239,7 @@
 }
 .identity-subject {
   margin: 7px 0 0;
-  color: #8cdcf2;
+  color: var(--info);
   font: 650 .69rem/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
   overflow-wrap: anywhere;
 }
@@ -263,7 +266,7 @@
 }
 .identity-capability-targets summary {
   width: fit-content;
-  color: #8cdcf2;
+  color: var(--info);
   font-size: .67rem;
   font-weight: 750;
   cursor: pointer;
@@ -280,7 +283,7 @@
   border-radius: 6px;
   padding: 4px 6px;
   color: #cbdad6;
-  background: #111f1d;
+  background: var(--surface-raised);
   font-size: .62rem;
   overflow-wrap: anywhere;
 }
