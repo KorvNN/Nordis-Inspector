@@ -208,8 +208,8 @@
 .identity-capability-list { display: grid; gap: 8px; }
 .identity-capability {
   border: 1px solid var(--line-strong);
-  border-left: 3px solid #8cdcf2;
-  border-radius: 9px;
+  border-left: 3px solid var(--info);
+  border-radius: var(--radius-sm);
   padding: 12px 13px;
   background: var(--panel-2);
 }
@@ -222,7 +222,9 @@
 .identity-capability h4 { margin: 0; font-size: .79rem; line-height: 1.45; }
 .identity-evidence {
   flex: 0 0 auto;
-  border-radius: 999px;
+  min-height: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   padding: 3px 7px;
   font-size: .59rem;
   font-weight: 850;
@@ -230,10 +232,12 @@
   text-transform: uppercase;
 }
 .identity-evidence.is-verified {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
   color: var(--accent);
   background: var(--accent-dark);
 }
 .identity-evidence.is-inferred {
+  border-color: color-mix(in srgb, var(--warning) 24%, var(--line));
   color: var(--warning);
   background: var(--finding-dark);
 }
@@ -280,7 +284,7 @@
 .identity-capability-target-list code {
   max-width: 100%;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 4px 6px;
   color: #cbdad6;
   background: var(--surface-raised);
@@ -289,7 +293,7 @@
 }
 .identity-next-step {
   margin: 10px 0 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   padding: 8px 9px;
   color: #d8d0b8;
   background: rgb(244 201 107 / 7%);
@@ -299,7 +303,7 @@
 .identity-next-step strong { color: var(--warning); }
 .identity-no-capability {
   border: 1px dashed var(--line-strong);
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   padding: 20px;
   color: var(--muted);
   text-align: center;
