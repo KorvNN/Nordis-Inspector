@@ -1,4 +1,4 @@
-#identity-tab.is-active { color: var(--info); }
+#identity-tab.is-active { border-color: var(--info); color: var(--info); }
 #identity-tab.is-active strong {
   color: var(--info);
   background: var(--info-soft);
@@ -33,7 +33,7 @@
   min-height: 450px;
   place-content: center;
   border: 1px dashed var(--line-strong);
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   padding: 30px;
   color: var(--muted);
   text-align: center;
@@ -52,8 +52,8 @@
 .identity-empty-state.is-running {
   min-height: 450px;
   place-content: start stretch;
-  border-color: var(--finding-line);
-  background: var(--warning-dark);
+  border-color: color-mix(in srgb, var(--info) 30%, var(--line));
+  background: color-mix(in srgb, var(--info) 4%, var(--surface));
   text-align: left;
 }
 .identity-empty-state.is-running .identity-state-copy { text-align: center; }
@@ -67,8 +67,8 @@
 .identity-skeleton-card {
   display: grid;
   gap: 12px;
-  border: 1px solid rgb(108 89 43 / 72%);
-  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--info) 22%, var(--line));
+  border-radius: var(--radius-md);
   padding: 16px;
   background: rgb(255 255 255 / 2%);
 }
@@ -78,7 +78,7 @@
   height: 9px;
   overflow: hidden;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--warning) 14%, var(--surface-raised));
+  background: color-mix(in srgb, var(--info) 14%, var(--surface-raised));
 }
 .identity-skeleton-line.is-heading { width: 58%; height: 12px; }
 .identity-skeleton-line:last-child { width: 76%; }
@@ -86,7 +86,7 @@
   display: block;
   width: 46%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgb(244 201 107 / 22%), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--info) 28%, transparent), transparent);
   animation: identity-skeleton-shimmer 1.35s ease-in-out infinite;
   content: "";
   transform: translateX(-120%);
@@ -103,8 +103,8 @@
   font: 600 .7rem/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 .identity-summary-card {
-  border: 1px solid var(--line-strong);
-  border-radius: 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   padding: 15px 16px;
   background: var(--surface);
 }
@@ -138,7 +138,7 @@
 .identity-fact {
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 9px 10px;
   background: var(--panel-2);
 }
@@ -178,7 +178,7 @@
 .identity-group-list li,
 .identity-right {
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   padding: 4px 7px;
   color: #cbdad6;
   background: var(--surface-raised);
@@ -193,7 +193,7 @@
 .identity-result-section {
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   padding: 14px;
   background: var(--surface);
 }

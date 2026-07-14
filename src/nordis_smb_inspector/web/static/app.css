@@ -32,7 +32,21 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--line-strong);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
 [hidden] { display: none !important; }
 
 html,
@@ -104,6 +118,7 @@ h2 { margin-bottom: 6px; font-size: 1.08rem; }
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--panel);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 14%);
 }
 
 .scan-sidebar {
@@ -192,7 +207,7 @@ select:disabled { color: var(--muted); opacity: .78; }
 .search-block,
 .access-test-block {
   margin: 18px 0 0;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
   border-radius: var(--radius-md);
   padding: 5px 13px 13px;
   background: var(--surface);
@@ -362,6 +377,9 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
 }
 
 .status-panel { padding: 11px 14px 9px; }
+.status-panel {
+  background: linear-gradient(110deg, var(--panel), color-mix(in srgb, var(--accent) 3%, var(--panel)));
+}
 .status-summary { align-items: center; }
 .status-summary > :first-child {
   display: flex;
@@ -378,7 +396,7 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 6px 9px;
-  background: var(--surface);
+  background: var(--surface-raised);
 }
 .metric-grid div:nth-child(2) { min-width: 118px; }
 .metric-grid strong,
@@ -408,7 +426,7 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
 .progress-bar {
   width: 0;
   height: 100%;
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--accent), var(--accent-bright));
   transition: width .2s ease;
 }
 
@@ -422,9 +440,9 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
   display: flex;
   flex: 0 0 auto;
   align-items: stretch;
-  gap: 2px;
+  gap: 5px;
   overflow-x: auto;
-  padding: 7px 8px 0;
+  padding: 0 10px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
@@ -432,20 +450,20 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  padding: 10px 15px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 13px 12px 11px;
   color: var(--muted);
   background: transparent;
 }
 .result-tab:hover { color: var(--text); filter: none; }
 .result-tab.is-active {
-  border-color: var(--line);
+  border-color: var(--accent);
   color: var(--accent);
-  background: var(--panel);
+  background: transparent;
 }
-#findings-tab.is-active { color: var(--finding); }
+#findings-tab.is-active { border-color: var(--finding); color: var(--finding); }
 #findings-tab.is-active strong {
   color: var(--finding);
   background: color-mix(in srgb, var(--finding) 12%, transparent);
@@ -711,12 +729,14 @@ tbody tr:not(.table-empty-row) {
 tbody tr:not(.table-empty-row):hover { background: var(--surface-hover); }
 tbody tr.is-selected {
   background: var(--surface-selected);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .findings-table tbody tr:not(.table-empty-row):hover {
   background: color-mix(in srgb, var(--finding) 7%, var(--surface));
 }
 .findings-table tbody tr.is-selected {
   background: color-mix(in srgb, var(--finding) 10%, var(--surface));
+  box-shadow: inset 3px 0 var(--finding);
 }
 tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .findings-table tbody tr:focus-visible { outline-color: var(--finding); }
@@ -966,6 +986,7 @@ tbody tr:last-child td { border-bottom: 0; }
   border-radius: var(--radius-md);
   padding: 16px;
   background: var(--surface);
+  box-shadow: inset 0 1px rgb(255 255 255 / 2%);
 }
 .selection-placeholder { color: var(--muted); font-size: .8rem; line-height: 1.5; }
 .detail-heading {
