@@ -1,23 +1,23 @@
 :root {
   color-scheme: dark;
-  --bg: #080c0b;
-  --panel: #0f1614;
-  --panel-2: #131c19;
-  --surface: #0b1210;
-  --surface-deep: #070b0a;
-  --surface-raised: #17221e;
-  --surface-hover: #16241f;
-  --surface-selected: #183028;
-  --line: #24342f;
-  --line-strong: #395148;
-  --muted: #93a39e;
-  --text: #e8efec;
+  --bg: #06090e;
+  --panel: #0b1119;
+  --panel-2: #101824;
+  --surface: #080d14;
+  --surface-deep: #05080d;
+  --surface-raised: #141e2a;
+  --surface-hover: #172332;
+  --surface-selected: #102a27;
+  --line: rgb(226 232 240 / 9%);
+  --line-strong: rgb(226 232 240 / 17%);
+  --muted: #94a3b8;
+  --text: #e2e8f0;
   --accent: #67d7b0;
   --accent-bright: #82e7c3;
   --accent-dark: #15382f;
   --accent-soft: #10251f;
-  --info: #82bddb;
-  --info-soft: #15252e;
+  --info: #58d0de;
+  --info-soft: #102832;
   --finding: #e0b85e;
   --finding-dark: #2b2415;
   --finding-line: #5f4f2a;
@@ -426,7 +426,7 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
 .progress-bar {
   width: 0;
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-bright));
+  background: linear-gradient(90deg, var(--accent), var(--info));
   transition: width .2s ease;
 }
 
