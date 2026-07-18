@@ -236,11 +236,6 @@
   color: var(--accent);
   background: var(--accent-dark);
 }
-.identity-evidence.is-inferred {
-  border-color: color-mix(in srgb, var(--warning) 24%, var(--line));
-  color: var(--warning);
-  background: var(--finding-dark);
-}
 .identity-subject {
   margin: 7px 0 0;
   color: var(--info);

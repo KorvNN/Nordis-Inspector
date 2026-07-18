@@ -23,8 +23,8 @@ const IDENTITY_STATUS_LABELS = {
   },
 };
 const IDENTITY_EVIDENCE_LABELS = {
-  tr: {verified: "Doğrulandı", inferred: "Çıkarım"},
-  en: {verified: "Verified", inferred: "Inferred"},
+  tr: {verified: "Doğrulandı"},
+  en: {verified: "Verified"},
 };
 const EN_CAPABILITY_TITLES = {
   laps_secret_read: "LAPS password data is readable",
@@ -348,14 +348,17 @@ function capabilityCard(capability) {
     ? aggregateCapabilityTitle(capability)
     : capabilityTitle(capability);
   const evidenceKey = String(capability.evidence_state ?? "inferred").toLowerCase();
-  const evidence = document.createElement("span");
-  evidence.className = `identity-evidence is-${evidenceKey}`;
-  evidence.textContent = identityLabel(
-    IDENTITY_EVIDENCE_LABELS,
-    evidenceKey,
-    displayValue(evidenceKey),
-  );
-  header.append(title, evidence);
+  header.append(title);
+  if (evidenceKey === "verified") {
+    const evidence = document.createElement("span");
+    evidence.className = "identity-evidence is-verified";
+    evidence.textContent = identityLabel(
+      IDENTITY_EVIDENCE_LABELS,
+      evidenceKey,
+      displayValue(evidenceKey),
+    );
+    header.append(evidence);
+  }
 
   const summary = document.createElement("p");
   summary.className = "identity-capability-summary";
@@ -454,13 +457,12 @@ function renderIdentityAccess(payload) {
   const capabilityGroups = groupCapabilities(capabilities);
   identityTabCount.textContent = capabilityGroups.length.toLocaleString(numberLocale());
 
-  const reportIsPartial = status === "completed" && report?.partial === true;
-  identityAccessStatus.textContent = reportIsPartial
-    ? currentLanguage === "en" ? "AD result incomplete" : "AD sonucu eksik"
-    : identityLabel(IDENTITY_STATUS_LABELS, status, displayValue(status));
-  identityAccessStatus.className = `status-value ${
-    reportIsPartial ? "is-working" : statusTone(status)
-  }`.trim();
+  identityAccessStatus.textContent = identityLabel(
+    IDENTITY_STATUS_LABELS,
+    status,
+    displayValue(status),
+  );
+  identityAccessStatus.className = `status-value ${statusTone(status)}`.trim();
   identityAccessContent.replaceChildren();
 
   if (status !== "completed") {
@@ -485,8 +487,8 @@ function renderIdentityAccess(payload) {
   const capabilitySection = resultSection(
     currentLanguage === "en" ? "Usable AD access" : "Kullanılabilir AD erişimleri",
     currentLanguage === "en"
-      ? "Verified items come from LDAP responses; inferred items come from a direct ACL match."
-      : "Doğrulananlar LDAP yanıtından, çıkarımlar doğrudan ACL eşleşmesinden gelir.",
+      ? "Access that may be directly usable with the supplied identity."
+      : "Girilen kimlikle doğrudan kullanılabilecek erişimler.",
   );
   const capabilityList = document.createElement("div");
   capabilityList.className = "identity-capability-list";

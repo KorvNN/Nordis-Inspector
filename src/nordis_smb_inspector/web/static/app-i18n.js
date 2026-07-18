@@ -425,7 +425,7 @@ const LANGUAGE_TEXT = {
     "Hedefler": "Targets",
     "Kimlik erişimi": "Identity access",
     "AD kimlik erişimi": "AD identity access",
-    "Girilen kimlik için LDAP yanıtlarından doğrulanan veya ACL kayıtlarından çıkarılan AD erişimlerini gösterir.": "Shows AD access verified through LDAP responses or inferred from ACL entries for the supplied identity.",
+    "Girilen kimlikle doğrudan kullanılabilecek AD erişimlerini gösterir.": "Shows AD access that may be directly usable with the supplied identity.",
     "İncelenmedi": "Not inspected",
     "Henüz AD kimlik incelemesi yok.": "No AD identity inspection yet.",
     "Önce bir tarama başlatın.": "Start a scan first.",

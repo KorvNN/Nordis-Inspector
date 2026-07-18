@@ -769,10 +769,10 @@ tbody tr:last-child td { border-bottom: 0; }
 .inventory-kind-section + .inventory-kind-section .inventory-kind-heading-row th {
   border-top: 1px solid var(--line-strong);
 }
-.findings-table th:nth-child(1) { width: 24%; }
-.findings-table th:nth-child(2) { width: 40%; }
-.findings-table th:nth-child(3) { width: 17%; }
-.findings-table th:nth-child(4) { width: 19%; }
+.findings-table th:nth-child(1) { width: 23%; }
+.findings-table th:nth-child(2) { width: 36%; }
+.findings-table th:nth-child(3) { width: 16%; }
+.findings-table th:nth-child(4) { width: 25%; }
 .finding-source-group.is-ldap > summary .result-group-target { color: var(--info); }
 .content-table th:nth-child(1) { width: 10%; }
 .content-table th:nth-child(2) { width: 24%; }
@@ -926,20 +926,18 @@ tbody tr:last-child td { border-bottom: 0; }
 }
 .path-value { color: var(--text-soft); }
 .finding-term-pill {
-  display: inline-flex;
+  display: inline-block;
   min-height: 24px;
-  align-items: center;
   max-width: 100%;
-  overflow: hidden;
   border: 1px solid var(--finding-line);
   border-radius: var(--radius-sm);
   padding: 4px 8px;
   color: var(--finding);
   background: var(--finding-dark);
   font: 800 .7rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   vertical-align: middle;
-  white-space: nowrap;
+  white-space: normal;
 }
 .table-empty-row td {
   height: 130px;
