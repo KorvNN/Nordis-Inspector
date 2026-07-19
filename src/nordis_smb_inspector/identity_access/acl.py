@@ -62,20 +62,42 @@ _DANGEROUS_MASK = (
     | _DIRECTORY_WRITE_MASK
 )
 _PROPERTY_CAPABILITIES = {
-    "Member": CapabilityKind.GROUP_MEMBERSHIP_WRITE,
-    "Service-Principal-Name": CapabilityKind.AUTHENTICATION_MATERIAL_WRITE,
-    "User-Account-Control": CapabilityKind.AUTHENTICATION_MATERIAL_WRITE,
-    "ms-DS-Key-Credential-Link": CapabilityKind.AUTHENTICATION_MATERIAL_WRITE,
+    "Member": ("group_membership_write", CapabilityKind.GROUP_MEMBERSHIP_WRITE),
+    "Service-Principal-Name": (
+        "spn_write",
+        CapabilityKind.AUTHENTICATION_MATERIAL_WRITE,
+    ),
+    "User-Account-Control": (
+        "account_control_write",
+        CapabilityKind.AUTHENTICATION_MATERIAL_WRITE,
+    ),
+    "ms-DS-Key-Credential-Link": (
+        "key_credential_write",
+        CapabilityKind.AUTHENTICATION_MATERIAL_WRITE,
+    ),
     "ms-DS-Allowed-To-Act-On-Behalf-Of-Other-Identity": (
-        CapabilityKind.DELEGATION_WRITE
+        "rbcd_write",
+        CapabilityKind.DELEGATION_WRITE,
     ),
 }
 _EXTENDED_CAPABILITIES = {
-    "User-Force-Change-Password": CapabilityKind.PASSWORD_RESET,
-    "Self-Membership": CapabilityKind.GROUP_MEMBERSHIP_WRITE,
-    "DS-Replication-Get-Changes": CapabilityKind.SECRET_READ,
-    "DS-Replication-Get-Changes-All": CapabilityKind.SECRET_READ,
-    "DS-Replication-Get-Changes-In-Filtered-Set": CapabilityKind.SECRET_READ,
+    "User-Force-Change-Password": ("password_reset", CapabilityKind.PASSWORD_RESET),
+    "Self-Membership": (
+        "group_membership_write",
+        CapabilityKind.GROUP_MEMBERSHIP_WRITE,
+    ),
+    "DS-Replication-Get-Changes": (
+        "directory_replication_read",
+        CapabilityKind.SECRET_READ,
+    ),
+    "DS-Replication-Get-Changes-All": (
+        "directory_replication_read",
+        CapabilityKind.SECRET_READ,
+    ),
+    "DS-Replication-Get-Changes-In-Filtered-Set": (
+        "directory_replication_read",
+        CapabilityKind.SECRET_READ,
+    ),
 }
 _REPLICATION_REQUIRED = frozenset(
     ("DS-Replication-Get-Changes", "DS-Replication-Get-Changes-All")
@@ -84,6 +106,7 @@ _REPLICATION_REQUIRED = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class _Right:
+    capability_id: str
     kind: CapabilityKind
     label: str
 
@@ -162,6 +185,7 @@ def inspect_direct_acl_capabilities(
             grants.append(
                 (
                     _Right(
+                        "dacl_write",
                         CapabilityKind.OBJECT_CONTROL,
                         "Nesne sahibi (implicit WriteDACL)",
                     ),
@@ -180,14 +204,24 @@ def inspect_direct_acl_capabilities(
 
         if not grants:
             continue
-        if _has_ambiguous_deny_or_ace(aces, token_sids, record):
+        ambiguity = _ambiguity_reason(aces, token_sids, record)
+        if ambiguity is not None:
             inconclusive += 1
+            _publish_record_capabilities(
+                record,
+                grants,
+                sid_names=sid_names,
+                evidence_state=EvidenceState.UNRESOLVED,
+                uncertainty=ambiguity,
+                add_capability=add_capability,
+            )
             continue
 
         _publish_record_capabilities(
             record,
             grants,
             sid_names=sid_names,
+            evidence_state=EvidenceState.ACL_INDICATED,
             add_capability=add_capability,
         )
 
@@ -213,39 +247,51 @@ def _publish_record_capabilities(
     grants: list[tuple[_Right, str]],
     *,
     sid_names: dict[str, str],
+    evidence_state: EvidenceState,
+    uncertainty: str | None = None,
     add_capability: CapabilityCallback,
 ) -> None:
-    grouped: dict[tuple[CapabilityKind, str], set[str]] = defaultdict(set)
+    grouped: dict[tuple[str, CapabilityKind, str], set[str]] = defaultdict(set)
     for right, trustee_sid in grants:
-        grouped[(right.kind, trustee_sid)].add(right.label)
+        grouped[(right.capability_id, right.kind, trustee_sid)].add(right.label)
 
     subject = _subject(record)
     object_kind = _object_kind(record)
-    for (kind, trustee_sid), labels in sorted(
-        grouped.items(), key=lambda item: (item[0][0].value, item[0][1])
+    for (capability_id, kind, trustee_sid), labels in sorted(
+        grouped.items(), key=lambda item: (item[0][0], item[0][2])
     ):
-        if kind is CapabilityKind.SECRET_READ and not _REPLICATION_REQUIRED.issubset(
-            labels
+        if capability_id == "directory_replication_read" and not (
+            _REPLICATION_REQUIRED.issubset(labels)
         ):
             continue
         ordered_labels = tuple(sorted(labels, key=str.casefold))
         via = sid_names.get(trustee_sid, trustee_sid)
+        title = _capability_title(capability_id)
+        if evidence_state is EvidenceState.UNRESOLVED:
+            summary = (
+                f"{via} için eşleşen allow ACE, {subject} üzerinde bu eylemi "
+                f"işaret ediyor; ancak {uncertainty or 'etkili hak'} nedeniyle "
+                "sonuç kesinleştirilemedi."
+            )
+        else:
+            summary = (
+                f"{via} için eşleşen allow ACE, {subject} üzerinde “{title}” "
+                "eylemine izin verildiğini gösteriyor. Nordis directory nesnesini "
+                "değiştirmedi."
+            )
         add_capability(
             AccessCapability(
-                capability_id=_capability_id(kind),
+                capability_id=capability_id,
                 kind=kind,
-                evidence_state=EvidenceState.INFERRED,
-                title=_capability_title(kind),
-                summary=(
-                    f"{via} SID'siyle eşleşen allow ACE, {object_kind} nesnesinde "
-                    "doğrudan kullanılabilecek bir hak gösteriyor. Hiçbir değişiklik "
-                    "yapılmadı."
-                ),
+                evidence_state=evidence_state,
+                title=title,
+                summary=summary,
                 subject=subject,
                 subject_type=object_kind,
                 via_principal=via,
                 rights=ordered_labels,
-                next_step=_next_step(kind, subject),
+                target_dn=record.distinguished_name,
+                next_step=_next_step(capability_id, subject),
             )
         )
 
@@ -258,47 +304,90 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
     if object_guid is None:
         if mask & ACCESS_MASK.GENERIC_ALL:
             rights.append(
-                _Right(CapabilityKind.OBJECT_CONTROL, "Tam kontrol (GenericAll)")
+                _Right(
+                    "object_full_control",
+                    CapabilityKind.OBJECT_CONTROL,
+                    "Tam kontrol (GenericAll)",
+                )
             )
         if mask & ACCESS_MASK.GENERIC_WRITE:
             rights.append(
-                _Right(CapabilityKind.OBJECT_CONTROL, "Genel yazma (GenericWrite)")
+                _Right(
+                    "object_property_write",
+                    CapabilityKind.OBJECT_CONTROL,
+                    "Genel yazma (GenericWrite)",
+                )
             )
         if mask & ACCESS_MASK.WRITE_DACL:
-            rights.append(_Right(CapabilityKind.OBJECT_CONTROL, "DACL değiştirme"))
+            rights.append(
+                _Right("dacl_write", CapabilityKind.OBJECT_CONTROL, "DACL değiştirme")
+            )
         if mask & ACCESS_MASK.WRITE_OWNER:
-            rights.append(_Right(CapabilityKind.OBJECT_CONTROL, "Sahip değiştirme"))
+            rights.append(
+                _Right(
+                    "owner_write",
+                    CapabilityKind.OBJECT_CONTROL,
+                    "Sahip değiştirme",
+                )
+            )
         if mask & ACCESS_MASK.DELETE:
-            rights.append(_Right(CapabilityKind.OBJECT_CONTROL, "Nesneyi silme"))
+            rights.append(
+                _Right("object_delete", CapabilityKind.OBJECT_CONTROL, "Nesneyi silme")
+            )
         if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_CREATE_CHILD:
-            rights.append(_Right(CapabilityKind.OBJECT_CONTROL, "Alt nesne oluşturma"))
+            rights.append(
+                _Right(
+                    "child_create",
+                    CapabilityKind.OBJECT_CONTROL,
+                    "Alt nesne oluşturma",
+                )
+            )
         if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_DELETE_CHILD:
-            rights.append(_Right(CapabilityKind.OBJECT_CONTROL, "Alt nesne silme"))
+            rights.append(
+                _Right(
+                    "child_delete",
+                    CapabilityKind.OBJECT_CONTROL,
+                    "Alt nesne silme",
+                )
+            )
         if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_WRITE_PROP:
-            rights.append(_Right(CapabilityKind.OBJECT_CONTROL, "Tüm özellikleri yazma"))
+            rights.append(
+                _Right(
+                    "object_property_write",
+                    CapabilityKind.OBJECT_CONTROL,
+                    "Tüm özellikleri yazma",
+                )
+            )
         if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_CONTROL_ACCESS:
             rights.append(
-                _Right(CapabilityKind.OBJECT_CONTROL, "Tüm extended rights")
+                _Right(
+                    "all_extended_rights",
+                    CapabilityKind.OBJECT_CONTROL,
+                    "Tüm extended rights",
+                )
             )
         rights.extend(_broad_right_implications(mask, record))
         return tuple(rights)
 
     if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_WRITE_PROP:
         property_name = SCHEMA_OBJECTS.get(object_guid)
-        kind = _PROPERTY_CAPABILITIES.get(property_name or "")
-        if kind is not None and _property_applies(property_name or "", record):
-            rights.append(_Right(kind, property_name or object_guid))
+        capability = _PROPERTY_CAPABILITIES.get(property_name or "")
+        if capability is not None and _property_applies(property_name or "", record):
+            capability_id, kind = capability
+            rights.append(_Right(capability_id, kind, property_name or object_guid))
     if mask & (
         ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_CONTROL_ACCESS
         | ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_SELF
     ):
         extended_name = EXTENDED_RIGHTS.get(object_guid)
-        kind = _EXTENDED_CAPABILITIES.get(extended_name or "")
-        if kind is not None and _extended_right_applies(extended_name or "", record):
-            rights.append(_Right(kind, extended_name or object_guid))
+        capability = _EXTENDED_CAPABILITIES.get(extended_name or "")
+        if capability is not None and _extended_right_applies(extended_name or "", record):
+            capability_id, kind = capability
+            rights.append(_Right(capability_id, kind, extended_name or object_guid))
     if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_CREATE_CHILD:
         rights.append(
             _Right(
+                "child_create",
                 CapabilityKind.OBJECT_CONTROL,
                 f"Alt nesne oluşturma ({SCHEMA_OBJECTS.get(object_guid, object_guid)})",
             )
@@ -306,6 +395,7 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
     if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_DELETE_CHILD:
         rights.append(
             _Right(
+                "child_delete",
                 CapabilityKind.OBJECT_CONTROL,
                 f"Alt nesne silme ({SCHEMA_OBJECTS.get(object_guid, object_guid)})",
             )
@@ -335,19 +425,37 @@ def _broad_right_implications(
 
     if can_write_properties:
         if "group" in object_classes:
-            rights.append(_Right(CapabilityKind.GROUP_MEMBERSHIP_WRITE, "Member"))
+            rights.append(
+                _Right(
+                    "group_membership_write",
+                    CapabilityKind.GROUP_MEMBERSHIP_WRITE,
+                    "Member",
+                )
+            )
         if object_classes & {"user", "computer"}:
             rights.extend(
-                _Right(CapabilityKind.AUTHENTICATION_MATERIAL_WRITE, label)
-                for label in (
-                    "Service-Principal-Name",
-                    "User-Account-Control",
-                    "ms-DS-Key-Credential-Link",
+                (
+                    _Right(
+                        "spn_write",
+                        CapabilityKind.AUTHENTICATION_MATERIAL_WRITE,
+                        "Service-Principal-Name",
+                    ),
+                    _Right(
+                        "account_control_write",
+                        CapabilityKind.AUTHENTICATION_MATERIAL_WRITE,
+                        "User-Account-Control",
+                    ),
+                    _Right(
+                        "key_credential_write",
+                        CapabilityKind.AUTHENTICATION_MATERIAL_WRITE,
+                        "ms-DS-Key-Credential-Link",
+                    ),
                 )
             )
         if "computer" in object_classes:
             rights.append(
                 _Right(
+                    "rbcd_write",
                     CapabilityKind.DELEGATION_WRITE,
                     "ms-DS-Allowed-To-Act-On-Behalf-Of-Other-Identity",
                 )
@@ -356,11 +464,19 @@ def _broad_right_implications(
     if has_all_extended_rights:
         if object_classes & {"user", "computer"}:
             rights.append(
-                _Right(CapabilityKind.PASSWORD_RESET, "User-Force-Change-Password")
+                _Right(
+                    "password_reset",
+                    CapabilityKind.PASSWORD_RESET,
+                    "User-Force-Change-Password",
+                )
             )
         if object_classes & {"domain", "domaindns"}:
             rights.extend(
-                _Right(CapabilityKind.SECRET_READ, label)
+                _Right(
+                    "directory_replication_read",
+                    CapabilityKind.SECRET_READ,
+                    label,
+                )
                 for label in sorted(_REPLICATION_REQUIRED)
             )
 
@@ -391,23 +507,23 @@ def _extended_right_applies(name: str, record: DirectoryRecord) -> bool:
     return True
 
 
-def _has_ambiguous_deny_or_ace(
+def _ambiguity_reason(
     aces: object,
     token_sids: frozenset[str],
     record: DirectoryRecord,
-) -> bool:
+) -> str | None:
     for ace in aces:
         if not _ace_applies(ace, record) or _ace_sid(ace) not in token_sids:
             continue
         ace_type = ace["AceType"]
         if ace_type in _DENY_ACE_TYPES and _rights_from_ace(ace, record):
-            return True
+            return "eşleşen deny ACE"
         if (
             ace_type not in _ALLOW_ACE_TYPES | _DENY_ACE_TYPES
             and _ace_mask(ace) & _DANGEROUS_MASK
         ):
-            return True
-    return False
+            return "conditional veya desteklenmeyen ACE"
+    return None
 
 
 def _ace_applies(ace: object, record: DirectoryRecord) -> bool:
@@ -481,49 +597,68 @@ def _object_kind(record: DirectoryRecord) -> str:
     return values[-1] if values else "directory"
 
 
-def _capability_id(kind: CapabilityKind) -> str:
+def _capability_title(capability_id: str) -> str:
     return {
-        CapabilityKind.SECRET_READ: "directory_replication_read",
-        CapabilityKind.PASSWORD_RESET: "password_reset",
-        CapabilityKind.GROUP_MEMBERSHIP_WRITE: "group_membership_write",
-        CapabilityKind.OBJECT_CONTROL: "object_control",
-        CapabilityKind.AUTHENTICATION_MATERIAL_WRITE: "authentication_material_write",
-        CapabilityKind.DELEGATION_WRITE: "delegation_write",
-    }[kind]
+        "directory_replication_read": "Domain parola verisi çoğaltılabilir",
+        "password_reset": "Hesap parolası sıfırlanabilir",
+        "group_membership_write": "Grup üyeliği değiştirilebilir",
+        "spn_write": "SPN değeri değiştirilebilir",
+        "account_control_write": "Hesap denetim seçenekleri değiştirilebilir",
+        "key_credential_write": "Key Credential değeri değiştirilebilir",
+        "rbcd_write": "RBCD delegasyonu değiştirilebilir",
+        "dacl_write": "Nesne DACL'i değiştirilebilir",
+        "owner_write": "Nesne sahibi değiştirilebilir",
+        "object_full_control": "Nesne üzerinde tam kontrol bulunuyor",
+        "object_property_write": "Nesne özellikleri değiştirilebilir",
+        "object_delete": "Directory nesnesi silinebilir",
+        "child_create": "Alt nesne oluşturulabilir",
+        "child_delete": "Alt nesne silinebilir",
+        "all_extended_rights": "Tüm extended rights kullanılabilir",
+    }.get(capability_id, "Directory erişimi kullanılabilir")
 
 
-def _capability_title(kind: CapabilityKind) -> str:
+def _next_step(capability_id: str, subject: str) -> str:
     return {
-        CapabilityKind.SECRET_READ: "Domain parola verisi çoğaltılabilir",
-        CapabilityKind.PASSWORD_RESET: "Hesap parolası sıfırlanabilir",
-        CapabilityKind.GROUP_MEMBERSHIP_WRITE: "Grup üyeliği değiştirilebilir",
-        CapabilityKind.OBJECT_CONTROL: "Directory nesnesi kontrol edilebilir",
-        CapabilityKind.AUTHENTICATION_MATERIAL_WRITE: (
-            "Kimlik doğrulama verisi değiştirilebilir"
-        ),
-        CapabilityKind.DELEGATION_WRITE: "Delegasyon verisi değiştirilebilir",
-    }[kind]
-
-
-def _next_step(kind: CapabilityKind, subject: str) -> str:
-    return {
-        CapabilityKind.SECRET_READ: (
+        "directory_replication_read": (
             "Yetkili kapsamda replication hakkının iki gerekli extended right ile "
             "verildiğini bağımsız olarak doğrula."
         ),
-        CapabilityKind.PASSWORD_RESET: (
+        "password_reset": (
             f"{subject} hesabının erişim kapsamını incele; Nordis parola değiştirmedi."
         ),
-        CapabilityKind.GROUP_MEMBERSHIP_WRITE: (
+        "group_membership_write": (
             f"{subject} üyeliğinin sağladığı erişimleri incele; Nordis üyelik değiştirmedi."
         ),
-        CapabilityKind.OBJECT_CONTROL: (
+        "spn_write": (
+            f"{subject} için hedefli Kerberoast etkisini değerlendir; Nordis SPN değiştirmedi."
+        ),
+        "account_control_write": (
+            f"{subject} için değiştirilebilir hesap bayraklarının etkisini doğrula."
+        ),
+        "key_credential_write": (
+            f"{subject} için olası Shadow Credentials etkisini doğrula."
+        ),
+        "rbcd_write": (
+            f"{subject} için RBCD hedefini ve erişim kapsamını doğrula."
+        ),
+        "dacl_write": (
+            f"{subject} üzerinde verilebilecek doğrudan hakları incele; Nordis DACL'i değiştirmedi."
+        ),
+        "owner_write": (
+            f"{subject} sahipliğinin DACL kontrolüne etkisini doğrula; Nordis sahibi değiştirmedi."
+        ),
+        "object_full_control": (
             f"{subject} üzerindeki ACE kapsamını doğrula; Nordis nesneyi değiştirmedi."
         ),
-        CapabilityKind.AUTHENTICATION_MATERIAL_WRITE: (
-            f"{subject} için yazılabilen özelliğin hesap etkisini doğrula."
+        "object_property_write": (
+            f"{subject} üzerinde yazılabilen özelliklerin etkisini doğrula."
         ),
-        CapabilityKind.DELEGATION_WRITE: (
-            f"{subject} için delegasyon hedefi ve olası erişim kapsamını doğrula."
+        "object_delete": (
+            f"{subject} nesnesinin silinmesinin etkisini değerlendir; Nordis nesneyi silmedi."
         ),
-    }[kind]
+        "child_create": f"{subject} altında oluşturulabilecek nesne türünü doğrula.",
+        "child_delete": f"{subject} altında silinebilecek nesne türünü doğrula.",
+        "all_extended_rights": (
+            f"{subject} üzerindeki extended right etkilerini ayrı ayrı doğrula."
+        ),
+    }.get(capability_id, f"{subject} üzerindeki ACL kapsamını doğrula.")

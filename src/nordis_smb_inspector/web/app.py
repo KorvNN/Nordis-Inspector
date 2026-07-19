@@ -925,6 +925,7 @@ def _run_access_scan(
                     handle,
                     credential,
                     candidates,
+                    test_write_access=test_write_access,
                 )
                 if runtime.sessions.snapshot.active:
                     runtime.sessions.complete(handle.token)
@@ -954,6 +955,8 @@ def _run_identity_access_stage(
     handle: ScanHandle,
     credential: Credential,
     candidates: tuple[_DirectoryCandidate, ...],
+    *,
+    test_write_access: bool,
 ) -> None:
     generation = handle.token.generation
     try:
@@ -1033,6 +1036,7 @@ def _run_identity_access_stage(
                 kerberos_hostname=candidate.kerberos_hostname,
                 credential=credential,
                 cancellation=handle.cancellation,
+                test_write_access=test_write_access,
             )
         except SessionScanCancelled:
             runtime.set_identity_not_checked(

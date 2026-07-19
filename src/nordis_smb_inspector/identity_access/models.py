@@ -10,7 +10,12 @@ class EvidenceState(StrEnum):
     """How Nordis established a capability without changing directory state."""
 
     VERIFIED = "verified"
-    INFERRED = "inferred"
+    ACL_INDICATED = "acl_indicated"
+    UNRESOLVED = "unresolved"
+
+    # Kept as a source-level alias for callers created before the evidence model
+    # distinguished an ACL-backed claim from a live verification.
+    INFERRED = "acl_indicated"
 
 
 class CoverageState(StrEnum):
@@ -137,6 +142,7 @@ class AccessCapability:
     subject_type: str | None = None
     via_principal: str | None = None
     rights: tuple[str, ...] = field(default_factory=tuple, repr=False)
+    target_dn: str | None = None
     next_step: str | None = None
 
     def public_payload(self) -> dict[str, object]:
@@ -150,6 +156,7 @@ class AccessCapability:
             "subject_type": self.subject_type,
             "via_principal": self.via_principal,
             "rights": list(self.rights),
+            "target_dn": self.target_dn,
             "next_step": self.next_step,
         }
 
@@ -184,6 +191,7 @@ class IdentityAccessReport:
     controller: str
     authentication_method: str
     identity: DirectoryIdentity
+    write_probe_enabled: bool = False
     capabilities: tuple[AccessCapability, ...] = field(default_factory=tuple, repr=False)
     coverage: tuple[Coverage, ...] = field(default_factory=tuple, repr=False)
     directory_text: tuple[DirectoryTextEntry, ...] = field(
@@ -200,6 +208,7 @@ class IdentityAccessReport:
             "controller": self.controller,
             "authentication_method": self.authentication_method,
             "identity": self.identity.public_payload(),
+            "write_probe_enabled": self.write_probe_enabled,
             "capabilities": [item.public_payload() for item in self.capabilities],
             "coverage": [item.public_payload() for item in self.coverage],
             "directory_text_count": len(self.directory_text),

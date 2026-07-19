@@ -11,6 +11,7 @@ from typing import Any, Protocol
 from nordis_smb_inspector.core.credentials import AuthMode, Credential, CredentialKind
 
 _DEFAULT_RECORD_LIMIT = 20_000
+_PERMISSIVE_MODIFY_OID = "1.2.840.113556.1.4.1413"
 
 
 class DirectoryAccessError(RuntimeError):
@@ -90,6 +91,13 @@ class DirectoryClient(Protocol):
         security_descriptor_flags: int | None = None,
         record_limit: int = _DEFAULT_RECORD_LIMIT,
     ) -> DirectoryQuery: ...
+
+    def probe_attribute_write(
+        self,
+        distinguished_name: str,
+        attribute: str,
+        absent_value: str,
+    ) -> bool: ...
 
     def close(self) -> None: ...
 
@@ -362,6 +370,50 @@ class ImpacketDirectoryClient:
             records = records[:record_limit]
             complete = False
         return DirectoryQuery(records=tuple(records), complete=complete)
+
+    def probe_attribute_write(
+        self,
+        distinguished_name: str,
+        attribute: str,
+        absent_value: str,
+    ) -> bool:
+        """Submit a non-persistent permissive delete and report access denial."""
+
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (distinguished_name, attribute, absent_value)
+        ):
+            raise TypeError("Write-probe inputs must be non-empty text.")
+        connection = self._connection
+        if connection is None:
+            raise DirectoryAccessError(
+                "DIRECTORY_CONNECTION_CLOSED",
+                "Directory bağlantısı kapalı.",
+            )
+        from impacket.ldap import ldap, ldapasn1
+
+        control = ldapasn1.Control()
+        control["controlType"] = _PERMISSIVE_MODIFY_OID
+        control["criticality"] = True
+        try:
+            connection.modify(
+                distinguished_name,
+                {attribute: [(ldap.MODIFY_DELETE, [absent_value])]},
+                controls=[control],
+            )
+        except ldap.LDAPSessionError as error:
+            if error.getErrorCode() == 50:  # insufficientAccessRights
+                return False
+            raise DirectoryAccessError(
+                "DIRECTORY_WRITE_PROBE_INCONCLUSIVE",
+                "Directory yazma denemesi kesinleştirilemedi.",
+            ) from None
+        except Exception:
+            raise DirectoryAccessError(
+                "DIRECTORY_WRITE_PROBE_INCONCLUSIVE",
+                "Directory yazma denemesi kesinleştirilemedi.",
+            ) from None
+        return True
 
     def close(self) -> None:
         connection = self._connection

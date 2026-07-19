@@ -23,8 +23,18 @@ const IDENTITY_STATUS_LABELS = {
   },
 };
 const IDENTITY_EVIDENCE_LABELS = {
-  tr: {verified: "Doğrulandı"},
-  en: {verified: "Verified"},
+  tr: {
+    verified: "Doğrulandı",
+    acl_indicated: "Yetki işaret ediyor",
+    inferred: "Yetki işaret ediyor",
+    unresolved: "Belirsiz",
+  },
+  en: {
+    verified: "Verified",
+    acl_indicated: "ACL indicates access",
+    inferred: "ACL indicates access",
+    unresolved: "Unresolved",
+  },
 };
 const EN_CAPABILITY_TITLES = {
   laps_secret_read: "LAPS password data is readable",
@@ -32,6 +42,18 @@ const EN_CAPABILITY_TITLES = {
   directory_replication_read: "Domain password data can be replicated",
   password_reset: "An account password can be reset",
   group_membership_write: "Group membership can be changed",
+  spn_write: "The SPN value can be changed",
+  account_control_write: "Account-control settings can be changed",
+  key_credential_write: "The Key Credential value can be changed",
+  rbcd_write: "RBCD delegation can be changed",
+  dacl_write: "The object DACL can be changed",
+  owner_write: "The object owner can be changed",
+  object_full_control: "The identity has full control of the object",
+  object_property_write: "Object properties can be changed",
+  object_delete: "The directory object can be deleted",
+  child_create: "A child object can be created",
+  child_delete: "A child object can be deleted",
+  all_extended_rights: "All extended rights are available",
   object_control: "A directory object can be controlled",
   authentication_material_write: "Authentication material can be changed",
   delegation_write: "Delegation data can be changed",
@@ -224,32 +246,14 @@ function capabilitySummary(capability) {
       ? "LDAP returned the managed password blob for this identity. The value was not retained."
       : displayValue(capability.summary);
   }
-  if (String(capability.evidence_state).toLowerCase() === "inferred") {
-    const summaries = {
-      tr: {
-        secret_read: "Gerekli iki replication hakkı birlikte eşleşiyor; domain parola verisi okunabilir.",
-        password_reset: "Eşleşen allow ACE, hedef hesabın parolasını sıfırlama hakkını kapsıyor.",
-        group_membership_write: "Eşleşen allow ACE, hedef gruba üye ekleme veya gruptan üye çıkarma hakkını kapsıyor.",
-        object_control: "Listelenen sahiplik, DACL veya geniş yazma hakları hedef nesne üzerinde kontrol kurulmasına imkân verebilir.",
-        authentication_material_write: "SPN, UAC veya KeyCredentialLink gibi kimlik doğrulamayı etkileyen özellikler yazılabilir.",
-        delegation_write: "RBCD delegasyon özelliği yazılabilir ve hedef bilgisayara erişim yolu oluşturabilir.",
-      },
-      en: {
-        secret_read: "Both required replication rights match, so domain password data may be read.",
-        password_reset: "The matching allow ACE includes the right to reset the target account password.",
-        group_membership_write: "The matching allow ACE includes the right to add or remove members on the target group.",
-        object_control: "The listed ownership, DACL, or broad write rights may establish control over the target object.",
-        authentication_material_write: "Authentication-related attributes such as SPN, UAC, or KeyCredentialLink can be written.",
-        delegation_write: "The RBCD delegation attribute can be written and may create an access path to the target computer.",
-      },
-    };
-    const summary = summaries[currentLanguage]?.[capability.kind];
-    if (summary) return summary;
-  }
   if (currentLanguage !== "en") return displayValue(capability.summary);
+  const evidenceState = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
   const via = displayValue(capability.via_principal);
   const subject = displayValue(capability.subject);
-  return `A directly matching allow ACE for ${via} indicates this access on ${subject}. Nordis made no directory change.`;
+  if (evidenceState === "unresolved") {
+    return `An allow ACE for ${via} points to this action on ${subject}, but a deny or unsupported ACE prevents a conclusive effective-right result.`;
+  }
+  return `A matching allow ACE for ${via} indicates this action on ${subject}. Nordis made no directory change.`;
 }
 
 function capabilityNextStep(capability) {
@@ -257,46 +261,53 @@ function capabilityNextStep(capability) {
   if (currentLanguage !== "en") return capability.next_step;
   const subject = displayValue(capability.subject);
   const labels = {
-    secret_read: `Validate the authorized access scope for ${subject} independently.`,
+    directory_replication_read: `Validate both required replication rights on ${subject}.`,
     password_reset: `Review the access provided by ${subject}; Nordis did not change the password.`,
     group_membership_write: `Review the access provided by ${subject}; Nordis did not change membership.`,
-    object_control: `Validate the ACE scope on ${subject}; Nordis did not change the object.`,
-    authentication_material_write: `Validate the account impact of the writable property on ${subject}.`,
-    delegation_write: `Validate the delegation target and possible access scope for ${subject}.`,
+    spn_write: `Assess the targeted Kerberoast impact for ${subject}; Nordis did not change the SPN.`,
+    account_control_write: `Review which account flags can be changed on ${subject}.`,
+    key_credential_write: `Assess the Shadow Credentials impact for ${subject}.`,
+    rbcd_write: `Validate the RBCD target and resulting access scope for ${subject}.`,
+    dacl_write: `Review the rights that could be granted on ${subject}; Nordis did not change its DACL.`,
+    owner_write: `Validate how ownership would affect DACL control on ${subject}.`,
   };
-  return labels[capability.kind] ?? capability.next_step;
+  return labels[capability.capability_id]
+    ?? `Validate the matching ACL scope on ${subject}; Nordis made no directory change.`;
 }
 
 function aggregateCapabilityTitle(capability) {
   const count = Number(capability.aggregate_count);
   const amount = count.toLocaleString(numberLocale());
-  const subjectType = String(capability.subject_type ?? "").toLowerCase();
   if (currentLanguage === "en") {
     const titles = {
-      secret_read: `${amount} targets expose secret data`,
+      laps_secret_read: `${amount} LAPS passwords are readable`,
+      gmsa_secret_read: `${amount} gMSA passwords are readable`,
+      directory_replication_read: `${amount} domains expose replication rights`,
       password_reset: `${amount} account passwords can be reset`,
       group_membership_write: `Membership of ${amount} groups can be changed`,
-      authentication_material_write: `Authentication data on ${amount} accounts can be changed`,
-      delegation_write: `Delegation data on ${amount} targets can be changed`,
+      spn_write: `SPNs on ${amount} accounts can be changed`,
+      account_control_write: `Account-control settings on ${amount} targets can be changed`,
+      key_credential_write: `Key Credentials on ${amount} targets can be changed`,
+      rbcd_write: `RBCD delegation on ${amount} computers can be changed`,
+      dacl_write: `DACLs on ${amount} objects can be changed`,
+      owner_write: `Owners of ${amount} objects can be changed`,
     };
-    if (capability.kind === "object_control") {
-      const nouns = {user: "user objects", group: "group objects", computer: "computer objects"};
-      return `${amount} ${nouns[subjectType] ?? "directory objects"} can be controlled`;
-    }
-    return titles[capability.kind] ?? `${amount} usable AD rights`;
+    return titles[capability.capability_id] ?? `${amount} targets expose this AD action`;
   }
   const titles = {
-    secret_read: `${amount} hedefte gizli veri okunabiliyor`,
+    laps_secret_read: `${amount} LAPS parolası okunabiliyor`,
+    gmsa_secret_read: `${amount} gMSA parolası okunabiliyor`,
+    directory_replication_read: `${amount} domain için replication hakkı bulunuyor`,
     password_reset: `${amount} hesabın parolası sıfırlanabilir`,
     group_membership_write: `${amount} grubun üyeliği değiştirilebilir`,
-    authentication_material_write: `${amount} hesapta kimlik doğrulama verisi değiştirilebilir`,
-    delegation_write: `${amount} hedefte delegasyon verisi değiştirilebilir`,
+    spn_write: `${amount} hesabın SPN değeri değiştirilebilir`,
+    account_control_write: `${amount} hedefin hesap denetimi değiştirilebilir`,
+    key_credential_write: `${amount} hedefin Key Credential değeri değiştirilebilir`,
+    rbcd_write: `${amount} bilgisayarın RBCD delegasyonu değiştirilebilir`,
+    dacl_write: `${amount} nesnenin DACL'i değiştirilebilir`,
+    owner_write: `${amount} nesnenin sahibi değiştirilebilir`,
   };
-  if (capability.kind === "object_control") {
-    const nouns = {user: "kullanıcı nesnesi", group: "grup nesnesi", computer: "bilgisayar nesnesi"};
-    return `${amount} ${nouns[subjectType] ?? "directory nesnesi"} kontrol edilebilir`;
-  }
-  return titles[capability.kind] ?? `${amount} kullanılabilir AD yetkisi`;
+  return titles[capability.capability_id] ?? `${amount} hedefte bu AD eylemi kullanılabilir`;
 }
 
 function aggregateTargetLabel(capability) {
@@ -332,13 +343,52 @@ function groupCapabilities(capabilities) {
   }
   return [...groups.values()].map((items) => {
     if (items.length === 1) return items[0];
-    const subjects = [...new Set(items.map((item) => String(item.subject ?? "")).filter(Boolean))]
-      .sort((left, right) => left.localeCompare(right));
-    return {...items[0], aggregate_count: items.length, subjects};
+    const uniqueTargets = new Map();
+    for (const item of items) {
+      const subject = String(item.subject ?? "").trim();
+      const targetDn = String(item.target_dn ?? "").trim();
+      const key = `${subject}\u0000${targetDn}`;
+      if (subject !== "" && !uniqueTargets.has(key)) {
+        uniqueTargets.set(key, {subject, target_dn: targetDn || null});
+      }
+    }
+    const targets = [...uniqueTargets.values()]
+      .sort((left, right) => left.subject.localeCompare(right.subject));
+    return {...items[0], aggregate_count: items.length, targets};
   });
 }
 
-function capabilityCard(capability) {
+function capabilityPath(capability, identityPrincipal) {
+  const path = document.createElement("div");
+  path.className = "identity-access-path";
+  const values = [identityPrincipal];
+  const via = String(capability.via_principal ?? "").trim();
+  if (via !== "" && via.toLocaleLowerCase() !== String(identityPrincipal).toLocaleLowerCase()) {
+    values.push(via);
+  }
+  values.push(
+    Number(capability.aggregate_count) > 1
+      ? (currentLanguage === "en"
+        ? `${Number(capability.aggregate_count).toLocaleString(numberLocale())} targets`
+        : `${Number(capability.aggregate_count).toLocaleString(numberLocale())} hedef`)
+      : displayValue(capability.subject),
+  );
+  values.forEach((value, index) => {
+    if (index > 0) {
+      const arrow = document.createElement("span");
+      arrow.className = "identity-path-arrow";
+      arrow.textContent = "→";
+      path.append(arrow);
+    }
+    const node = document.createElement("span");
+    node.className = `identity-path-node ${index === values.length - 1 ? "is-target" : ""}`.trim();
+    node.textContent = displayValue(value);
+    path.append(node);
+  });
+  return path;
+}
+
+function capabilityCard(capability, identityPrincipal) {
   const card = document.createElement("article");
   card.className = "identity-capability";
   const header = document.createElement("header");
@@ -347,29 +397,22 @@ function capabilityCard(capability) {
   title.textContent = Number(capability.aggregate_count) > 1
     ? aggregateCapabilityTitle(capability)
     : capabilityTitle(capability);
-  const evidenceKey = String(capability.evidence_state ?? "inferred").toLowerCase();
+  const evidenceKey = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
+  card.classList.add(`is-${evidenceKey.replaceAll("_", "-")}`);
   header.append(title);
-  if (evidenceKey === "verified") {
-    const evidence = document.createElement("span");
-    evidence.className = "identity-evidence is-verified";
-    evidence.textContent = identityLabel(
-      IDENTITY_EVIDENCE_LABELS,
-      evidenceKey,
-      displayValue(evidenceKey),
-    );
-    header.append(evidence);
-  }
+  const evidence = document.createElement("span");
+  evidence.className = `identity-evidence is-${evidenceKey.replaceAll("_", "-")}`;
+  evidence.textContent = identityLabel(
+    IDENTITY_EVIDENCE_LABELS,
+    evidenceKey,
+    displayValue(evidenceKey),
+  );
+  header.append(evidence);
 
   const summary = document.createElement("p");
   summary.className = "identity-capability-summary";
   summary.textContent = capabilitySummary(capability);
-  card.append(header);
-  if (Number(capability.aggregate_count) <= 1) {
-    const subject = document.createElement("p");
-    subject.className = "identity-subject";
-    subject.textContent = displayValue(capability.subject);
-    card.append(subject);
-  }
+  card.append(header, capabilityPath(capability, identityPrincipal));
   card.append(summary);
 
   const via = capability.via_principal;
@@ -397,6 +440,16 @@ function capabilityCard(capability) {
       }
       metadata.append(rightList);
     }
+    const targetDn = capability.target_dn;
+    if (Number(capability.aggregate_count) <= 1 && typeof targetDn === "string" && targetDn !== "") {
+      const row = document.createElement("div");
+      row.className = "identity-meta-row";
+      row.append(document.createTextNode(`${currentLanguage === "en" ? "Target DN" : "Hedef DN"}: `));
+      const value = document.createElement("code");
+      value.textContent = targetDn;
+      row.append(value);
+      metadata.append(row);
+    }
     card.append(metadata);
   }
 
@@ -407,9 +460,16 @@ function capabilityCard(capability) {
     targetsSummary.textContent = aggregateTargetLabel(capability);
     const targetList = document.createElement("div");
     targetList.className = "identity-capability-target-list";
-    for (const subjectValue of capability.subjects ?? []) {
-      const item = document.createElement("code");
-      item.textContent = subjectValue;
+    for (const target of capability.targets ?? []) {
+      const item = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = displayValue(target?.subject);
+      item.append(name);
+      if (typeof target?.target_dn === "string" && target.target_dn !== "") {
+        const dn = document.createElement("code");
+        dn.textContent = target.target_dn;
+        item.append(dn);
+      }
       targetList.append(item);
     }
     targets.append(targetsSummary, targetList);
@@ -484,11 +544,16 @@ function renderIdentityAccess(payload) {
   identityAccessContent.append(identitySummary(report));
   const layout = document.createElement("div");
   layout.className = "identity-results-layout";
+  const writeProbeEnabled = report.write_probe_enabled === true;
   const capabilitySection = resultSection(
-    currentLanguage === "en" ? "Usable AD access" : "Kullanılabilir AD erişimleri",
-    currentLanguage === "en"
-      ? "Access that may be directly usable with the supplied identity."
-      : "Girilen kimlikle doğrudan kullanılabilecek erişimler.",
+    currentLanguage === "en" ? "Identity-scoped AD access" : "Kimliğin AD erişimleri",
+    writeProbeEnabled
+      ? (currentLanguage === "en"
+        ? "Live reads and supported LDAP write requests were tested; unsupported writes remain ACL-backed."
+        : "Canlı okumalar ve desteklenen LDAP yazma istekleri denendi; diğer yazmalar ACL kanıtı olarak kaldı.")
+      : (currentLanguage === "en"
+        ? "Live reads are verified; write actions are shown from ACL evidence without changing directory state."
+        : "Canlı okumalar doğrulanır; yazma eylemleri directory durumu değiştirilmeden ACL kanıtıyla gösterilir."),
   );
   const capabilityList = document.createElement("div");
   capabilityList.className = "identity-capability-list";
@@ -497,17 +562,17 @@ function renderIdentityAccess(payload) {
     empty.className = "identity-no-capability";
     const title = document.createElement("strong");
     title.textContent = currentLanguage === "en"
-      ? "No directly usable AD right was confirmed"
-      : "Doğrudan kullanılabilir AD yetkisi doğrulanmadı";
+      ? "No actionable AD access was found"
+      : "Eyleme dönüşen AD erişimi bulunamadı";
     const copy = document.createElement("p");
     copy.textContent = currentLanguage === "en"
-      ? "No readable managed password or directly matching usable ACL right was found."
-      : "Okunabilir yönetilen parola veya doğrudan eşleşen kullanılabilir ACL yetkisi bulunmadı.";
+      ? "No readable managed password or matching actionable ACL right was found for this identity."
+      : "Bu kimlik için okunabilir yönetilen parola veya eyleme dönüşen bir ACL hakkı bulunamadı.";
     empty.append(title, copy);
     capabilityList.append(empty);
   } else {
     for (const capability of capabilityGroups) {
-      capabilityList.append(capabilityCard(capability));
+      capabilityList.append(capabilityCard(capability, report.identity?.principal));
     }
   }
   capabilitySection.append(capabilityList);

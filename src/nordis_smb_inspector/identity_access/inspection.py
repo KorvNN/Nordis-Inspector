@@ -85,6 +85,7 @@ def inspect_identity_access(
     credential: Credential,
     cancellation: IdentityAccessCancellation,
     kerberos_hostname: str | None = None,
+    test_write_access: bool = False,
     on_capability: CapabilityCallback | None = None,
     client_factory: DirectoryClientFactory = ImpacketDirectoryClient,
 ) -> IdentityAccessReport:
@@ -98,8 +99,6 @@ def inspect_identity_access(
 
     def add_capability(capability: AccessCapability) -> None:
         capabilities.append(capability)
-        if on_capability is not None:
-            on_capability(capability)
 
     try:
         resolved = _resolve_identity(client)
@@ -136,10 +135,25 @@ def inspect_identity_access(
                 add_capability,
             )
         )
+        if test_write_access:
+            from .write_probe import verify_write_capabilities
+
+            capabilities = list(
+                verify_write_capabilities(
+                    client,
+                    identity,
+                    tuple(capabilities),
+                    cancellation,
+                )
+            )
+        if on_capability is not None:
+            for capability in capabilities:
+                on_capability(capability)
         return IdentityAccessReport(
             controller=controller,
             authentication_method=client.authentication_method,
             identity=identity,
+            write_probe_enabled=test_write_access,
             capabilities=tuple(capabilities),
             coverage=tuple(coverage),
             directory_text=directory_text,
@@ -327,6 +341,7 @@ def _inspect_secret_readability(
                     subject_type="computer",
                     via_principal=identity.principal,
                     rights=(readable_attribute,),
+                    target_dn=record.distinguished_name,
                     next_step=(
                         "Host tarama kapsamındaysa yerel yönetici erişimini ayrı ve "
                         "yetkili bir adımda doğrula."
@@ -359,6 +374,7 @@ def _inspect_secret_readability(
                     subject_type="gmsa",
                     via_principal=identity.principal,
                     rights=("msDS-ManagedPassword",),
+                    target_dn=record.distinguished_name,
                     next_step="Hesabın bağlı olduğu servisleri ve erişim kapsamını doğrula.",
                 )
             )
