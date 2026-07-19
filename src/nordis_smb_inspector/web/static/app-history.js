@@ -213,10 +213,16 @@ function renderHistoryDetail(item) {
   const targetList = item.targets || (Array.isArray(item.target_list)
     ? item.target_list.join("\n")
     : item.targets);
+  const legacyWriteAccess = item.test_write_access ?? false;
   const scanSection = historyDetailSection("Hedefler", [
     ["Tarama adı", displayValue(item.name), "detail-code"],
     ["Hedef listesi", retainedHistoryValue(targetList), "detail-code"],
-    ["Yazma erişimi testi", uiText(item.test_write_access ? "Dahil edildi" : "Dahil edilmedi")],
+    ["SMB yazma testi", uiText(
+      (item.test_smb_write_access ?? legacyWriteAccess) ? "Dahil edildi" : "Dahil edilmedi",
+    )],
+    ["AD yazma testi", uiText(
+      (item.test_ad_write_access ?? legacyWriteAccess) ? "Dahil edildi" : "Dahil edilmedi",
+    )],
   ]);
 
   const credentialSection = historyDetailSection("Kimlik bilgisi", [

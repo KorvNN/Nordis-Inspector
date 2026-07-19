@@ -138,12 +138,16 @@
       </fieldset>
 
       <fieldset class="access-test-block">
-        <legend>Yazma erişimi</legend>
-        <label class="option-control" for="test-write-access">
-          <input id="test-write-access" type="checkbox">
-          <span>SMB ve AD yazma erişimini test et</span>
+        <legend>Yazma testleri</legend>
+        <label class="option-control" for="test-smb-write-access">
+          <input id="test-smb-write-access" type="checkbox">
+          <span>SMB yazma erişimini test et</span>
         </label>
-        <p class="hint">AD'de desteklenen alanlara LDAP yazma isteği gönderilir; kalıcı değişiklik yapılmaz.</p>
+        <label class="option-control" for="test-ad-write-access">
+          <input id="test-ad-write-access" type="checkbox">
+          <span>AD yazma erişimini test et</span>
+        </label>
+        <p class="hint">Desteklenen LDAP alanlarına yazma isteği gönderilir; kalıcı değişiklik yapılmaz.</p>
       </fieldset>
 
       <div class="actions">

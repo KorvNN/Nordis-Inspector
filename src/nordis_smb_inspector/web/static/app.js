@@ -69,7 +69,8 @@ const termGeneratorRoots = document.querySelector("#term-generator-roots");
 const generateTermsButton = document.querySelector("#generate-terms");
 const termGeneratorStatus = document.querySelector("#term-generator-status");
 const detectPatternsInput = document.querySelector("#detect-patterns");
-const testWriteAccessInput = document.querySelector("#test-write-access");
+const testSmbWriteAccessInput = document.querySelector("#test-smb-write-access");
+const testAdWriteAccessInput = document.querySelector("#test-ad-write-access");
 const rulePackSelector = document.querySelector("#rule-pack-selector");
 const rulePackCount = document.querySelector("#rule-pack-count");
 const patternRulePackInputs = [...document.querySelectorAll("[data-rule-pack]")];
@@ -1598,7 +1599,8 @@ function captureScanInputs(credential, search) {
     name: scanName.value.trim(),
     targets: targets.value.trim(),
     target_list: scanTargetInputs(targets.value),
-    test_write_access: testWriteAccessInput.checked,
+    test_smb_write_access: testSmbWriteAccessInput.checked,
+    test_ad_write_access: testAdWriteAccessInput.checked,
     credential: storedCredential,
     search: {
       additional_terms: [...search.additional_terms],
@@ -1721,11 +1723,13 @@ function saveCompletedScan(state) {
       finding_items: existing.finding_items ?? [],
       identity_access: existing.identity_access ?? null,
     }) === JSON.stringify(snapshot);
+    const legacyWriteAccess = existing.test_write_access ?? false;
     const inputsUnchanged = capturedInputs === null || capturedInputs === undefined || JSON.stringify({
       name: existing.name ?? "",
       targets: existing.targets ?? "",
       target_list: existing.target_list ?? [],
-      test_write_access: existing.test_write_access ?? false,
+      test_smb_write_access: existing.test_smb_write_access ?? legacyWriteAccess,
+      test_ad_write_access: existing.test_ad_write_access ?? legacyWriteAccess,
       credential: existing.credential ?? {},
       search: existing.search,
     }) === JSON.stringify(capturedInputs);
@@ -1748,7 +1752,8 @@ function saveCompletedScan(state) {
     name: scanName.value.trim(),
     targets: targets.value.trim(),
     target_list: scanTargetInputs(targets.value),
-    test_write_access: testWriteAccessInput.checked,
+    test_smb_write_access: testSmbWriteAccessInput.checked,
+    test_ad_write_access: testAdWriteAccessInput.checked,
     credential: {
       domain: credentialDomain.value.trim() || null,
       username: credentialUsername.value.trim() || null,
@@ -1810,7 +1815,8 @@ async function startScan() {
         targets: targets.value,
         credential,
         search,
-        test_write_access: testWriteAccessInput.checked,
+        test_smb_write_access: testSmbWriteAccessInput.checked,
+        test_ad_write_access: testAdWriteAccessInput.checked,
       }),
     });
     const payload = await response.json();

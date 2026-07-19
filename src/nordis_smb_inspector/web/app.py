@@ -610,8 +610,8 @@ async def scan_start(request: Request) -> JSONResponse:
             },
             status_code=422,
         )
-    test_write_access = body.get("test_write_access", False)
-    if not isinstance(test_write_access, bool):
+    legacy_write_access = body.get("test_write_access", False)
+    if not isinstance(legacy_write_access, bool):
         return JSONResponse(
             {
                 "ok": False,
@@ -624,6 +624,31 @@ async def scan_start(request: Request) -> JSONResponse:
             },
             status_code=422,
         )
+    test_smb_write_access = body.get(
+        "test_smb_write_access",
+        legacy_write_access,
+    )
+    test_ad_write_access = body.get(
+        "test_ad_write_access",
+        legacy_write_access,
+    )
+    for value, label in (
+        (test_smb_write_access, "SMB yazma erişimi"),
+        (test_ad_write_access, "AD yazma erişimi"),
+    ):
+        if not isinstance(value, bool):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "errors": [
+                        {
+                            "value": label,
+                            "reason": "Write-access selection must be a boolean.",
+                        }
+                    ],
+                },
+                status_code=422,
+            )
 
     try:
         handle = runtime.sessions.begin_scan()
@@ -653,7 +678,8 @@ async def scan_start(request: Request) -> JSONResponse:
             plan,
             credential,
             options,
-            test_write_access,
+            test_smb_write_access,
+            test_ad_write_access,
             phase_total,
         ),
         name=f"nordis-scan-{handle.token.generation}",
@@ -724,7 +750,8 @@ def _run_access_scan(
     plan: TargetPlan,
     credential: Credential,
     options: ScanOptions,
-    test_write_access: bool,
+    test_smb_write_access: bool,
+    test_ad_write_access: bool,
     phase_total: int | None,
 ) -> None:
     completed = 0
@@ -856,7 +883,7 @@ def _run_access_scan(
             detect_credential_artifacts=(
                 DetectionRulePack.WINDOWS_AD in options.rule_packs
             ),
-            test_write_access=test_write_access,
+            test_write_access=test_smb_write_access,
             on_target=publish_target_event,
             on_inventory=publish_inventory,
             on_finding=publish_finding,
@@ -925,7 +952,7 @@ def _run_access_scan(
                     handle,
                     credential,
                     candidates,
-                    test_write_access=test_write_access,
+                    test_ad_write_access=test_ad_write_access,
                 )
                 if runtime.sessions.snapshot.active:
                     runtime.sessions.complete(handle.token)
@@ -956,7 +983,7 @@ def _run_identity_access_stage(
     credential: Credential,
     candidates: tuple[_DirectoryCandidate, ...],
     *,
-    test_write_access: bool,
+    test_ad_write_access: bool,
 ) -> None:
     generation = handle.token.generation
     try:
@@ -1036,7 +1063,7 @@ def _run_identity_access_stage(
                 kerberos_hostname=candidate.kerberos_hostname,
                 credential=credential,
                 cancellation=handle.cancellation,
-                test_write_access=test_write_access,
+                test_write_access=test_ad_write_access,
             )
         except SessionScanCancelled:
             runtime.set_identity_not_checked(
