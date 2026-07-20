@@ -791,6 +791,14 @@ def _run_access_scan(
             if credential.auth_mode is AuthMode.NTLM_ONLY
             else runtime.kerberos_hostname_resolver(target)
         )
+        if (
+            kerberos_hostname is None
+            and credential.auth_mode is AuthMode.KERBEROS_ONLY
+        ):
+            try:
+                kerberos_hostname = runtime.directory_hostname_resolver(address)
+            except Exception:
+                kerberos_hostname = None
 
         def publish_target_event(event: InspectionTargetEvent) -> None:
             message = _inspection_progress_message(
