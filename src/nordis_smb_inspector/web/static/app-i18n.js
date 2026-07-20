@@ -412,7 +412,6 @@ const LANGUAGE_TEXT = {
     "Yazma testleri": "Write tests",
     "SMB yazma erişimini test et": "Test SMB write access",
     "AD yazma erişimini test et": "Test AD write access",
-    "Desteklenen LDAP alanlarına yazma isteği gönderilir; kalıcı değişiklik yapılmaz.": "LDAP write requests are sent to supported attributes without making a persistent change.",
     "SMB yazma testi": "SMB write test",
     "AD yazma testi": "AD write test",
     "Yazma erişimi testi": "Write-access test",
