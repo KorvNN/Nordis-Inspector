@@ -253,7 +253,7 @@ function capabilitySummary(capability) {
   if (evidenceState === "unresolved") {
     return `An allow ACE for ${via} points to this action on ${subject}, but a deny or unsupported ACE prevents a conclusive effective-right result.`;
   }
-  return `A matching allow ACE for ${via} indicates this action on ${subject}. Nordis made no directory change.`;
+  return `A matching allow ACE for ${via} indicates this action on ${subject}. Nordis Inspector made no directory change.`;
 }
 
 function capabilityNextStep(capability) {
@@ -262,17 +262,35 @@ function capabilityNextStep(capability) {
   const subject = displayValue(capability.subject);
   const labels = {
     directory_replication_read: `Validate both required replication rights on ${subject}.`,
-    password_reset: `Review the access provided by ${subject}; Nordis did not change the password.`,
-    group_membership_write: `Review the access provided by ${subject}; Nordis did not change membership.`,
-    spn_write: `Assess the targeted Kerberoast impact for ${subject}; Nordis did not change the SPN.`,
+    password_reset: `Review the access provided by ${subject}; Nordis Inspector did not change the password.`,
+    group_membership_write: `Review the access provided by ${subject}; Nordis Inspector did not change membership.`,
+    spn_write: `Assess the targeted Kerberoast impact for ${subject}; Nordis Inspector did not change the SPN.`,
     account_control_write: `Review which account flags can be changed on ${subject}.`,
     key_credential_write: `Assess the Shadow Credentials impact for ${subject}.`,
     rbcd_write: `Validate the RBCD target and resulting access scope for ${subject}.`,
-    dacl_write: `Review the rights that could be granted on ${subject}; Nordis did not change its DACL.`,
+    dacl_write: `Review the rights that could be granted on ${subject}; Nordis Inspector did not change its DACL.`,
     owner_write: `Validate how ownership would affect DACL control on ${subject}.`,
   };
   return labels[capability.capability_id]
-    ?? `Validate the matching ACL scope on ${subject}; Nordis made no directory change.`;
+    ?? `Validate the matching ACL scope on ${subject}; Nordis Inspector made no directory change.`;
+}
+
+function appendBrandedIdentityText(element, value) {
+  const text = displayValue(value);
+  const brandPattern = /\bNordis(?: Inspector)?\b/gu;
+  let offset = 0;
+  for (const match of text.matchAll(brandPattern)) {
+    if (match.index > offset) {
+      element.append(document.createTextNode(text.slice(offset, match.index)));
+    }
+    const brand = document.createElement("strong");
+    brand.textContent = "Nordis Inspector";
+    element.append(brand);
+    offset = match.index + match[0].length;
+  }
+  if (offset < text.length) {
+    element.append(document.createTextNode(text.slice(offset)));
+  }
 }
 
 function aggregateCapabilityTitle(capability) {
@@ -411,7 +429,7 @@ function capabilityCard(capability, identityPrincipal) {
 
   const summary = document.createElement("p");
   summary.className = "identity-capability-summary";
-  summary.textContent = capabilitySummary(capability);
+  appendBrandedIdentityText(summary, capabilitySummary(capability));
   card.append(header, capabilityPath(capability, identityPrincipal));
   card.append(summary);
 
@@ -482,7 +500,8 @@ function capabilityCard(capability, identityPrincipal) {
     nextStep.className = "identity-next-step";
     const label = document.createElement("strong");
     label.textContent = currentLanguage === "en" ? "Validation step: " : "Doğrulama adımı: ";
-    nextStep.append(label, document.createTextNode(nextStepValue));
+    nextStep.append(label);
+    appendBrandedIdentityText(nextStep, nextStepValue);
     card.append(nextStep);
   }
   return card;

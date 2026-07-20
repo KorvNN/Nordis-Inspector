@@ -1135,7 +1135,7 @@ function renderInventory() {
       if (writeAccess && String(writeAccess).toLowerCase() !== "unknown") {
         const writeStatus = document.createElement("span");
         writeStatus.className = `status-value ${statusTone(writeAccess)}`;
-        writeStatus.textContent = `${uiText("Yazma")}: ${displayValue(writeAccess)}`;
+        writeStatus.textContent = `${uiText("Yazma")} ${displayValue(writeAccess)}`;
         shareSummary.append(writeStatus);
       }
       if (shareItem) {

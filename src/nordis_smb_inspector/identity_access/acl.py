@@ -276,8 +276,8 @@ def _publish_record_capabilities(
         else:
             summary = (
                 f"{via} için eşleşen allow ACE, {subject} üzerinde “{title}” "
-                "eylemine izin verildiğini gösteriyor. Nordis directory nesnesini "
-                "değiştirmedi."
+                "eylemine izin verildiğini gösteriyor. Nordis Inspector directory "
+                "nesnesini değiştirmedi."
             )
         add_capability(
             AccessCapability(
@@ -624,13 +624,15 @@ def _next_step(capability_id: str, subject: str) -> str:
             "verildiğini bağımsız olarak doğrula."
         ),
         "password_reset": (
-            f"{subject} hesabının erişim kapsamını incele; Nordis parola değiştirmedi."
+            f"{subject} hesabının erişim kapsamını incele; Nordis Inspector parola değiştirmedi."
         ),
         "group_membership_write": (
-            f"{subject} üyeliğinin sağladığı erişimleri incele; Nordis üyelik değiştirmedi."
+            f"{subject} üyeliğinin sağladığı erişimleri incele; "
+            "Nordis Inspector üyelik değiştirmedi."
         ),
         "spn_write": (
-            f"{subject} için hedefli Kerberoast etkisini değerlendir; Nordis SPN değiştirmedi."
+            f"{subject} için hedefli Kerberoast etkisini değerlendir; "
+            "Nordis Inspector SPN değiştirmedi."
         ),
         "account_control_write": (
             f"{subject} için değiştirilebilir hesap bayraklarının etkisini doğrula."
@@ -642,19 +644,22 @@ def _next_step(capability_id: str, subject: str) -> str:
             f"{subject} için RBCD hedefini ve erişim kapsamını doğrula."
         ),
         "dacl_write": (
-            f"{subject} üzerinde verilebilecek doğrudan hakları incele; Nordis DACL'i değiştirmedi."
+            f"{subject} üzerinde verilebilecek doğrudan hakları incele; "
+            "Nordis Inspector DACL'i değiştirmedi."
         ),
         "owner_write": (
-            f"{subject} sahipliğinin DACL kontrolüne etkisini doğrula; Nordis sahibi değiştirmedi."
+            f"{subject} sahipliğinin DACL kontrolüne etkisini doğrula; "
+            "Nordis Inspector sahibi değiştirmedi."
         ),
         "object_full_control": (
-            f"{subject} üzerindeki ACE kapsamını doğrula; Nordis nesneyi değiştirmedi."
+            f"{subject} üzerindeki ACE kapsamını doğrula; Nordis Inspector nesneyi değiştirmedi."
         ),
         "object_property_write": (
             f"{subject} üzerinde yazılabilen özelliklerin etkisini doğrula."
         ),
         "object_delete": (
-            f"{subject} nesnesinin silinmesinin etkisini değerlendir; Nordis nesneyi silmedi."
+            f"{subject} nesnesinin silinmesinin etkisini değerlendir; "
+            "Nordis Inspector nesneyi silmedi."
         ),
         "child_create": f"{subject} altında oluşturulabilecek nesne türünü doğrula.",
         "child_delete": f"{subject} altında silinebilecek nesne türünü doğrula.",
