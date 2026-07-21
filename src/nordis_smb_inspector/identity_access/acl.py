@@ -363,7 +363,7 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
                 _Right(
                     "all_extended_rights",
                     CapabilityKind.OBJECT_CONTROL,
-                    "Tüm extended rights",
+                    "Tüm genişletilmiş haklar",
                 )
             )
         rights.extend(_broad_right_implications(mask, record))
@@ -613,7 +613,7 @@ def _capability_title(capability_id: str) -> str:
         "object_delete": "Directory nesnesi silinebilir",
         "child_create": "Alt nesne oluşturulabilir",
         "child_delete": "Alt nesne silinebilir",
-        "all_extended_rights": "Tüm extended rights kullanılabilir",
+        "all_extended_rights": "Tüm genişletilmiş haklara işaret eden ACL bulundu",
     }.get(capability_id, "Directory erişimi kullanılabilir")
 
 
@@ -664,6 +664,6 @@ def _next_step(capability_id: str, subject: str) -> str:
         "child_create": f"{subject} altında oluşturulabilecek nesne türünü doğrula.",
         "child_delete": f"{subject} altında silinebilecek nesne türünü doğrula.",
         "all_extended_rights": (
-            f"{subject} üzerindeki extended right etkilerini ayrı ayrı doğrula."
+            f"{subject} üzerindeki genişletilmiş hakların somut etkilerini ayrı ayrı doğrula."
         ),
     }.get(capability_id, f"{subject} üzerindeki ACL kapsamını doğrula.")

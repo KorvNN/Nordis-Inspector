@@ -229,6 +229,17 @@ function identitySummary(report) {
 }
 
 function capabilityTitle(capability) {
+  if (capability.capability_id === "all_extended_rights") {
+    const evidenceState = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
+    if (currentLanguage === "en") {
+      return evidenceState === "unresolved"
+        ? "Extended-right access could not be resolved"
+        : "An ACL indicates all extended rights";
+    }
+    return evidenceState === "unresolved"
+      ? "Genişletilmiş haklar kesinleştirilemedi"
+      : "Tüm genişletilmiş haklara işaret eden ACL bulundu";
+  }
   if (currentLanguage !== "en") return displayValue(capability.title);
   return EN_CAPABILITY_TITLES[capability.capability_id]
     ?? EN_CAPABILITY_TITLES[capability.kind]
@@ -262,6 +273,17 @@ function capabilitySummary(capability) {
 function aggregateCapabilitySummary(capability) {
   const amount = Number(capability.aggregate_count).toLocaleString(numberLocale());
   const evidenceState = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
+  const subjects = aggregateSubjectCount(capability);
+  if (capability.capability_id === "all_extended_rights") {
+    if (currentLanguage === "en") {
+      return evidenceState === "unresolved"
+        ? `An ACL points to all extended rights on ${subjects}, but deny or unsupported ACEs prevent a conclusive result.`
+        : `An ACL grants all extended operations supported by ${subjects}. The concrete impact depends on the object type, such as password reset on user objects; this broad right was not actively verified.`;
+    }
+    return evidenceState === "unresolved"
+      ? `${subjects} için tüm genişletilmiş haklara işaret eden bir ACL var; ancak deny veya desteklenmeyen ACE'ler nedeniyle sonuç kesinleştirilemedi.`
+      : `${subjects} için tanımlı ACL, nesne türünün desteklediği tüm genişletilmiş işlemlere izin veriyor. Kullanıcı nesnelerinde parola sıfırlama gibi somut etkiler oluşabilir; bu genel hak aktif olarak doğrulanmadı.`;
+  }
   const liveWriteActions = new Set([
     "group_membership_write",
     "object_full_control",
@@ -330,6 +352,18 @@ function appendBrandedIdentityText(element, value) {
 function aggregateCapabilityTitle(capability) {
   const count = Number(capability.aggregate_count);
   const amount = count.toLocaleString(numberLocale());
+  const evidenceState = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
+  const subjects = aggregateSubjectCount(capability);
+  if (capability.capability_id === "all_extended_rights") {
+    if (currentLanguage === "en") {
+      return evidenceState === "unresolved"
+        ? `Extended-right access on ${subjects} could not be resolved`
+        : `An ACL indicates all extended rights on ${subjects}`;
+    }
+    return evidenceState === "unresolved"
+      ? `${subjects} için genişletilmiş haklar kesinleştirilemedi`
+      : `${subjects} için tüm genişletilmiş haklara işaret eden ACL bulundu`;
+  }
   if (currentLanguage === "en") {
     const titles = {
       laps_secret_read: `${amount} LAPS passwords are readable`,
@@ -359,7 +393,35 @@ function aggregateCapabilityTitle(capability) {
     dacl_write: `${amount} nesnenin DACL'i değiştirilebilir`,
     owner_write: `${amount} nesnenin sahibi değiştirilebilir`,
   };
-  return titles[capability.capability_id] ?? `${amount} hedefte bu AD eylemi kullanılabilir`;
+  if (titles[capability.capability_id]) return titles[capability.capability_id];
+  if (evidenceState === "verified") return `${amount} hedefte AD eylemi doğrulandı`;
+  if (evidenceState === "unresolved") return `${amount} hedefte AD yetkisi kesinleştirilemedi`;
+  return `${amount} hedefte AD yetkisine işaret eden ACL bulundu`;
+}
+
+function aggregateSubjectCount(capability) {
+  const amount = Number(capability.aggregate_count).toLocaleString(numberLocale());
+  const subjectType = String(capability.subject_type ?? "").toLowerCase();
+  const labels = currentLanguage === "en"
+    ? {
+      user: `${amount} user objects`,
+      group: `${amount} group objects`,
+      computer: `${amount} computer objects`,
+      organizationalunit: `${amount} organizational units`,
+      grouppolicycontainer: `${amount} GPOs`,
+      domaindns: `${amount} domain objects`,
+    }
+    : {
+      user: `${amount} kullanıcı nesnesi`,
+      group: `${amount} grup nesnesi`,
+      computer: `${amount} bilgisayar nesnesi`,
+      organizationalunit: `${amount} organizasyon birimi`,
+      grouppolicycontainer: `${amount} GPO`,
+      domaindns: `${amount} domain nesnesi`,
+    };
+  return labels[subjectType] ?? (currentLanguage === "en"
+    ? `${amount} directory objects`
+    : `${amount} directory nesnesi`);
 }
 
 function aggregateTargetLabel(capability) {
@@ -487,7 +549,9 @@ function capabilityCard(capability, identityPrincipal) {
       for (const right of rights) {
         const item = document.createElement("span");
         item.className = "identity-right";
-        item.textContent = displayValue(right);
+        item.textContent = currentLanguage !== "en" && right === "Tüm extended rights"
+          ? "Tüm genişletilmiş haklar"
+          : displayValue(right);
         rightList.append(item);
       }
       metadata.append(rightList);
