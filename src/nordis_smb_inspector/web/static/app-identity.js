@@ -236,6 +236,9 @@ function capabilityTitle(capability) {
 }
 
 function capabilitySummary(capability) {
+  if (Number(capability.aggregate_count) > 1) {
+    return aggregateCapabilitySummary(capability);
+  }
   if (capability.capability_id === "laps_secret_read") {
     return currentLanguage === "en"
       ? "LDAP returned the LAPS password attribute for this identity. The value was not retained."
@@ -254,6 +257,37 @@ function capabilitySummary(capability) {
     return `An allow ACE for ${via} points to this action on ${subject}, but a deny or unsupported ACE prevents a conclusive effective-right result.`;
   }
   return `A matching allow ACE for ${via} indicates this action on ${subject}. Nordis Inspector made no directory change.`;
+}
+
+function aggregateCapabilitySummary(capability) {
+  const amount = Number(capability.aggregate_count).toLocaleString(numberLocale());
+  const evidenceState = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
+  const liveWriteActions = new Set([
+    "group_membership_write",
+    "object_full_control",
+    "object_property_write",
+    "spn_write",
+  ]);
+  if (currentLanguage === "en") {
+    if (evidenceState === "unresolved") {
+      return `This access is indicated on ${amount} targets, but deny or unsupported ACEs prevent a conclusive effective-right result.`;
+    }
+    if (evidenceState === "verified") {
+      return liveWriteActions.has(capability.capability_id)
+        ? `Write access was verified on ${amount} targets with live LDAP requests; no persistent change was made.`
+        : `This access was directly verified on ${amount} targets.`;
+    }
+    return `This access is indicated by matching ACL entries on ${amount} targets. Nordis Inspector made no directory changes.`;
+  }
+  if (evidenceState === "unresolved") {
+    return `Bu erişim ${amount} hedefte işaret edildi; deny veya desteklenmeyen ACE'ler nedeniyle etkili hak kesinleştirilemedi.`;
+  }
+  if (evidenceState === "verified") {
+    return liveWriteActions.has(capability.capability_id)
+      ? `Yazma erişimi ${amount} hedefte canlı LDAP istekleriyle doğrulandı; kalıcı değişiklik yapılmadı.`
+      : `Bu erişim ${amount} hedefte doğrudan doğrulandı.`;
+  }
+  return `Bu erişim ${amount} hedefte eşleşen ACL kayıtlarıyla belirlendi. Nordis Inspector nesnelerde değişiklik yapmadı.`;
 }
 
 function capabilityNextStep(capability) {
