@@ -246,70 +246,131 @@ function capabilityTitle(capability) {
     ?? displayValue(capability.title);
 }
 
-function capabilitySummary(capability) {
-  if (Number(capability.aggregate_count) > 1) {
-    return aggregateCapabilitySummary(capability);
-  }
-  if (capability.capability_id === "laps_secret_read") {
-    return currentLanguage === "en"
-      ? "LDAP returned the LAPS password attribute for this identity. The value was not retained."
-      : displayValue(capability.summary);
-  }
-  if (capability.capability_id === "gmsa_secret_read") {
-    return currentLanguage === "en"
-      ? "LDAP returned the managed password blob for this identity. The value was not retained."
-      : displayValue(capability.summary);
-  }
-  if (currentLanguage !== "en") return displayValue(capability.summary);
-  const evidenceState = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
-  const via = displayValue(capability.via_principal);
-  const subject = displayValue(capability.subject);
-  if (evidenceState === "unresolved") {
-    return `An allow ACE for ${via} points to this action on ${subject}, but a deny or unsupported ACE prevents a conclusive effective-right result.`;
-  }
-  return `A matching allow ACE for ${via} indicates this action on ${subject}. Nordis Inspector made no directory change.`;
+function capabilityAction(capability) {
+  const actions = {
+    tr: {
+      laps_secret_read: "LAPS parolasını okuma",
+      gmsa_secret_read: "gMSA parolasını okuma",
+      directory_replication_read: "domain parola verisini çoğaltma",
+      password_reset: "hesap parolasını sıfırlama",
+      group_membership_write: "grup üyeliğini değiştirme",
+      spn_write: "SPN değerini değiştirme",
+      account_control_write: "hesap denetim seçeneklerini değiştirme",
+      key_credential_write: "Key Credential değerini değiştirme",
+      rbcd_write: "RBCD delegasyonunu değiştirme",
+      dacl_write: "nesne DACL'ini değiştirme",
+      owner_write: "nesne sahibini değiştirme",
+      object_full_control: "nesne üzerinde tam kontrol kullanma",
+      object_property_write: "nesne özelliklerini değiştirme",
+      object_delete: "nesneyi silme",
+      child_create: "alt nesne oluşturma",
+      child_delete: "alt nesne silme",
+      all_extended_rights: "tüm genişletilmiş hakları kullanma",
+    },
+    en: {
+      laps_secret_read: "read a LAPS password",
+      gmsa_secret_read: "read a gMSA password",
+      directory_replication_read: "replicate domain password data",
+      password_reset: "reset an account password",
+      group_membership_write: "change group membership",
+      spn_write: "change an SPN value",
+      account_control_write: "change account-control settings",
+      key_credential_write: "change a Key Credential value",
+      rbcd_write: "change RBCD delegation",
+      dacl_write: "change an object DACL",
+      owner_write: "change an object owner",
+      object_full_control: "fully control an object",
+      object_property_write: "change object properties",
+      object_delete: "delete an object",
+      child_create: "create a child object",
+      child_delete: "delete a child object",
+      all_extended_rights: "use all extended rights",
+    },
+  };
+  return actions[currentLanguage]?.[capability.capability_id]
+    ?? (currentLanguage === "en" ? "perform this AD action" : "bu AD eylemini kullanma");
 }
 
-function aggregateCapabilitySummary(capability) {
-  const amount = Number(capability.aggregate_count).toLocaleString(numberLocale());
-  const evidenceState = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
-  const subjects = aggregateSubjectCount(capability);
-  if (capability.capability_id === "all_extended_rights") {
-    if (currentLanguage === "en") {
-      return evidenceState === "unresolved"
-        ? `An ACL points to all extended rights on ${subjects}, but deny or unsupported ACEs prevent a conclusive result.`
-        : `An ACL grants all extended operations supported by ${subjects}. The concrete impact depends on the object type, such as password reset on user objects; this broad right was not actively verified.`;
-    }
-    return evidenceState === "unresolved"
-      ? `${subjects} için tüm genişletilmiş haklara işaret eden bir ACL var; ancak deny veya desteklenmeyen ACE'ler nedeniyle sonuç kesinleştirilemedi.`
-      : `${subjects} için tanımlı ACL, nesne türünün desteklediği tüm genişletilmiş işlemlere izin veriyor. Kullanıcı nesnelerinde parola sıfırlama gibi somut etkiler oluşabilir; bu genel hak aktif olarak doğrulanmadı.`;
+function identityAccountName(identityPrincipal) {
+  const principal = String(identityPrincipal ?? "").trim();
+  if (principal === "") return currentLanguage === "en" ? "The supplied identity" : "Girilen kimlik";
+  const domainSeparator = principal.lastIndexOf("\\");
+  const account = domainSeparator >= 0 ? principal.slice(domainSeparator + 1) : principal;
+  return account.includes("@") ? account.slice(0, account.indexOf("@")) : account;
+}
+
+function capabilityScope(capability) {
+  const count = Number(capability.aggregate_count);
+  if (count > 1) {
+    const amount = count.toLocaleString(numberLocale());
+    return currentLanguage === "en" ? `across ${amount} targets` : `${amount} hedefte`;
   }
-  const liveWriteActions = new Set([
-    "group_membership_write",
-    "object_full_control",
-    "object_property_write",
-    "spn_write",
-  ]);
+  const subject = displayValue(capability.subject);
+  return currentLanguage === "en" ? `on ${subject}` : `${subject} üzerinde`;
+}
+
+function extendedRightsImpact(capability) {
+  if (capability.capability_id !== "all_extended_rights") return "";
+  const subjectType = String(capability.subject_type ?? "").toLowerCase();
   if (currentLanguage === "en") {
-    if (evidenceState === "unresolved") {
-      return `This access is indicated on ${amount} targets, but deny or unsupported ACEs prevent a conclusive effective-right result.`;
+    if (["user", "computer"].includes(subjectType)) {
+      return " This includes operations such as resetting the target account password.";
     }
+    if (subjectType === "domaindns") {
+      return " This includes operations such as replicating domain password data.";
+    }
+    return " The concrete operations depend on the target object type.";
+  }
+  if (["user", "computer"].includes(subjectType)) {
+    return " Buna hedef hesabın parolasını sıfırlama gibi işlemler dahildir.";
+  }
+  if (subjectType === "domaindns") {
+    return " Buna domain parola verisini çoğaltma gibi işlemler dahildir.";
+  }
+  return " Yapılabilecek somut işlemler hedef nesnenin türüne bağlıdır.";
+}
+
+function capabilitySummary(capability, identityPrincipal) {
+  const actor = identityAccountName(identityPrincipal);
+  const principal = String(identityPrincipal ?? "").trim().toLowerCase();
+  const via = String(capability.via_principal ?? "").trim();
+  const viaIsActor = via !== "" && [principal, actor.toLowerCase()].includes(via.toLowerCase());
+  const route = via !== "" && !viaIsActor
+    ? (currentLanguage === "en" ? ` through ${via}` : `, ${via} üzerinden`)
+    : "";
+  const scope = capabilityScope(capability);
+  const action = capabilityAction(capability);
+  const evidenceState = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
+  const impact = extendedRightsImpact(capability);
+
+  if (currentLanguage === "en") {
     if (evidenceState === "verified") {
-      return liveWriteActions.has(capability.capability_id)
-        ? `Write access was verified on ${amount} targets with live LDAP requests; no persistent change was made.`
-        : `This access was directly verified on ${amount} targets.`;
+      const retained = ["laps_secret_read", "gmsa_secret_read"].includes(
+        capability.capability_id,
+      )
+        ? " The secret value was not retained."
+        : " Nordis Inspector made no persistent change.";
+      return `${actor}${route} was verified to have permission to ${action} ${scope}.${impact}${retained}`;
     }
-    return `This access is indicated by matching ACL entries on ${amount} targets. Nordis Inspector made no directory changes.`;
+    if (evidenceState === "unresolved") {
+      return `An ACL indicates that ${actor}${route} may have permission to ${action} ${scope}, but deny or unsupported ACEs prevent a conclusive result.${impact}`;
+    }
+    return `${actor}${route} appears to have permission to ${action} ${scope}.${impact} This result is based only on the ACL; Nordis Inspector did not perform the action.`;
+  }
+
+  const account = actor === "Girilen kimlik" ? actor : `${actor} hesabı`;
+  if (evidenceState === "verified") {
+    const retained = ["laps_secret_read", "gmsa_secret_read"].includes(
+      capability.capability_id,
+    )
+      ? " Gizli değer saklanmadı."
+      : " Nordis Inspector kalıcı değişiklik yapmadı.";
+    return `${account}${route} ${scope} ${action} yetkisine sahip. Bu erişim canlı olarak doğrulandı.${impact}${retained}`;
   }
   if (evidenceState === "unresolved") {
-    return `Bu erişim ${amount} hedefte işaret edildi; deny veya desteklenmeyen ACE'ler nedeniyle etkili hak kesinleştirilemedi.`;
+    return `${account}${route} ${scope} ${action} yetkisine sahip olabilir. Deny veya desteklenmeyen ACE'ler nedeniyle sonuç kesin değil.${impact}`;
   }
-  if (evidenceState === "verified") {
-    return liveWriteActions.has(capability.capability_id)
-      ? `Yazma erişimi ${amount} hedefte canlı LDAP istekleriyle doğrulandı; kalıcı değişiklik yapılmadı.`
-      : `Bu erişim ${amount} hedefte doğrudan doğrulandı.`;
-  }
-  return `Bu erişim ${amount} hedefte eşleşen ACL kayıtlarıyla belirlendi. Nordis Inspector nesnelerde değişiklik yapmadı.`;
+  return `${account}${route} ${scope} ${action} yetkisine sahip görünüyor.${impact} Bu sonuç yalnızca ACL kaydına dayanıyor; Nordis Inspector aktif işlem yapmadı.`;
 }
 
 function capabilityNextStep(capability) {
@@ -377,6 +438,11 @@ function aggregateCapabilityTitle(capability) {
       rbcd_write: `RBCD delegation on ${amount} computers can be changed`,
       dacl_write: `DACLs on ${amount} objects can be changed`,
       owner_write: `Owners of ${amount} objects can be changed`,
+      object_full_control: `${amount} objects expose full control`,
+      object_property_write: `Properties on ${amount} objects can be changed`,
+      object_delete: `${amount} objects can be deleted`,
+      child_create: `Child objects can be created on ${amount} targets`,
+      child_delete: `Child objects can be deleted on ${amount} targets`,
     };
     return titles[capability.capability_id] ?? `${amount} targets expose this AD action`;
   }
@@ -392,6 +458,11 @@ function aggregateCapabilityTitle(capability) {
     rbcd_write: `${amount} bilgisayarın RBCD delegasyonu değiştirilebilir`,
     dacl_write: `${amount} nesnenin DACL'i değiştirilebilir`,
     owner_write: `${amount} nesnenin sahibi değiştirilebilir`,
+    object_full_control: `${amount} nesnede tam kontrol yetkisi görünüyor`,
+    object_property_write: `${amount} nesnenin özellikleri değiştirilebilir`,
+    object_delete: `${amount} nesne silinebilir`,
+    child_create: `${amount} hedefte alt nesne oluşturulabilir`,
+    child_delete: `${amount} hedefte alt nesne silinebilir`,
   };
   if (titles[capability.capability_id]) return titles[capability.capability_id];
   if (evidenceState === "verified") return `${amount} hedefte AD eylemi doğrulandı`;
@@ -525,7 +596,7 @@ function capabilityCard(capability, identityPrincipal) {
 
   const summary = document.createElement("p");
   summary.className = "identity-capability-summary";
-  appendBrandedIdentityText(summary, capabilitySummary(capability));
+  appendBrandedIdentityText(summary, capabilitySummary(capability, identityPrincipal));
   card.append(header, capabilityPath(capability, identityPrincipal));
   card.append(summary);
 
