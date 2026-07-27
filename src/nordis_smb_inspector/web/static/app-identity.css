@@ -175,8 +175,7 @@
   padding: 0;
   list-style: none;
 }
-.identity-group-list li,
-.identity-right {
+.identity-group-list li {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 4px 7px;
@@ -278,6 +277,11 @@
   font-size: .72rem;
   line-height: 1.55;
 }
+.identity-summary-token { color: var(--text); font-weight: 800; }
+.identity-summary-token.is-actor { color: var(--accent); }
+.identity-summary-token.is-via { color: var(--info); }
+.identity-summary-token.is-action { color: var(--info); }
+.identity-summary-token.is-brand { color: var(--text); }
 .identity-capability-meta {
   display: grid;
   gap: 7px;
@@ -292,7 +296,6 @@
   font: 600 .64rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
   overflow-wrap: anywhere;
 }
-.identity-rights { display: flex; flex-wrap: wrap; gap: 5px; }
 .identity-capability-targets {
   margin-top: 10px;
   border-top: 1px solid var(--line);

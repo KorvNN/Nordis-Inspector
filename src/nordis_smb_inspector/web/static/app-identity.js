@@ -410,6 +410,51 @@ function appendBrandedIdentityText(element, value) {
   }
 }
 
+function appendHighlightedCapabilitySummary(
+  element,
+  value,
+  capability,
+  identityPrincipal,
+) {
+  const text = displayValue(value);
+  const actor = identityAccountName(identityPrincipal);
+  const via = String(capability.via_principal ?? "").trim();
+  const tokens = [
+    [actor, "is-actor"],
+    [via, "is-via"],
+    [capabilityScope(capability), "is-scope"],
+    [capabilityAction(capability), "is-action"],
+    ["Nordis Inspector", "is-brand"],
+  ].filter(([token], index, values) => (
+    token !== ""
+    && values.findIndex(([candidate]) => candidate === token) === index
+  ));
+  let offset = 0;
+  while (offset < text.length) {
+    let selected = null;
+    for (const [token, className] of tokens) {
+      const index = text.indexOf(token, offset);
+      if (index < 0) continue;
+      if (selected === null || index < selected.index
+          || (index === selected.index && token.length > selected.token.length)) {
+        selected = {token, className, index};
+      }
+    }
+    if (selected === null) {
+      element.append(document.createTextNode(text.slice(offset)));
+      return;
+    }
+    if (selected.index > offset) {
+      element.append(document.createTextNode(text.slice(offset, selected.index)));
+    }
+    const emphasis = document.createElement("strong");
+    emphasis.className = `identity-summary-token ${selected.className}`;
+    emphasis.textContent = selected.token;
+    element.append(emphasis);
+    offset = selected.index + selected.token.length;
+  }
+}
+
 function aggregateCapabilityTitle(capability) {
   const count = Number(capability.aggregate_count);
   const amount = count.toLocaleString(numberLocale());
@@ -596,47 +641,27 @@ function capabilityCard(capability, identityPrincipal) {
 
   const summary = document.createElement("p");
   summary.className = "identity-capability-summary";
-  appendBrandedIdentityText(summary, capabilitySummary(capability, identityPrincipal));
+  appendHighlightedCapabilitySummary(
+    summary,
+    capabilitySummary(capability, identityPrincipal),
+    capability,
+    identityPrincipal,
+  );
   card.append(header, capabilityPath(capability, identityPrincipal));
   card.append(summary);
 
-  const via = capability.via_principal;
-  const rights = Array.isArray(capability.rights) ? capability.rights : [];
-  if ((typeof via === "string" && via !== "") || rights.length > 0) {
+  const targetDn = capability.target_dn;
+  if (Number(capability.aggregate_count) <= 1
+      && typeof targetDn === "string" && targetDn !== "") {
     const metadata = document.createElement("div");
     metadata.className = "identity-capability-meta";
-    if (typeof via === "string" && via !== "") {
-      const row = document.createElement("div");
-      row.className = "identity-meta-row";
-      row.append(document.createTextNode(`${currentLanguage === "en" ? "Via" : "Üzerinden"}: `));
-      const value = document.createElement("strong");
-      value.textContent = via;
-      row.append(value);
-      metadata.append(row);
-    }
-    if (rights.length > 0) {
-      const rightList = document.createElement("div");
-      rightList.className = "identity-rights";
-      for (const right of rights) {
-        const item = document.createElement("span");
-        item.className = "identity-right";
-        item.textContent = currentLanguage !== "en" && right === "Tüm extended rights"
-          ? "Tüm genişletilmiş haklar"
-          : displayValue(right);
-        rightList.append(item);
-      }
-      metadata.append(rightList);
-    }
-    const targetDn = capability.target_dn;
-    if (Number(capability.aggregate_count) <= 1 && typeof targetDn === "string" && targetDn !== "") {
-      const row = document.createElement("div");
-      row.className = "identity-meta-row";
-      row.append(document.createTextNode(`${currentLanguage === "en" ? "Target DN" : "Hedef DN"}: `));
-      const value = document.createElement("code");
-      value.textContent = targetDn;
-      row.append(value);
-      metadata.append(row);
-    }
+    const row = document.createElement("div");
+    row.className = "identity-meta-row";
+    row.append(document.createTextNode(`${currentLanguage === "en" ? "Target DN" : "Hedef DN"}: `));
+    const targetValue = document.createElement("code");
+    targetValue.textContent = targetDn;
+    row.append(targetValue);
+    metadata.append(row);
     card.append(metadata);
   }
 
