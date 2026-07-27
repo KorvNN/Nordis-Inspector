@@ -627,9 +627,30 @@ function capabilityCard(capability, identityPrincipal) {
   title.textContent = Number(capability.aggregate_count) > 1
     ? aggregateCapabilityTitle(capability)
     : capabilityTitle(capability);
+  const heading = document.createElement("div");
+  heading.className = "identity-capability-heading";
+  const rights = Array.isArray(capability.rights) ? capability.rights : [];
+  if (rights.length > 0) {
+    const rightList = document.createElement("div");
+    rightList.className = "identity-heading-rights";
+    for (const right of rights) {
+      const item = document.createElement("span");
+      item.className = "identity-right";
+      item.textContent = [
+        "Tüm extended rights",
+        "Tüm genişletilmiş haklar",
+        "All Extended Rights",
+      ].includes(right)
+        ? "AllExtendedRights"
+        : displayValue(right);
+      rightList.append(item);
+    }
+    heading.append(rightList);
+  }
+  heading.append(title);
   const evidenceKey = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
   card.classList.add(`is-${evidenceKey.replaceAll("_", "-")}`);
-  header.append(title);
+  header.append(heading);
   const evidence = document.createElement("span");
   evidence.className = `identity-evidence is-${evidenceKey.replaceAll("_", "-")}`;
   evidence.textContent = identityLabel(
@@ -639,23 +660,6 @@ function capabilityCard(capability, identityPrincipal) {
   );
   header.append(evidence);
 
-  const summaryLayout = document.createElement("div");
-  summaryLayout.className = "identity-capability-summary-layout";
-  const rights = Array.isArray(capability.rights) ? capability.rights : [];
-  if (rights.length > 0) {
-    const rightList = document.createElement("div");
-    rightList.className = "identity-summary-rights";
-    for (const right of rights) {
-      const item = document.createElement("span");
-      item.className = "identity-right";
-      item.textContent = currentLanguage !== "en"
-          && ["Tüm extended rights", "Tüm genişletilmiş haklar"].includes(right)
-        ? "Tüm genişletilmiş haklar"
-        : displayValue(right);
-      rightList.append(item);
-    }
-    summaryLayout.append(rightList);
-  }
   const summary = document.createElement("p");
   summary.className = "identity-capability-summary";
   appendHighlightedCapabilitySummary(
@@ -664,9 +668,8 @@ function capabilityCard(capability, identityPrincipal) {
     capability,
     identityPrincipal,
   );
-  summaryLayout.append(summary);
   card.append(header, capabilityPath(capability, identityPrincipal));
-  card.append(summaryLayout);
+  card.append(summary);
 
   const targetDn = capability.target_dn;
   if (Number(capability.aggregate_count) <= 1

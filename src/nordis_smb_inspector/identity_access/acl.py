@@ -187,7 +187,7 @@ def inspect_direct_acl_capabilities(
                     _Right(
                         "dacl_write",
                         CapabilityKind.OBJECT_CONTROL,
-                        "Nesne sahibi (implicit WriteDACL)",
+                        "WriteDacl (object owner)",
                     ),
                     owner_sid,
                 )
@@ -307,7 +307,7 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
                 _Right(
                     "object_full_control",
                     CapabilityKind.OBJECT_CONTROL,
-                    "Tam kontrol (GenericAll)",
+                    "GenericAll",
                 )
             )
         if mask & ACCESS_MASK.GENERIC_WRITE:
@@ -315,31 +315,31 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
                 _Right(
                     "object_property_write",
                     CapabilityKind.OBJECT_CONTROL,
-                    "Genel yazma (GenericWrite)",
+                    "GenericWrite",
                 )
             )
         if mask & ACCESS_MASK.WRITE_DACL:
             rights.append(
-                _Right("dacl_write", CapabilityKind.OBJECT_CONTROL, "DACL değiştirme")
+                _Right("dacl_write", CapabilityKind.OBJECT_CONTROL, "WriteDacl")
             )
         if mask & ACCESS_MASK.WRITE_OWNER:
             rights.append(
                 _Right(
                     "owner_write",
                     CapabilityKind.OBJECT_CONTROL,
-                    "Sahip değiştirme",
+                    "WriteOwner",
                 )
             )
         if mask & ACCESS_MASK.DELETE:
             rights.append(
-                _Right("object_delete", CapabilityKind.OBJECT_CONTROL, "Nesneyi silme")
+                _Right("object_delete", CapabilityKind.OBJECT_CONTROL, "Delete")
             )
         if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_CREATE_CHILD:
             rights.append(
                 _Right(
                     "child_create",
                     CapabilityKind.OBJECT_CONTROL,
-                    "Alt nesne oluşturma",
+                    "CreateChild",
                 )
             )
         if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_DELETE_CHILD:
@@ -347,7 +347,7 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
                 _Right(
                     "child_delete",
                     CapabilityKind.OBJECT_CONTROL,
-                    "Alt nesne silme",
+                    "DeleteChild",
                 )
             )
         if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_WRITE_PROP:
@@ -355,7 +355,7 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
                 _Right(
                     "object_property_write",
                     CapabilityKind.OBJECT_CONTROL,
-                    "Tüm özellikleri yazma",
+                    "WriteProperty",
                 )
             )
         if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_CONTROL_ACCESS:
@@ -363,7 +363,7 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
                 _Right(
                     "all_extended_rights",
                     CapabilityKind.OBJECT_CONTROL,
-                    "Tüm genişletilmiş haklar",
+                    "AllExtendedRights",
                 )
             )
         rights.extend(_broad_right_implications(mask, record))
@@ -389,7 +389,7 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
             _Right(
                 "child_create",
                 CapabilityKind.OBJECT_CONTROL,
-                f"Alt nesne oluşturma ({SCHEMA_OBJECTS.get(object_guid, object_guid)})",
+                f"CreateChild ({SCHEMA_OBJECTS.get(object_guid, object_guid)})",
             )
         )
     if mask & ACCESS_ALLOWED_OBJECT_ACE.ADS_RIGHT_DS_DELETE_CHILD:
@@ -397,7 +397,7 @@ def _rights_from_ace(ace: object, record: DirectoryRecord) -> tuple[_Right, ...]
             _Right(
                 "child_delete",
                 CapabilityKind.OBJECT_CONTROL,
-                f"Alt nesne silme ({SCHEMA_OBJECTS.get(object_guid, object_guid)})",
+                f"DeleteChild ({SCHEMA_OBJECTS.get(object_guid, object_guid)})",
             )
         )
     return tuple(rights)
