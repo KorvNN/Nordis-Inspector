@@ -6,6 +6,7 @@ import base64
 import binascii
 import json
 from collections.abc import AsyncIterator, Callable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import PureWindowsPath
@@ -163,9 +164,14 @@ class WebRuntime:
     )
     _identity_error: dict[str, str] | None = field(default=None, repr=False)
     _identity_report: IdentityAccessReport | None = field(default=None, repr=False)
+    _scan_inputs: dict[str, object] | None = field(default=None, repr=False)
     worker: Thread | None = field(default=None, repr=False)
 
-    def reset_targets(self, generation: int) -> None:
+    def reset_targets(
+        self,
+        generation: int,
+        scan_inputs: dict[str, object] | None = None,
+    ) -> None:
         with self._target_lock:
             self._target_generation = generation
             self._targets.clear()
@@ -175,6 +181,7 @@ class WebRuntime:
             self._identity_message = "SMB taraması tamamlandıktan sonra değerlendirilecek."
             self._identity_error = None
             self._identity_report = None
+            self._scan_inputs = deepcopy(scan_inputs)
 
     def update_target(self, generation: int, payload: dict[str, object]) -> bool:
         key = str(payload["address"])
@@ -198,6 +205,12 @@ class WebRuntime:
             if generation != self._target_generation:
                 return []
             return [dict(item) for item in self._targets.values()]
+
+    def scan_inputs_snapshot(self, generation: int) -> dict[str, object] | None:
+        with self._target_lock:
+            if generation != self._target_generation or self._scan_inputs is None:
+                return None
+            return deepcopy(self._scan_inputs)
 
     def set_terminal_error(
         self,
@@ -574,6 +587,21 @@ async def scan_start(request: Request) -> JSONResponse:
     target_expression = body.get("targets")
     if not isinstance(target_expression, str):
         raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
+    scan_name = body.get("name", "")
+    if not isinstance(scan_name, str) or len(scan_name.strip()) > 80:
+        return JSONResponse(
+            {
+                "ok": False,
+                "errors": [
+                    {
+                        "value": "Tarama adı",
+                        "reason": "Scan name must be text with at most 80 characters.",
+                    }
+                ],
+            },
+            status_code=422,
+        )
+    scan_name = scan_name.strip()
 
     try:
         plan = parse_targets(target_expression)
@@ -655,7 +683,17 @@ async def scan_start(request: Request) -> JSONResponse:
     except ScanAlreadyRunning as exc:
         raise SafeHttpError(HttpErrorCode.CONFLICT) from exc
 
-    runtime.reset_targets(handle.token.generation)
+    runtime.reset_targets(
+        handle.token.generation,
+        _public_scan_inputs(
+            name=scan_name,
+            target_expression=target_expression,
+            credential=credential,
+            options=options,
+            test_smb_write_access=test_smb_write_access,
+            test_ad_write_access=test_ad_write_access,
+        ),
+    )
     runtime.contents.reset(handle.token.generation, credential)
     phase_total = (
         plan.known_address_count
@@ -726,6 +764,7 @@ def _snapshot_payload(runtime: WebRuntime) -> dict[str, object]:
         "partial": state.partial,
         "terminal_reason": state.terminal_reason.value if state.terminal_reason else None,
         "terminal_error": runtime.terminal_error_snapshot(state.generation),
+        "scan_inputs": runtime.scan_inputs_snapshot(state.generation),
         "identity_access": runtime.identity_snapshot(state.generation),
         "targets": runtime.target_snapshot(state.generation),
         "progress": None
@@ -1497,6 +1536,50 @@ def _credential_from_body(value: object) -> Credential:
             domain=domain,
         )
     raise CredentialValidationError("Credential türü desteklenmiyor.")
+
+
+def _public_scan_inputs(
+    *,
+    name: str,
+    target_expression: str,
+    credential: Credential,
+    options: ScanOptions,
+    test_smb_write_access: bool,
+    test_ad_write_access: bool,
+) -> dict[str, object]:
+    credential_metadata: dict[str, object] = {
+        "domain": credential.domain,
+        "username": credential.username,
+        "kind": credential.kind.value,
+        "auth_mode": credential.auth_mode.value,
+    }
+    if credential.kind is CredentialKind.CCACHE:
+        credential_metadata.update(
+            {
+                "ccache_name": credential.ccache_name,
+                "ccache_size": len(credential.ccache_data or b""),
+            }
+        )
+    target_list = [
+        candidate
+        for line in target_expression.splitlines()
+        for item in line.split(",")
+        if (candidate := item.strip())
+    ]
+    return {
+        "name": name,
+        "targets": target_expression.strip(),
+        "target_list": target_list,
+        "test_smb_write_access": test_smb_write_access,
+        "test_ad_write_access": test_ad_write_access,
+        "credential": credential_metadata,
+        "search": {
+            "additional_terms": list(options.terms),
+            "additional_terms_input": "\n".join(options.terms),
+            "detect_patterns": options.detect_patterns,
+            "rule_packs": [pack.value for pack in options.rule_packs],
+        },
+    }
 
 
 def _result_page_payload(request: Request, *, findings: bool) -> dict[str, object]:

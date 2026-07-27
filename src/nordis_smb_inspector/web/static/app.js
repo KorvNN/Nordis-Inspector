@@ -1611,6 +1611,51 @@ function captureScanInputs(credential, search) {
   };
 }
 
+function scanInputsFromServer(state) {
+  const inputs = state?.scan_inputs;
+  if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) return null;
+  const credential = inputs.credential;
+  const search = inputs.search;
+  if (!credential || typeof credential !== "object" || Array.isArray(credential)) return null;
+  if (!search || typeof search !== "object" || Array.isArray(search)) return null;
+  const targetValue = typeof inputs.targets === "string" ? inputs.targets : "";
+  const additionalTerms = Array.isArray(search.additional_terms)
+    ? search.additional_terms.filter((term) => typeof term === "string")
+    : [];
+  const rulePacks = Array.isArray(search.rule_packs)
+    ? search.rule_packs.filter((pack) => typeof pack === "string")
+    : [];
+  return {
+    name: typeof inputs.name === "string" ? inputs.name : "",
+    targets: targetValue,
+    target_list: Array.isArray(inputs.target_list)
+      ? inputs.target_list.filter((target) => typeof target === "string")
+      : scanTargetInputs(targetValue),
+    test_smb_write_access: inputs.test_smb_write_access === true,
+    test_ad_write_access: inputs.test_ad_write_access === true,
+    credential: {
+      domain: typeof credential.domain === "string" ? credential.domain : null,
+      username: typeof credential.username === "string" ? credential.username : null,
+      kind: typeof credential.kind === "string" ? credential.kind : null,
+      auth_mode: typeof credential.auth_mode === "string" ? credential.auth_mode : null,
+      ...(typeof credential.ccache_name === "string"
+        ? {ccache_name: credential.ccache_name}
+        : {}),
+      ...(Number.isFinite(credential.ccache_size)
+        ? {ccache_size: credential.ccache_size}
+        : {}),
+    },
+    search: {
+      additional_terms: additionalTerms,
+      additional_terms_input: typeof search.additional_terms_input === "string"
+        ? search.additional_terms_input
+        : additionalTerms.join("\n"),
+      detect_patterns: search.detect_patterns === true,
+      rule_packs: rulePacks,
+    },
+  };
+}
+
 function generatorRoots() {
   return [...new Set(
     termGeneratorRoots.value
@@ -1709,7 +1754,8 @@ function saveCompletedScan(state) {
   if (state.status !== "completed" || !state.scan_id) return;
   const history = storedHistory();
   const existing = history.find((item) => item.scan_id === state.scan_id);
-  const capturedInputs = scanInputSnapshots.get(state.scan_id) ?? pendingScanInputs;
+  const localInputs = scanInputSnapshots.get(state.scan_id) ?? pendingScanInputs;
+  const capturedInputs = localInputs ?? (existing ? null : scanInputsFromServer(state));
   const snapshot = {
     targets_snapshot: [...targetStore.values()],
     inventory_items: [...inventoryStore.values()],
@@ -1812,6 +1858,7 @@ async function startScan() {
       cache: "no-store",
       headers: mutationHeaders(),
       body: JSON.stringify({
+        name: scanName.value.trim(),
         targets: targets.value,
         credential,
         search,
