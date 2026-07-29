@@ -410,9 +410,7 @@ function capabilityAction(capability) {
 function identityAccountName(identityPrincipal) {
   const principal = String(identityPrincipal ?? "").trim();
   if (principal === "") return currentLanguage === "en" ? "The supplied identity" : "Girilen kimlik";
-  const domainSeparator = principal.lastIndexOf("\\");
-  const account = domainSeparator >= 0 ? principal.slice(domainSeparator + 1) : principal;
-  return account.includes("@") ? account.slice(0, account.indexOf("@")) : account;
+  return currentLanguage === "en" ? "The domain account" : "Domain hesabı";
 }
 
 function capabilityScope(capability) {
@@ -449,8 +447,15 @@ function extendedRightsImpact(capability) {
 function capabilitySummary(capability, identityPrincipal) {
   const actor = identityAccountName(identityPrincipal);
   const principal = String(identityPrincipal ?? "").trim().toLowerCase();
+  const principalAccount = principal
+    .slice(principal.lastIndexOf("\\") + 1)
+    .split("@", 1)[0];
   const via = String(capability.via_principal ?? "").trim();
-  const viaIsActor = via !== "" && [principal, actor.toLowerCase()].includes(via.toLowerCase());
+  const viaIsActor = via !== "" && [
+    principal,
+    principalAccount,
+    actor.toLowerCase(),
+  ].includes(via.toLowerCase());
   const route = via !== "" && !viaIsActor
     ? (currentLanguage === "en" ? ` through ${via}` : `, ${via} üzerinden`)
     : "";
@@ -474,7 +479,7 @@ function capabilitySummary(capability, identityPrincipal) {
     return `${actor}${route} appears to have permission to ${action} ${scope}.${impact} This result is based only on the ACL; Nordis Inspector did not perform the action.`;
   }
 
-  const account = actor === "Girilen kimlik" ? actor : `${actor} hesabı`;
+  const account = actor;
   if (evidenceState === "verified") {
     const retained = ["laps_secret_read", "gmsa_secret_read"].includes(
       capability.capability_id,
@@ -704,36 +709,6 @@ function groupCapabilities(capabilities) {
   }).sort(compareCapabilities);
 }
 
-function capabilityPath(capability, identityPrincipal) {
-  const path = document.createElement("div");
-  path.className = "identity-access-path";
-  const values = [identityPrincipal];
-  const via = String(capability.via_principal ?? "").trim();
-  if (via !== "" && via.toLocaleLowerCase() !== String(identityPrincipal).toLocaleLowerCase()) {
-    values.push(via);
-  }
-  values.push(
-    Number(capability.aggregate_count) > 1
-      ? (currentLanguage === "en"
-        ? `${Number(capability.aggregate_count).toLocaleString(numberLocale())} targets`
-        : `${Number(capability.aggregate_count).toLocaleString(numberLocale())} hedef`)
-      : displayValue(capability.subject),
-  );
-  values.forEach((value, index) => {
-    if (index > 0) {
-      const arrow = document.createElement("span");
-      arrow.className = "identity-path-arrow";
-      arrow.textContent = "→";
-      path.append(arrow);
-    }
-    const node = document.createElement("span");
-    node.className = `identity-path-node ${index === values.length - 1 ? "is-target" : ""}`.trim();
-    node.textContent = displayValue(value);
-    path.append(node);
-  });
-  return path;
-}
-
 function capabilityCard(capability, identityPrincipal) {
   const card = document.createElement("article");
   card.className = "identity-capability";
@@ -789,8 +764,7 @@ function capabilityCard(capability, identityPrincipal) {
     capability,
     identityPrincipal,
   );
-  card.append(header, capabilityPath(capability, identityPrincipal));
-  card.append(summary);
+  card.append(header, summary);
 
   const targetDn = capability.target_dn;
   if (Number(capability.aggregate_count) <= 1
