@@ -58,10 +58,69 @@ const EN_CAPABILITY_TITLES = {
   authentication_material_write: "Authentication material can be changed",
   delegation_write: "Delegation data can be changed",
 };
+const CAPABILITY_CATEGORY_BY_ID = {
+  laps_secret_read: "secret_access",
+  gmsa_secret_read: "secret_access",
+  directory_replication_read: "secret_access",
+  password_reset: "account_control",
+  spn_write: "account_control",
+  account_control_write: "account_control",
+  key_credential_write: "account_control",
+  group_membership_write: "group_delegation",
+  rbcd_write: "group_delegation",
+};
+const CAPABILITY_CATEGORY_ORDER = [
+  "secret_access",
+  "account_control",
+  "group_delegation",
+  "object_control",
+];
+const CAPABILITY_CATEGORY_LABELS = {
+  tr: {
+    all: "Tümü",
+    secret_access: "Gizli veri erişimi",
+    account_control: "Hesap kontrolü",
+    group_delegation: "Grup ve delegasyon",
+    object_control: "Nesne kontrolü",
+  },
+  en: {
+    all: "All",
+    secret_access: "Secret access",
+    account_control: "Account control",
+    group_delegation: "Groups and delegation",
+    object_control: "Object control",
+  },
+};
+const CAPABILITY_PRIORITY = {
+  directory_replication_read: 0,
+  laps_secret_read: 1,
+  gmsa_secret_read: 2,
+  password_reset: 3,
+  key_credential_write: 4,
+  group_membership_write: 5,
+  rbcd_write: 6,
+  spn_write: 7,
+  account_control_write: 8,
+  object_full_control: 9,
+  dacl_write: 10,
+  owner_write: 11,
+  object_property_write: 12,
+  all_extended_rights: 13,
+  object_delete: 14,
+  child_create: 15,
+  child_delete: 16,
+};
+const EVIDENCE_PRIORITY = {
+  verified: 0,
+  acl_indicated: 1,
+  inferred: 1,
+  unresolved: 2,
+};
 
 let displayValue;
 let statusTone;
 let identityAccessSnapshot = null;
+let activeCapabilityCategory = "all";
 
 function configureIdentityAccess(dependencies) {
   ({displayValue, statusTone} = dependencies);
@@ -73,6 +132,63 @@ function currentIdentityAccess() {
 
 function identityLabel(labels, key, fallback = key) {
   return labels[currentLanguage]?.[key] ?? fallback;
+}
+
+function capabilityCategory(capability) {
+  return CAPABILITY_CATEGORY_BY_ID[capability.capability_id] ?? "object_control";
+}
+
+function capabilityCategoryLabel(category) {
+  return CAPABILITY_CATEGORY_LABELS[currentLanguage]?.[category] ?? category;
+}
+
+function compareCapabilities(left, right) {
+  const leftEvidence = String(left.evidence_state ?? "acl_indicated").toLowerCase();
+  const rightEvidence = String(right.evidence_state ?? "acl_indicated").toLowerCase();
+  const evidenceDifference = (EVIDENCE_PRIORITY[leftEvidence] ?? 99)
+    - (EVIDENCE_PRIORITY[rightEvidence] ?? 99);
+  if (evidenceDifference !== 0) return evidenceDifference;
+  const actionDifference = (CAPABILITY_PRIORITY[left.capability_id] ?? 99)
+    - (CAPABILITY_PRIORITY[right.capability_id] ?? 99);
+  if (actionDifference !== 0) return actionDifference;
+  const countDifference = Number(right.aggregate_count ?? 1)
+    - Number(left.aggregate_count ?? 1);
+  if (countDifference !== 0) return countDifference;
+  return capabilityTitle(left).localeCompare(capabilityTitle(right));
+}
+
+function capabilityFilterToolbar(capabilities) {
+  const toolbar = document.createElement("div");
+  toolbar.className = "identity-capability-filters";
+  toolbar.setAttribute("role", "toolbar");
+  toolbar.setAttribute(
+    "aria-label",
+    currentLanguage === "en" ? "Filter AD findings by category" : "AD bulgularını kategoriye göre filtrele",
+  );
+  const categories = ["all", ...CAPABILITY_CATEGORY_ORDER.filter((category) => (
+    capabilities.some((capability) => capabilityCategory(capability) === category)
+  ))];
+  if (!categories.includes(activeCapabilityCategory)) activeCapabilityCategory = "all";
+  for (const category of categories) {
+    const count = category === "all"
+      ? capabilities.length
+      : capabilities.filter((capability) => capabilityCategory(capability) === category).length;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `identity-category-filter ${category === activeCapabilityCategory ? "is-active" : ""}`.trim();
+    button.setAttribute("aria-pressed", String(category === activeCapabilityCategory));
+    button.append(document.createTextNode(capabilityCategoryLabel(category)));
+    const countNode = document.createElement("strong");
+    countNode.textContent = count.toLocaleString(numberLocale());
+    button.append(countNode);
+    button.addEventListener("click", () => {
+      if (activeCapabilityCategory === category) return;
+      activeCapabilityCategory = category;
+      renderIdentityAccess(identityAccessSnapshot);
+    });
+    toolbar.append(button);
+  }
+  return toolbar;
 }
 
 function identityStateCopy(status) {
@@ -585,7 +701,7 @@ function groupCapabilities(capabilities) {
     const targets = [...uniqueTargets.values()]
       .sort((left, right) => left.subject.localeCompare(right.subject));
     return {...items[0], aggregate_count: items.length, targets};
-  });
+  }).sort(compareCapabilities);
 }
 
 function capabilityPath(capability, identityPrincipal) {
@@ -629,6 +745,11 @@ function capabilityCard(capability, identityPrincipal) {
     : capabilityTitle(capability);
   const heading = document.createElement("div");
   heading.className = "identity-capability-heading";
+  const categoryKey = capabilityCategory(capability);
+  const category = document.createElement("span");
+  category.className = `identity-category is-${categoryKey.replaceAll("_", "-")}`;
+  category.textContent = capabilityCategoryLabel(categoryKey);
+  heading.append(category);
   const rights = Array.isArray(capability.rights) ? capability.rights : [];
   if (rights.length > 0) {
     const rightList = document.createElement("div");
@@ -805,7 +926,13 @@ function renderIdentityAccess(payload) {
     empty.append(title, copy);
     capabilityList.append(empty);
   } else {
-    for (const capability of capabilityGroups) {
+    capabilitySection.append(capabilityFilterToolbar(capabilityGroups));
+    const visibleCapabilities = activeCapabilityCategory === "all"
+      ? capabilityGroups
+      : capabilityGroups.filter((capability) => (
+        capabilityCategory(capability) === activeCapabilityCategory
+      ));
+    for (const capability of visibleCapabilities) {
       capabilityList.append(capabilityCard(capability, report.identity?.principal));
     }
   }

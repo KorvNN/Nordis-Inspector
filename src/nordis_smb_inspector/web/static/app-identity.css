@@ -204,6 +204,47 @@
   font-size: .68rem;
   line-height: 1.5;
 }
+.identity-capability-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 11px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+.identity-category-filter {
+  display: inline-flex;
+  min-height: 29px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font-size: .65rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.identity-category-filter:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.identity-category-filter.is-active {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+  color: var(--accent);
+  background: var(--accent-dark);
+}
+.identity-category-filter strong {
+  min-width: 19px;
+  border-radius: 999px;
+  padding: 2px 5px;
+  color: inherit;
+  background: rgb(255 255 255 / 6%);
+  font-size: .59rem;
+  text-align: center;
+}
 .identity-capability-list { display: grid; gap: 8px; }
 .identity-capability {
   border: 1px solid var(--line-strong);
@@ -226,6 +267,38 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+.identity-category {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font-size: .56rem;
+  font-weight: 850;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+.identity-category.is-secret-access {
+  border-color: color-mix(in srgb, var(--finding) 28%, var(--line));
+  color: var(--finding);
+  background: var(--finding-dark);
+}
+.identity-category.is-account-control {
+  border-color: color-mix(in srgb, var(--danger) 24%, var(--line));
+  color: var(--danger);
+  background: var(--danger-dark);
+}
+.identity-category.is-group-delegation {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  color: var(--accent);
+  background: var(--accent-dark);
+}
+.identity-category.is-object-control {
+  border-color: color-mix(in srgb, var(--info) 24%, var(--line));
+  color: var(--info);
+  background: var(--info-soft);
 }
 .identity-heading-rights { display: flex; flex-wrap: wrap; gap: 5px; }
 .identity-capability h4 { margin: 0; font-size: .79rem; line-height: 1.45; }
