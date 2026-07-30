@@ -410,7 +410,7 @@ function capabilityAction(capability) {
 function identityAccountName(identityPrincipal) {
   const principal = String(identityPrincipal ?? "").trim();
   if (principal === "") return currentLanguage === "en" ? "The supplied identity" : "Girilen kimlik";
-  return currentLanguage === "en" ? "The domain account" : "Domain hesabı";
+  return principal;
 }
 
 function capabilityScope(capability) {
