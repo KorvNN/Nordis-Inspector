@@ -346,40 +346,68 @@
   font: 600 .64rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
   overflow-wrap: anywhere;
 }
-.identity-capability-targets {
-  margin-top: 10px;
-  border-top: 1px solid var(--line);
-  padding-top: 9px;
-}
-.identity-capability-targets summary {
+.identity-target-trigger {
+  display: block;
   width: fit-content;
-  color: var(--info);
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  color: var(--text-soft);
+  background: var(--surface-raised);
   font-size: .67rem;
   font-weight: 750;
   cursor: pointer;
 }
-.identity-capability-target-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
+.identity-target-trigger:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+  background: var(--surface-hover);
 }
-.identity-capability-target-list > div {
+.identity-targets-dialog::backdrop { background: rgb(2 5 10 / 78%); }
+.identity-targets-dialog {
+  width: min(760px, calc(100vw - 48px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  color: var(--text);
+  background: var(--panel);
+}
+.identity-targets-dialog .dialog-heading h2 { margin: 0; }
+.identity-targets-description {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: .7rem;
+}
+.identity-targets-dialog-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+}
+.identity-target-dialog-item {
   display: grid;
   gap: 3px;
-  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 4px 6px;
+  padding: 8px 9px;
   color: var(--text-soft);
   background: var(--surface-raised);
 }
-.identity-capability-target-list strong,
-.identity-capability-target-list code {
+.identity-target-dialog-item strong,
+.identity-target-dialog-item code {
   font: 600 .62rem/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
   overflow-wrap: anywhere;
 }
-.identity-capability-target-list code { color: var(--muted); }
+.identity-target-dialog-item code { color: var(--muted); }
+.identity-targets-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
 .identity-next-step {
   margin: 10px 0 0;
   border-radius: var(--radius-sm);

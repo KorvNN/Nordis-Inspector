@@ -5,6 +5,12 @@ import {currentLanguage, numberLocale} from "./app-i18n.js";
 const identityAccessStatus = document.querySelector("#identity-access-status");
 const identityAccessContent = document.querySelector("#identity-access-content");
 const identityTabCount = document.querySelector("#identity-tab-count");
+const identityTargetsDialog = document.querySelector("#identity-targets-dialog");
+const identityTargetsHeading = document.querySelector("#identity-targets-heading");
+const identityTargetsDescription = document.querySelector("#identity-targets-description");
+const identityTargetsList = document.querySelector("#identity-targets-list");
+const closeIdentityTargetsButton = document.querySelector("#close-identity-targets");
+const cancelIdentityTargetsButton = document.querySelector("#cancel-identity-targets");
 
 const IDENTITY_STATUS_LABELS = {
   tr: {
@@ -675,6 +681,58 @@ function aggregateTargetLabel(capability) {
   return labels[subjectType] ?? `${amount} hedefi göster`;
 }
 
+function aggregateTargetDialogTitle(capability) {
+  const subjectType = String(capability.subject_type ?? "").toLowerCase();
+  const labels = currentLanguage === "en"
+    ? {
+      user: "Affected users",
+      group: "Affected groups",
+      computer: "Affected computers",
+      organizationalunit: "Affected organizational units",
+      grouppolicycontainer: "Affected GPOs",
+    }
+    : {
+      user: "Etkilenen kullanıcılar",
+      group: "Etkilenen gruplar",
+      computer: "Etkilenen bilgisayarlar",
+      organizationalunit: "Etkilenen organizasyon birimleri",
+      grouppolicycontainer: "Etkilenen GPO'lar",
+    };
+  return labels[subjectType] ?? (currentLanguage === "en" ? "Affected targets" : "Etkilenen hedefler");
+}
+
+function closeIdentityTargetsDialog() {
+  if (identityTargetsDialog.open) identityTargetsDialog.close();
+}
+
+function openIdentityTargetsDialog(capability) {
+  const targets = Array.isArray(capability.targets) ? capability.targets : [];
+  identityTargetsHeading.textContent = aggregateTargetDialogTitle(capability);
+  identityTargetsDescription.textContent = currentLanguage === "en"
+    ? `${targets.length.toLocaleString(numberLocale())} directory records`
+    : `${targets.length.toLocaleString(numberLocale())} directory kaydı`;
+  closeIdentityTargetsButton.setAttribute(
+    "aria-label",
+    currentLanguage === "en" ? "Close" : "Kapat",
+  );
+  cancelIdentityTargetsButton.textContent = currentLanguage === "en" ? "Close" : "Kapat";
+  identityTargetsList.replaceChildren();
+  for (const target of targets) {
+    const item = document.createElement("div");
+    item.className = "identity-target-dialog-item";
+    const name = document.createElement("strong");
+    name.textContent = displayValue(target?.subject);
+    item.append(name);
+    if (typeof target?.target_dn === "string" && target.target_dn !== "") {
+      const dn = document.createElement("code");
+      dn.textContent = target.target_dn;
+      item.append(dn);
+    }
+    identityTargetsList.append(item);
+  }
+  identityTargetsDialog.showModal();
+}
+
 function groupCapabilities(capabilities) {
   const groups = new Map();
   for (const capability of capabilities) {
@@ -782,26 +840,12 @@ function capabilityCard(capability, identityPrincipal) {
   }
 
   if (Number(capability.aggregate_count) > 1) {
-    const targets = document.createElement("details");
-    targets.className = "identity-capability-targets";
-    const targetsSummary = document.createElement("summary");
-    targetsSummary.textContent = aggregateTargetLabel(capability);
-    const targetList = document.createElement("div");
-    targetList.className = "identity-capability-target-list";
-    for (const target of capability.targets ?? []) {
-      const item = document.createElement("div");
-      const name = document.createElement("strong");
-      name.textContent = displayValue(target?.subject);
-      item.append(name);
-      if (typeof target?.target_dn === "string" && target.target_dn !== "") {
-        const dn = document.createElement("code");
-        dn.textContent = target.target_dn;
-        item.append(dn);
-      }
-      targetList.append(item);
-    }
-    targets.append(targetsSummary, targetList);
-    card.append(targets);
+    const targetsButton = document.createElement("button");
+    targetsButton.type = "button";
+    targetsButton.className = "identity-target-trigger";
+    targetsButton.textContent = aggregateTargetLabel(capability);
+    targetsButton.addEventListener("click", () => openIdentityTargetsDialog(capability));
+    card.append(targetsButton);
   }
 
   const nextStepValue = capabilityNextStep(capability);
@@ -915,6 +959,9 @@ function renderIdentityAccess(payload) {
   layout.append(capabilitySection);
   identityAccessContent.append(layout);
 }
+
+closeIdentityTargetsButton.addEventListener("click", closeIdentityTargetsDialog);
+cancelIdentityTargetsButton.addEventListener("click", closeIdentityTargetsDialog);
 
 export {
   configureIdentityAccess,
