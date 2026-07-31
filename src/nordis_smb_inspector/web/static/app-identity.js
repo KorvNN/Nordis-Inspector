@@ -9,6 +9,11 @@ const identityTargetsDialog = document.querySelector("#identity-targets-dialog")
 const identityTargetsHeading = document.querySelector("#identity-targets-heading");
 const identityTargetsDescription = document.querySelector("#identity-targets-description");
 const identityTargetsList = document.querySelector("#identity-targets-list");
+const identityTargetsSearch = document.querySelector("#identity-targets-search");
+const identityTargetsCount = document.querySelector("#identity-targets-count");
+const identityTargetsEmpty = document.querySelector("#identity-targets-empty");
+const identityTargetsNameHeading = document.querySelector("#identity-targets-name-heading");
+const identityTargetsDnHeading = document.querySelector("#identity-targets-dn-heading");
 const closeIdentityTargetsButton = document.querySelector("#close-identity-targets");
 const cancelIdentityTargetsButton = document.querySelector("#cancel-identity-targets");
 
@@ -127,6 +132,7 @@ let displayValue;
 let statusTone;
 let identityAccessSnapshot = null;
 let activeCapabilityCategory = "all";
+let identityDialogTargets = [];
 
 function configureIdentityAccess(dependencies) {
   ({displayValue, statusTone} = dependencies);
@@ -671,14 +677,14 @@ function aggregateTargetLabel(capability) {
   const count = Number(capability.aggregate_count);
   const amount = count.toLocaleString(numberLocale());
   const subjectType = String(capability.subject_type ?? "").toLowerCase();
-  if (currentLanguage === "en") return `Show ${amount} targets`;
+  if (currentLanguage === "en") return `Inspect ${amount} targets`;
   const labels = {
-    user: `${amount} kullanıcıyı göster`,
-    group: `${amount} grubu göster`,
-    computer: `${amount} bilgisayarı göster`,
-    gmsa: `${amount} gMSA hesabını göster`,
+    user: `${amount} kullanıcıyı incele`,
+    group: `${amount} grubu incele`,
+    computer: `${amount} bilgisayarı incele`,
+    gmsa: `${amount} gMSA hesabını incele`,
   };
-  return labels[subjectType] ?? `${amount} hedefi göster`;
+  return labels[subjectType] ?? `${amount} hedefi incele`;
 }
 
 function aggregateTargetDialogTitle(capability) {
@@ -705,32 +711,62 @@ function closeIdentityTargetsDialog() {
   if (identityTargetsDialog.open) identityTargetsDialog.close();
 }
 
+function renderIdentityTargetRows() {
+  const query = identityTargetsSearch.value.trim().toLocaleLowerCase();
+  const visibleTargets = query === ""
+    ? identityDialogTargets
+    : identityDialogTargets.filter((target) => (
+      `${target?.subject ?? ""} ${target?.target_dn ?? ""}`.toLocaleLowerCase().includes(query)
+    ));
+  identityTargetsList.replaceChildren();
+  for (const target of visibleTargets) {
+    const row = document.createElement("tr");
+    const nameCell = document.createElement("td");
+    const name = document.createElement("strong");
+    name.textContent = displayValue(target?.subject);
+    nameCell.append(name);
+    const dnCell = document.createElement("td");
+    if (typeof target?.target_dn === "string" && target.target_dn !== "") {
+      const dn = document.createElement("code");
+      dn.textContent = target.target_dn;
+      dnCell.append(dn);
+    } else {
+      dnCell.textContent = "—";
+    }
+    row.append(nameCell, dnCell);
+    identityTargetsList.append(row);
+  }
+  const total = identityDialogTargets.length.toLocaleString(numberLocale());
+  const visible = visibleTargets.length.toLocaleString(numberLocale());
+  identityTargetsCount.textContent = query === ""
+    ? (currentLanguage === "en" ? `${total} records` : `${total} kayıt`)
+    : (currentLanguage === "en" ? `${visible} of ${total}` : `${visible} / ${total}`);
+  identityTargetsEmpty.hidden = visibleTargets.length !== 0;
+}
+
 function openIdentityTargetsDialog(capability) {
-  const targets = Array.isArray(capability.targets) ? capability.targets : [];
+  identityDialogTargets = Array.isArray(capability.targets) ? capability.targets : [];
   identityTargetsHeading.textContent = aggregateTargetDialogTitle(capability);
-  identityTargetsDescription.textContent = currentLanguage === "en"
-    ? `${targets.length.toLocaleString(numberLocale())} directory records`
-    : `${targets.length.toLocaleString(numberLocale())} directory kaydı`;
+  identityTargetsDescription.textContent = Number(capability.aggregate_count) > 1
+    ? aggregateCapabilityTitle(capability)
+    : capabilityTitle(capability);
   closeIdentityTargetsButton.setAttribute(
     "aria-label",
     currentLanguage === "en" ? "Close" : "Kapat",
   );
   cancelIdentityTargetsButton.textContent = currentLanguage === "en" ? "Close" : "Kapat";
-  identityTargetsList.replaceChildren();
-  for (const target of targets) {
-    const item = document.createElement("div");
-    item.className = "identity-target-dialog-item";
-    const name = document.createElement("strong");
-    name.textContent = displayValue(target?.subject);
-    item.append(name);
-    if (typeof target?.target_dn === "string" && target.target_dn !== "") {
-      const dn = document.createElement("code");
-      dn.textContent = target.target_dn;
-      item.append(dn);
-    }
-    identityTargetsList.append(item);
-  }
+  identityTargetsSearch.placeholder = currentLanguage === "en" ? "Search name or DN" : "Ad veya DN ara";
+  identityTargetsSearch.setAttribute(
+    "aria-label",
+    currentLanguage === "en" ? "Search affected targets" : "Etkilenen hedeflerde ara",
+  );
+  identityTargetsNameHeading.textContent = currentLanguage === "en" ? "Object" : "Nesne";
+  identityTargetsDnHeading.textContent = "Distinguished name";
+  identityTargetsEmpty.textContent = currentLanguage === "en" ? "No matching targets." : "Eşleşen hedef yok.";
+  identityTargetsSearch.value = "";
+  renderIdentityTargetRows();
   identityTargetsDialog.showModal();
+  identityTargetsSearch.focus();
 }
 
 function groupCapabilities(capabilities) {
@@ -843,7 +879,13 @@ function capabilityCard(capability, identityPrincipal) {
     const targetsButton = document.createElement("button");
     targetsButton.type = "button";
     targetsButton.className = "identity-target-trigger";
-    targetsButton.textContent = aggregateTargetLabel(capability);
+    const targetsButtonLabel = document.createElement("span");
+    targetsButtonLabel.textContent = aggregateTargetLabel(capability);
+    const targetsButtonIcon = document.createElement("span");
+    targetsButtonIcon.className = "identity-target-trigger-icon";
+    targetsButtonIcon.setAttribute("aria-hidden", "true");
+    targetsButtonIcon.textContent = "›";
+    targetsButton.append(targetsButtonLabel, targetsButtonIcon);
     targetsButton.addEventListener("click", () => openIdentityTargetsDialog(capability));
     card.append(targetsButton);
   }
@@ -962,6 +1004,7 @@ function renderIdentityAccess(payload) {
 
 closeIdentityTargetsButton.addEventListener("click", closeIdentityTargetsDialog);
 cancelIdentityTargetsButton.addEventListener("click", closeIdentityTargetsDialog);
+identityTargetsSearch.addEventListener("input", renderIdentityTargetRows);
 
 export {
   configureIdentityAccess,

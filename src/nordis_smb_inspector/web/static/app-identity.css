@@ -347,60 +347,133 @@
   overflow-wrap: anywhere;
 }
 .identity-target-trigger {
-  display: block;
+  display: inline-flex;
   width: fit-content;
+  min-height: 32px;
+  align-items: center;
+  gap: 9px;
   margin-top: 10px;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
   border-radius: var(--radius-sm);
-  padding: 6px 8px;
-  color: var(--text-soft);
-  background: var(--surface-raised);
+  padding: 6px 7px 6px 9px;
+  color: var(--accent);
+  background: var(--accent-dark);
   font-size: .67rem;
-  font-weight: 750;
+  font-weight: 800;
   cursor: pointer;
+  transition: border-color .14s ease, background-color .14s ease, transform .14s ease;
 }
 .identity-target-trigger:hover {
-  border-color: var(--line-strong);
-  color: var(--text);
-  background: var(--surface-hover);
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, var(--surface));
+  filter: none;
+  transform: translateY(-1px);
+}
+.identity-target-trigger-icon {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 50%;
+  color: #07120e;
+  background: var(--accent);
+  font-size: 1rem;
+  line-height: 1;
 }
 .identity-targets-dialog::backdrop { background: rgb(2 5 10 / 78%); }
 .identity-targets-dialog {
-  width: min(760px, calc(100vw - 48px));
+  width: min(900px, calc(100vw - 48px));
   max-height: calc(100dvh - 48px);
-  overflow: auto;
+  overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
   padding: 22px;
   color: var(--text);
   background: var(--panel);
+  box-shadow: 0 28px 90px rgb(0 0 0 / 45%);
+}
+.identity-targets-dialog[open] {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 .identity-targets-dialog .dialog-heading h2 { margin: 0; }
 .identity-targets-description {
   margin: 5px 0 0;
   color: var(--muted);
-  font-size: .7rem;
+  font-size: .73rem;
+  line-height: 1.45;
 }
-.identity-targets-dialog-list {
-  display: grid;
-  gap: 6px;
+.identity-targets-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-top: 16px;
 }
-.identity-target-dialog-item {
-  display: grid;
-  gap: 3px;
+.identity-targets-toolbar input {
+  min-width: 0;
+  padding-block: 8px;
+}
+.identity-targets-count {
+  flex: 0 0 auto;
+  min-width: 64px;
+  color: var(--muted);
+  font-size: .67rem;
+  font-weight: 750;
+  text-align: right;
+}
+.identity-targets-table-wrap {
+  min-height: 180px;
+  max-height: 55dvh;
+  margin-top: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 8px 9px;
-  color: var(--text-soft);
-  background: var(--surface-raised);
+  overflow: auto;
+  background: var(--surface);
 }
-.identity-target-dialog-item strong,
-.identity-target-dialog-item code {
-  font: 600 .62rem/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+.identity-targets-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.identity-targets-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  border-bottom: 1px solid var(--line-strong);
+  padding: 9px 11px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font-size: .59rem;
+  font-weight: 850;
+  letter-spacing: .045em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.identity-targets-table th:first-child { width: 30%; }
+.identity-targets-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 9px 11px;
+  color: var(--text-soft);
+  font-size: .67rem;
+  vertical-align: top;
+}
+.identity-targets-table tbody tr:last-child td { border-bottom: 0; }
+.identity-targets-table tbody tr:hover td { background: var(--surface-hover); }
+.identity-targets-table strong,
+.identity-targets-table code {
+  font: 600 .64rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
   overflow-wrap: anywhere;
 }
-.identity-target-dialog-item code { color: var(--muted); }
+.identity-targets-table strong { color: var(--text); }
+.identity-targets-table code { color: var(--muted); }
+.identity-targets-empty {
+  margin: 0;
+  padding: 32px 16px;
+  color: var(--muted);
+  font-size: .72rem;
+  text-align: center;
+}
 .identity-targets-dialog-actions {
   display: flex;
   justify-content: flex-end;

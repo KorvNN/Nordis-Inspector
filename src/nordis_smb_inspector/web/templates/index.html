@@ -434,7 +434,26 @@
       <button id="close-identity-targets" class="icon-button" type="button"
         aria-label="Kapat">×</button>
     </div>
-    <div id="identity-targets-list" class="identity-targets-dialog-list"></div>
+    <div class="identity-targets-toolbar">
+      <label class="visually-hidden" for="identity-targets-search">Hedeflerde ara</label>
+      <input id="identity-targets-search" type="search" autocomplete="off"
+        placeholder="Ad veya DN ara">
+      <span id="identity-targets-count" class="identity-targets-count"></span>
+    </div>
+    <div class="identity-targets-table-wrap">
+      <table class="identity-targets-table">
+        <thead>
+          <tr>
+            <th id="identity-targets-name-heading" scope="col">Nesne</th>
+            <th id="identity-targets-dn-heading" scope="col">Distinguished name</th>
+          </tr>
+        </thead>
+        <tbody id="identity-targets-list"></tbody>
+      </table>
+      <p id="identity-targets-empty" class="identity-targets-empty" hidden>
+        Eşleşen hedef yok.
+      </p>
+    </div>
     <div class="identity-targets-dialog-actions">
       <button id="cancel-identity-targets" class="secondary-button" type="button">Kapat</button>
     </div>
