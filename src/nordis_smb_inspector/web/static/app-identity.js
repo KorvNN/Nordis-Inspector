@@ -588,89 +588,14 @@ function appendHighlightedCapabilitySummary(
   }
 }
 
-function aggregateCapabilityTitle(capability) {
-  const count = Number(capability.aggregate_count);
-  const amount = count.toLocaleString(numberLocale());
-  const evidenceState = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
-  const subjects = aggregateSubjectCount(capability);
-  if (capability.capability_id === "all_extended_rights") {
-    if (currentLanguage === "en") {
-      return evidenceState === "unresolved"
-        ? `Extended-right access on ${subjects} could not be resolved`
-        : `An ACL indicates all extended rights on ${subjects}`;
-    }
-    return evidenceState === "unresolved"
-      ? `${subjects} için genişletilmiş haklar kesinleştirilemedi`
-      : `${subjects} için tüm genişletilmiş haklara işaret eden ACL bulundu`;
-  }
-  if (currentLanguage === "en") {
-    const titles = {
-      laps_secret_read: `${amount} LAPS passwords are readable`,
-      gmsa_secret_read: `${amount} gMSA passwords are readable`,
-      directory_replication_read: `${amount} domains expose replication rights`,
-      password_reset: `${amount} account passwords can be reset`,
-      group_membership_write: `Membership of ${amount} groups can be changed`,
-      spn_write: `SPNs on ${amount} accounts can be changed`,
-      account_control_write: `Account-control settings on ${amount} targets can be changed`,
-      key_credential_write: `Key Credentials on ${amount} targets can be changed`,
-      rbcd_write: `RBCD delegation on ${amount} computers can be changed`,
-      dacl_write: `DACLs on ${amount} objects can be changed`,
-      owner_write: `Owners of ${amount} objects can be changed`,
-      object_full_control: `${amount} objects expose full control`,
-      object_property_write: `Properties on ${amount} objects can be changed`,
-      object_delete: `${amount} objects can be deleted`,
-      child_create: `Child objects can be created on ${amount} targets`,
-      child_delete: `Child objects can be deleted on ${amount} targets`,
-    };
-    return titles[capability.capability_id] ?? `${amount} targets expose this AD action`;
-  }
-  const titles = {
-    laps_secret_read: `${amount} LAPS parolası okunabiliyor`,
-    gmsa_secret_read: `${amount} gMSA parolası okunabiliyor`,
-    directory_replication_read: `${amount} domain için replication hakkı bulunuyor`,
-    password_reset: `${amount} hesabın parolası sıfırlanabilir`,
-    group_membership_write: `${amount} grubun üyeliği değiştirilebilir`,
-    spn_write: `${amount} hesabın SPN değeri değiştirilebilir`,
-    account_control_write: `${amount} hedefin hesap denetimi değiştirilebilir`,
-    key_credential_write: `${amount} hedefin Key Credential değeri değiştirilebilir`,
-    rbcd_write: `${amount} bilgisayarın RBCD delegasyonu değiştirilebilir`,
-    dacl_write: `${amount} nesnenin DACL'i değiştirilebilir`,
-    owner_write: `${amount} nesnenin sahibi değiştirilebilir`,
-    object_full_control: `${amount} nesnede tam kontrol yetkisi görünüyor`,
-    object_property_write: `${amount} nesnenin özellikleri değiştirilebilir`,
-    object_delete: `${amount} nesne silinebilir`,
-    child_create: `${amount} hedefte alt nesne oluşturulabilir`,
-    child_delete: `${amount} hedefte alt nesne silinebilir`,
-  };
-  if (titles[capability.capability_id]) return titles[capability.capability_id];
-  if (evidenceState === "verified") return `${amount} hedefte AD eylemi doğrulandı`;
-  if (evidenceState === "unresolved") return `${amount} hedefte AD yetkisi kesinleştirilemedi`;
-  return `${amount} hedefte AD yetkisine işaret eden ACL bulundu`;
-}
-
-function aggregateSubjectCount(capability) {
-  const amount = Number(capability.aggregate_count).toLocaleString(numberLocale());
-  const subjectType = String(capability.subject_type ?? "").toLowerCase();
-  const labels = currentLanguage === "en"
-    ? {
-      user: `${amount} user objects`,
-      group: `${amount} group objects`,
-      computer: `${amount} computer objects`,
-      organizationalunit: `${amount} organizational units`,
-      grouppolicycontainer: `${amount} GPOs`,
-      domaindns: `${amount} domain objects`,
-    }
-    : {
-      user: `${amount} kullanıcı nesnesi`,
-      group: `${amount} grup nesnesi`,
-      computer: `${amount} bilgisayar nesnesi`,
-      organizationalunit: `${amount} organizasyon birimi`,
-      grouppolicycontainer: `${amount} GPO`,
-      domaindns: `${amount} domain nesnesi`,
-    };
-  return labels[subjectType] ?? (currentLanguage === "en"
-    ? `${amount} directory objects`
-    : `${amount} directory nesnesi`);
+function capabilityRightNames(capability) {
+  const aliases = new Map([
+    ["Tüm extended rights", "AllExtendedRights"],
+    ["Tüm genişletilmiş haklar", "AllExtendedRights"],
+    ["All Extended Rights", "AllExtendedRights"],
+  ]);
+  return (Array.isArray(capability.rights) ? capability.rights : [])
+    .map((right) => aliases.get(String(right)) ?? displayValue(right));
 }
 
 function aggregateTargetLabel(capability) {
@@ -747,8 +672,9 @@ function renderIdentityTargetRows() {
 function openIdentityTargetsDialog(capability) {
   identityDialogTargets = Array.isArray(capability.targets) ? capability.targets : [];
   identityTargetsHeading.textContent = aggregateTargetDialogTitle(capability);
-  identityTargetsDescription.textContent = Number(capability.aggregate_count) > 1
-    ? aggregateCapabilityTitle(capability)
+  const rights = capabilityRightNames(capability);
+  identityTargetsDescription.textContent = rights.length > 0
+    ? rights.join(" · ")
     : capabilityTitle(capability);
   closeIdentityTargetsButton.setAttribute(
     "aria-label",
@@ -808,36 +734,24 @@ function capabilityCard(capability, identityPrincipal) {
   card.className = "identity-capability";
   const header = document.createElement("header");
   header.className = "identity-capability-header";
-  const title = document.createElement("h4");
-  title.textContent = Number(capability.aggregate_count) > 1
-    ? aggregateCapabilityTitle(capability)
-    : capabilityTitle(capability);
   const heading = document.createElement("div");
   heading.className = "identity-capability-heading";
-  const categoryKey = capabilityCategory(capability);
-  const category = document.createElement("span");
-  category.className = `identity-category is-${categoryKey.replaceAll("_", "-")}`;
-  category.textContent = capabilityCategoryLabel(categoryKey);
-  heading.append(category);
-  const rights = Array.isArray(capability.rights) ? capability.rights : [];
+  const rights = capabilityRightNames(capability);
   if (rights.length > 0) {
     const rightList = document.createElement("div");
     rightList.className = "identity-heading-rights";
     for (const right of rights) {
       const item = document.createElement("span");
       item.className = "identity-right";
-      item.textContent = [
-        "Tüm extended rights",
-        "Tüm genişletilmiş haklar",
-        "All Extended Rights",
-      ].includes(right)
-        ? "AllExtendedRights"
-        : displayValue(right);
+      item.textContent = right;
       rightList.append(item);
     }
     heading.append(rightList);
+  } else {
+    const fallbackTitle = document.createElement("h4");
+    fallbackTitle.textContent = capabilityTitle(capability);
+    heading.append(fallbackTitle);
   }
-  heading.append(title);
   const evidenceKey = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
   card.classList.add(`is-${evidenceKey.replaceAll("_", "-")}`);
   header.append(heading);
