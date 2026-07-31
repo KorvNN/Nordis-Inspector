@@ -127,6 +127,20 @@ const EVIDENCE_PRIORITY = {
   inferred: 1,
   unresolved: 2,
 };
+const LEGACY_RIGHT_ALIASES = new Map([
+  ["Nesne sahibi (implicit WriteDACL)", "WriteDacl (object owner)"],
+  ["Tam kontrol (GenericAll)", "GenericAll"],
+  ["Genel yazma (GenericWrite)", "GenericWrite"],
+  ["DACL değiştirme", "WriteDacl"],
+  ["Sahip değiştirme", "WriteOwner"],
+  ["Nesneyi silme", "Delete"],
+  ["Alt nesne oluşturma", "CreateChild"],
+  ["Alt nesne silme", "DeleteChild"],
+  ["Tüm özellikleri yazma", "WriteProperty"],
+  ["Tüm extended rights", "AllExtendedRights"],
+  ["Tüm genişletilmiş haklar", "AllExtendedRights"],
+  ["All Extended Rights", "AllExtendedRights"],
+]);
 
 let displayValue;
 let statusTone;
@@ -589,13 +603,19 @@ function appendHighlightedCapabilitySummary(
 }
 
 function capabilityRightNames(capability) {
-  const aliases = new Map([
-    ["Tüm extended rights", "AllExtendedRights"],
-    ["Tüm genişletilmiş haklar", "AllExtendedRights"],
-    ["All Extended Rights", "AllExtendedRights"],
-  ]);
   return (Array.isArray(capability.rights) ? capability.rights : [])
-    .map((right) => aliases.get(String(right)) ?? displayValue(right));
+    .map((right) => {
+      const value = String(right);
+      const alias = LEGACY_RIGHT_ALIASES.get(value);
+      if (alias) return alias;
+      if (value.startsWith("Alt nesne oluşturma (")) {
+        return `CreateChild (${value.slice("Alt nesne oluşturma (".length)}`;
+      }
+      if (value.startsWith("Alt nesne silme (")) {
+        return `DeleteChild (${value.slice("Alt nesne silme (".length)}`;
+      }
+      return displayValue(value);
+    });
 }
 
 function aggregateTargetLabel(capability) {
