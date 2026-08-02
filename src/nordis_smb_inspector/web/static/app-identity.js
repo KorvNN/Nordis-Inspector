@@ -715,6 +715,21 @@ function openIdentityTargetsDialog(capability) {
   identityTargetsSearch.focus();
 }
 
+function capabilityTargetButton(capability) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "identity-target-trigger";
+  const label = document.createElement("span");
+  label.textContent = aggregateTargetLabel(capability);
+  const icon = document.createElement("span");
+  icon.className = "identity-target-trigger-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = "›";
+  button.append(label, icon);
+  button.addEventListener("click", () => openIdentityTargetsDialog(capability));
+  return button;
+}
+
 function groupCapabilities(capabilities) {
   const groups = new Map();
   for (const capability of capabilities) {
@@ -772,6 +787,9 @@ function capabilityCard(capability, identityPrincipal) {
     fallbackTitle.textContent = capabilityTitle(capability);
     heading.append(fallbackTitle);
   }
+  if (Number(capability.aggregate_count) > 1) {
+    heading.append(capabilityTargetButton(capability));
+  }
   const evidenceKey = String(capability.evidence_state ?? "acl_indicated").toLowerCase();
   card.classList.add(`is-${evidenceKey.replaceAll("_", "-")}`);
   header.append(heading);
@@ -807,21 +825,6 @@ function capabilityCard(capability, identityPrincipal) {
     row.append(targetValue);
     metadata.append(row);
     card.append(metadata);
-  }
-
-  if (Number(capability.aggregate_count) > 1) {
-    const targetsButton = document.createElement("button");
-    targetsButton.type = "button";
-    targetsButton.className = "identity-target-trigger";
-    const targetsButtonLabel = document.createElement("span");
-    targetsButtonLabel.textContent = aggregateTargetLabel(capability);
-    const targetsButtonIcon = document.createElement("span");
-    targetsButtonIcon.className = "identity-target-trigger-icon";
-    targetsButtonIcon.setAttribute("aria-hidden", "true");
-    targetsButtonIcon.textContent = "›";
-    targetsButton.append(targetsButtonLabel, targetsButtonIcon);
-    targetsButton.addEventListener("click", () => openIdentityTargetsDialog(capability));
-    card.append(targetsButton);
   }
 
   const nextStepValue = capabilityNextStep(capability);

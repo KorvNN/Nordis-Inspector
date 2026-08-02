@@ -274,14 +274,16 @@
 .identity-heading-rights { display: flex; flex-wrap: wrap; gap: 5px; }
 .identity-capability h4 { margin: 0; font-size: .79rem; line-height: 1.45; }
 .identity-evidence {
+  display: inline-flex;
+  min-height: 28px;
   flex: 0 0 auto;
-  min-height: 22px;
+  align-items: center;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 3px 7px;
-  font-size: .59rem;
+  padding: 5px 8px;
+  font-size: .64rem;
   font-weight: 850;
-  letter-spacing: .04em;
+  letter-spacing: .03em;
   text-transform: uppercase;
 }
 .identity-evidence.is-verified {
@@ -340,36 +342,28 @@
 .identity-target-trigger {
   display: inline-flex;
   width: fit-content;
-  min-height: 32px;
+  min-height: 28px;
   align-items: center;
-  gap: 9px;
-  margin-top: 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--info) 30%, var(--line));
   border-radius: var(--radius-sm);
-  padding: 6px 7px 6px 9px;
-  color: var(--accent);
-  background: var(--accent-dark);
+  padding: 5px 8px;
+  color: var(--info);
+  background: var(--info-soft);
   font-size: .67rem;
   font-weight: 800;
   cursor: pointer;
-  transition: border-color .14s ease, background-color .14s ease, transform .14s ease;
+  transition: border-color .14s ease, background-color .14s ease;
 }
 .identity-target-trigger:hover {
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 15%, var(--surface));
+  border-color: color-mix(in srgb, var(--info) 58%, var(--line));
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 15%, var(--surface));
   filter: none;
-  transform: translateY(-1px);
 }
 .identity-target-trigger-icon {
-  display: grid;
-  width: 18px;
-  height: 18px;
-  place-items: center;
-  border-radius: 50%;
-  color: #07120e;
-  background: var(--accent);
-  font-size: 1rem;
+  color: inherit;
+  font-size: .9rem;
   line-height: 1;
 }
 .identity-targets-dialog::backdrop { background: rgb(2 5 10 / 78%); }
