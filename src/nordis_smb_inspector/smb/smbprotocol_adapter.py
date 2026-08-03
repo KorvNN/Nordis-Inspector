@@ -427,6 +427,12 @@ def _signing_algorithm(
     if not supported:
         return None, None
     if dialect == 0x0311:
+        # SMB2_SIGNING_CAPABILITIES is optional. smbprotocol itself falls back
+        # to AES-CMAC for SMB 3.1.1 when the server omits that negotiate
+        # context, so expose the same effective algorithm instead of rejecting
+        # an otherwise usable connection.
+        if native.signing_algorithm_id is None:
+            return "AES-128-CMAC", AlgorithmSource.DIALECT_INFERRED
         algorithm_id = _required_integer(native.signing_algorithm_id, "signing_algorithm_id")
         try:
             return _SIGNING_ALGORITHMS[algorithm_id], AlgorithmSource.NEGOTIATED
