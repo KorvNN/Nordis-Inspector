@@ -622,14 +622,14 @@ function aggregateTargetLabel(capability) {
   const count = Number(capability.aggregate_count);
   const amount = count.toLocaleString(numberLocale());
   const subjectType = String(capability.subject_type ?? "").toLowerCase();
-  if (currentLanguage === "en") return `Inspect ${amount} targets`;
+  if (currentLanguage === "en") return `View ${amount} targets`;
   const labels = {
-    user: `${amount} kullanıcıyı incele`,
-    group: `${amount} grubu incele`,
-    computer: `${amount} bilgisayarı incele`,
-    gmsa: `${amount} gMSA hesabını incele`,
+    user: `${amount} kullanıcıyı görüntüle`,
+    group: `${amount} grubu görüntüle`,
+    computer: `${amount} bilgisayarı görüntüle`,
+    gmsa: `${amount} gMSA hesabını görüntüle`,
   };
-  return labels[subjectType] ?? `${amount} hedefi incele`;
+  return labels[subjectType] ?? `${amount} hedefi görüntüle`;
 }
 
 function aggregateTargetDialogTitle(capability) {
