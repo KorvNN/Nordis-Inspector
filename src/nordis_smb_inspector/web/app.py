@@ -18,9 +18,14 @@ import anyio
 from jinja2 import Environment, PackageLoader, select_autoescape
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from starlette.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+    StreamingResponse,
+)
 from starlette.routing import Route
 
 from nordis_smb_inspector.core.access_pipeline import (
@@ -109,6 +114,7 @@ from nordis_smb_inspector.web.security import (
     HttpErrorCode,
     SafeHttpError,
     apply_security_headers,
+    expected_panel_origin,
     require_post_security,
 )
 
@@ -138,6 +144,7 @@ _templates = Environment(
 
 @dataclass(slots=True)
 class WebRuntime:
+    host: str
     port: int
     csrf: CsrfNonce
     sessions: ScanSessionManager
@@ -344,6 +351,33 @@ class SecurityHeadersMiddleware:
         await self.app(scope, receive, secure_send)
 
 
+class PanelHostMiddleware:
+    """Accept only numeric local addresses served by the configured listener."""
+
+    def __init__(self, app: Any, *, bind_host: str, port: int) -> None:
+        self.app = app
+        self.bind_host = bind_host
+        self.port = port
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            headers = {
+                name.decode("latin-1").casefold(): value.decode("latin-1")
+                for name, value in scope.get("headers", ())
+            }
+            try:
+                expected_panel_origin(
+                    headers.get("host"),
+                    port=self.port,
+                    bind_host=self.bind_host,
+                )
+            except (TypeError, ValueError):
+                response = PlainTextResponse("Invalid host header", status_code=400)
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 class AccessInspector(Protocol):
     def __call__(self, **kwargs: object) -> InspectionResult: ...
 
@@ -373,6 +407,7 @@ class _CancellationBridge:
 
 def create_app(
     *,
+    host: str = "127.0.0.1",
     port: int = 8765,
     connector: Any | None = None,
     authenticator: Any | None = None,
@@ -388,6 +423,7 @@ def create_app(
     ] = discover_directory_hostname,
 ) -> Starlette:
     runtime = WebRuntime(
+        host=host,
         port=port,
         csrf=CsrfNonce(),
         sessions=ScanSessionManager(),
@@ -418,7 +454,7 @@ def create_app(
     ]
     middleware = [
         Middleware(SecurityHeadersMiddleware),
-        Middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1"]),
+        Middleware(PanelHostMiddleware, bind_host=host, port=port),
     ]
     app = Starlette(
         debug=False,
@@ -436,7 +472,11 @@ async def homepage(request: Request) -> HTMLResponse:
     return HTMLResponse(
         template.render(
             csrf_token=runtime.csrf.value,
-            app_origin=f"http://127.0.0.1:{runtime.port}",
+            app_origin=expected_panel_origin(
+                request.headers.get("host"),
+                port=runtime.port,
+                bind_host=runtime.host,
+            ),
         )
     )
 
@@ -1694,9 +1734,11 @@ def _runtime(request: Request) -> WebRuntime:
 def _protect_post(request: Request, runtime: WebRuntime) -> None:
     require_post_security(
         origin=request.headers.get("origin"),
+        host=request.headers.get("host"),
         csrf_candidate=request.headers.get(CSRF_HEADER_NAME),
         csrf_nonce=runtime.csrf,
         port=runtime.port,
+        bind_host=runtime.host,
     )
 
 

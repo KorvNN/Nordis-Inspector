@@ -20,7 +20,7 @@ dashboard.
 ./setup.sh
 ./run.sh
 
-# Open http://127.0.0.1:8765
+# Open one of the LAN addresses printed by the command
 ```
 
 To use another local port:
@@ -28,6 +28,15 @@ To use another local port:
 ```bash
 ./run.sh --port 9000
 ```
+
+The panel listens on local IPv4 interfaces by default. To restrict it to this
+machine:
+
+```bash
+./run.sh --host 127.0.0.1
+```
+
+The panel uses plain HTTP, so do not expose it to an untrusted network.
 
 ## Safety
 

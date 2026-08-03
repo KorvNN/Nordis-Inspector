@@ -1,4 +1,4 @@
-"""Security primitives for the loopback-only web application.
+"""Security primitives for the local web application.
 
 The module is deliberately framework-neutral. Route and middleware adapters can
 translate :class:`SafeHttpError` into a response without ever accepting a raw
@@ -8,9 +8,11 @@ exception message as browser-visible content.
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import secrets
 from collections.abc import MutableMapping
 from enum import StrEnum
+from urllib.parse import urlsplit
 
 CSRF_HEADER_NAME = "X-CSRF-Token"
 _MINIMUM_NONCE_BYTES = 32
@@ -156,14 +158,75 @@ def expected_loopback_origin(port: int) -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def require_same_origin(origin: object, *, port: int) -> None:
-    """Reject missing, malformed, or non-loopback Origin header values.
+def expected_panel_origin(
+    host: object,
+    *,
+    port: int,
+    bind_host: str = "127.0.0.1",
+) -> str:
+    """Validate an IP-based Host header and return its serialized HTTP origin."""
+
+    if isinstance(port, bool) or not isinstance(port, int):
+        raise TypeError("port must be an integer")
+    if not 1 <= port <= 65535:
+        raise ValueError("port must be between 1 and 65535")
+    try:
+        bound_address = ipaddress.IPv4Address(bind_host)
+    except (ipaddress.AddressValueError, TypeError) as exc:
+        raise ValueError("bind_host must be an IPv4 address") from exc
+    if not isinstance(host, str) or not host.isascii():
+        raise ValueError("host must be ASCII text")
+    try:
+        parsed = urlsplit(f"http://{host}")
+        request_port = parsed.port
+        request_address = ipaddress.IPv4Address(parsed.hostname or "")
+    except (ValueError, ipaddress.AddressValueError) as exc:
+        raise ValueError("host must contain an IPv4 address and port") from exc
+    if (
+        parsed.username is not None
+        or parsed.password is not None
+        or parsed.path != ""
+        or parsed.query != ""
+        or parsed.fragment != ""
+        or request_port != port
+        or host != f"{request_address.compressed}:{port}"
+    ):
+        raise ValueError("host is not an exact panel address")
+    if bound_address.is_unspecified:
+        allowed = (
+            not request_address.is_unspecified
+            and not request_address.is_multicast
+            and (request_address.is_loopback or request_address.is_private
+                 or request_address.is_link_local)
+        )
+    else:
+        allowed = request_address == bound_address
+    if not allowed:
+        raise ValueError("host is outside the bound local address")
+    return f"http://{request_address.compressed}:{port}"
+
+
+def require_same_origin(
+    origin: object,
+    *,
+    port: int,
+    host: object | None = None,
+    bind_host: str = "127.0.0.1",
+) -> None:
+    """Reject missing, malformed, or non-local Origin header values.
 
     Exact serialized-origin matching intentionally rejects aliases such as
     ``localhost``, trailing slashes, user-info, multiple values, and HTTPS.
     """
 
-    expected = expected_loopback_origin(port)
+    try:
+        expected = (
+            expected_loopback_origin(port)
+            if host is None
+            else expected_panel_origin(host, port=port, bind_host=bind_host)
+        )
+    except (TypeError, ValueError) as exc:
+        raise SafeHttpError(HttpErrorCode.SAME_ORIGIN_REQUIRED) from exc
     if not isinstance(origin, str) or not origin.isascii():
         raise SafeHttpError(HttpErrorCode.SAME_ORIGIN_REQUIRED)
     if not hmac.compare_digest(origin, expected):
@@ -176,12 +239,14 @@ def require_post_security(
     csrf_candidate: object,
     csrf_nonce: CsrfNonce,
     port: int,
+    host: object | None = None,
+    bind_host: str = "127.0.0.1",
 ) -> None:
     """Apply the mandatory origin and nonce checks for a POST request."""
 
     if not isinstance(csrf_nonce, CsrfNonce):
         raise TypeError("csrf_nonce must be a CsrfNonce")
-    require_same_origin(origin, port=port)
+    require_same_origin(origin, port=port, host=host, bind_host=bind_host)
     csrf_nonce.require(csrf_candidate)
 
 
