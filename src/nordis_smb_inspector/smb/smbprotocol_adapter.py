@@ -449,6 +449,11 @@ def _encryption_supported(native: _NativeConnection, dialect: int) -> bool:
     if dialect < 0x0300:
         return False
     if native.supports_encryption is None:
+        # SMB 3.1.1 advertises encryption through an optional negotiate
+        # context. Its absence means no encryption algorithm was selected; it
+        # does not invalidate an otherwise usable unencrypted connection.
+        if dialect == 0x0311:
+            return False
         raise NegotiationMetadataError("SMB encryption capability metadata was missing.")
     if not isinstance(native.supports_encryption, bool):
         raise NegotiationMetadataError("SMB encryption capability metadata was invalid.")
