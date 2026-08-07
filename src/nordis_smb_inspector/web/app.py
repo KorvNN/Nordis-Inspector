@@ -964,6 +964,7 @@ def _run_access_scan(
             authenticator=runtime.authenticator,
             file_adapter=runtime.file_adapter,
             share_discoverer=runtime.share_discoverer,
+            known_share_names=options.known_shares,
             cancellation=target_cancellation,
             detect_patterns=options.detect_patterns,
             pattern_rules=detection_rules_for_packs(options.rule_packs),
@@ -1618,6 +1619,7 @@ def _public_scan_inputs(
             "additional_terms_input": "\n".join(options.terms),
             "detect_patterns": options.detect_patterns,
             "rule_packs": [pack.value for pack in options.rule_packs],
+            "known_shares": list(options.known_shares),
         },
     }
 

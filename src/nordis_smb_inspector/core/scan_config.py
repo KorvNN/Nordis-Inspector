@@ -13,6 +13,8 @@ from nordis_smb_inspector.core.detection import (
 
 MIN_MAX_DEPTH = 1
 MAX_MAX_DEPTH = 256
+MAX_KNOWN_SHARES = 64
+MAX_SHARE_NAME_LENGTH = 80
 
 
 class ScanConfigError(ValueError):
@@ -31,6 +33,7 @@ class ScanOptions:
     max_depth: int
     detect_patterns: bool = True
     rule_packs: tuple[DetectionRulePack, ...] = DEFAULT_DETECTION_RULE_PACKS
+    known_shares: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         terms = _normalize_values(self.terms, "Search terms must be text.")
@@ -38,6 +41,7 @@ class ScanOptions:
         if not isinstance(self.detect_patterns, bool):
             raise ScanConfigError("Pattern detection selection must be a boolean.")
         rule_packs = _validate_rule_packs(self.rule_packs)
+        known_shares = _normalize_share_names(self.known_shares)
         if self.detect_patterns and not rule_packs:
             raise ScanConfigError("At least one detection rule pack is required.")
         if not terms and not self.detect_patterns:
@@ -46,12 +50,14 @@ class ScanOptions:
             )
         object.__setattr__(self, "terms", terms)
         object.__setattr__(self, "rule_packs", rule_packs)
+        object.__setattr__(self, "known_shares", known_shares)
 
     def __repr__(self) -> str:
         return (
             f"ScanOptions(terms=<redacted {len(self.terms)} entries>, "
             f"max_depth={self.max_depth!r}, detect_patterns={self.detect_patterns!r}, "
-            f"rule_packs={len(self.rule_packs)} selected)"
+            f"rule_packs={len(self.rule_packs)} selected, "
+            f"known_shares=<redacted {len(self.known_shares)} entries>)"
         )
 
 
@@ -82,12 +88,18 @@ def parse_scan_options(search: object, max_depth: object) -> ScanOptions:
         rule_packs = tuple(dict.fromkeys(DetectionRulePack(pack) for pack in raw_rule_packs))
     except ValueError:
         raise ScanConfigError("Detection rule pack is unknown.") from None
+    raw_known_shares = search.get("known_shares", [])
+    if not isinstance(raw_known_shares, list):
+        raise ScanConfigError("Known share names must be an array.")
+    if not all(isinstance(name, str) for name in raw_known_shares):
+        raise ScanConfigError("Each known share name must be text.")
 
     return ScanOptions(
         terms=_normalize_values(additional_terms, "Search terms must be text."),
         max_depth=_validate_max_depth(max_depth),
         detect_patterns=detect_patterns,
         rule_packs=rule_packs,
+        known_shares=_normalize_share_names(raw_known_shares),
     )
 
 
@@ -125,6 +137,31 @@ def _normalize_values(values: Iterable[Any], item_error: str) -> tuple[str, ...]
         seen.add(comparison_key)
         result.append(cleaned)
     return tuple(result)
+
+
+def _normalize_share_names(values: Iterable[Any]) -> tuple[str, ...]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            raise ScanConfigError("Each known share name must be text.")
+        candidate = value.strip()
+        if not candidate:
+            continue
+        if len(candidate) > MAX_SHARE_NAME_LENGTH:
+            raise ScanConfigError("Share names can contain at most 80 characters.")
+        if candidate in {".", ".."} or any(
+            character in candidate for character in ("/", "\\", "\x00", "\r", "\n")
+        ):
+            raise ScanConfigError("A known share name is invalid.")
+        folded = candidate.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        normalized.append(candidate)
+        if len(normalized) > MAX_KNOWN_SHARES:
+            raise ScanConfigError("At most 64 known share names may be supplied.")
+    return tuple(normalized)
 
 
 def _validate_max_depth(value: object) -> int:

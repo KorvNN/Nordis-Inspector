@@ -297,6 +297,7 @@ const ERROR_MESSAGE_LABELS = {
   "The file is visible but read access was denied.": "Dosya görünüyor fakat okuma erişimi reddedildi.",
   "The visible file could not be opened for reading.": "Görünen dosya okumak için açılamadı.",
   "The target inspection completed with inaccessible content.": "Hedef incelemesi erişilemeyen içerikle tamamlandı.",
+  "Share listing was unavailable; known share names were probed directly.": "Share listesi alınamadı; bilinen share adları doğrudan denendi.",
 };
 const LANGUAGE_KEY = "nordis.dashboard-language";
 let currentLanguage = (() => {
@@ -379,6 +380,9 @@ const LANGUAGE_TEXT = {
     "IP, CIDR veya hostname": "IP, CIDR, or hostname",
     "Tarama adı": "Scan name",
     "Virgül veya yeni satırla ayır.": "Separate with commas or new lines.",
+    "Bilinen SMB share adları (isteğe bağlı)": "Known SMB share names (optional)",
+    "Share listesi alınamazsa bu adlar doğrudan denenir.": "These names are probed directly if share listing is unavailable.",
+    "Doğrudan denenecek share adları": "Share names probed directly",
     "Kimlik bilgisi": "Credentials",
     "Kullanıcı": "Username",
     "Kullanıcı (isteğe bağlı)": "Username (optional)",

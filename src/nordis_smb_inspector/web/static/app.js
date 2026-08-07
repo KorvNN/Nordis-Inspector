@@ -47,6 +47,7 @@ const languageSelect = document.querySelector("#language-select");
 const csrfToken = body.dataset.csrfToken;
 const origin = body.dataset.origin;
 const targets = document.querySelector("#targets");
+const knownSharesInput = document.querySelector("#known-shares");
 const scanName = document.querySelector("#scan-name");
 const credentialDomain = document.querySelector("#credential-domain");
 const credentialUsername = document.querySelector("#credential-username");
@@ -1570,7 +1571,17 @@ function scanSearchOptions() {
     additional_terms: additionalSearchTerms(),
     detect_patterns: detectPatternsInput.checked,
     rule_packs: selectedRulePacks(),
+    known_shares: knownShareNames(),
   };
+}
+
+function knownShareNames() {
+  return [...new Set(
+    knownSharesInput.value
+      .split(/[\n,]+/u)
+      .map((name) => name.trim())
+      .filter(Boolean),
+  )];
 }
 
 function scanTargetInputs(value) {
@@ -1607,6 +1618,8 @@ function captureScanInputs(credential, search) {
       additional_terms_input: additionalTermsInput.value.trim(),
       detect_patterns: search.detect_patterns,
       rule_packs: [...search.rule_packs],
+      known_shares: [...search.known_shares],
+      known_shares_input: knownSharesInput.value.trim(),
     },
   };
 }
@@ -1624,6 +1637,9 @@ function scanInputsFromServer(state) {
     : [];
   const rulePacks = Array.isArray(search.rule_packs)
     ? search.rule_packs.filter((pack) => typeof pack === "string")
+    : [];
+  const knownShares = Array.isArray(search.known_shares)
+    ? search.known_shares.filter((name) => typeof name === "string")
     : [];
   return {
     name: typeof inputs.name === "string" ? inputs.name : "",
@@ -1652,6 +1668,10 @@ function scanInputsFromServer(state) {
         : additionalTerms.join("\n"),
       detect_patterns: search.detect_patterns === true,
       rule_packs: rulePacks,
+      known_shares: knownShares,
+      known_shares_input: typeof search.known_shares_input === "string"
+        ? search.known_shares_input
+        : knownShares.join("\n"),
     },
   };
 }
