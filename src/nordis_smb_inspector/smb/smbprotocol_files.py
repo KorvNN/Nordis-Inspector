@@ -309,7 +309,10 @@ class SmbProtocolFileAdapter:
         *,
         tree_factory: _TreeFactory = InspectableTreeConnect,
         open_factory: _OpenFactory = Open,
-        require_secure_negotiate: bool = True,
+        # VALIDATE_NEGOTIATE_INFO is optional hardening and is not implemented
+        # consistently by every SMB 2/3 server. Do not make it a prerequisite
+        # for read access unless a caller explicitly requests that policy.
+        require_secure_negotiate: bool = False,
         query_max_output: int = 65_536,
         max_range_size: int = 1_048_576,
     ) -> None:

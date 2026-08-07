@@ -33,9 +33,12 @@ class ConnectRequest:
     target: str = field(repr=False)
     port: int = 445
     timeout_seconds: float = 5.0
-    require_signing: bool = True
+    # Inventory scans should not reject an otherwise usable server because the
+    # client asked for stronger transport policy than the server requires.
+    # Server-required signing/encryption is still honoured by the SMB library.
+    require_signing: bool = False
     require_encryption: bool = False
-    require_secure_negotiate: bool = True
+    require_secure_negotiate: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.target, str) or not self.target.strip():

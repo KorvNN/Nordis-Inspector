@@ -80,9 +80,11 @@ class PipelineSettings:
     timeout_seconds: float = 5.0
     max_concurrency: int = 32
     cancellation_poll_seconds: float = 0.05
-    require_signing: bool = True
+    # Keep discovery access-first; negotiated security is evidence, not a
+    # client-side admission requirement unless a caller explicitly opts in.
+    require_signing: bool = False
     require_encryption: bool = False
-    require_secure_negotiate: bool = True
+    require_secure_negotiate: bool = False
 
     def __post_init__(self) -> None:
         # Reuse the adapter's request validation for transport/policy fields.
