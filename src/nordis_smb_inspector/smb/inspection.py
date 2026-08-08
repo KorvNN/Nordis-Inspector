@@ -808,7 +808,11 @@ def _walk_share(
             counts.inventory_items += 1
             _publish(on_inventory, entry)
             if entry.kind is not InventoryEntryKind.FILE:
-                if entry.status is InventoryStatus.DIRECTORY_LIST_DENIED:
+                if entry.status in {
+                    InventoryStatus.DIRECTORY_LIST_DENIED,
+                    InventoryStatus.DIRECTORY_LIST_ERROR,
+                    InventoryStatus.ENTRY_ERROR,
+                }:
                     partial = True
                 continue
             counts.files_seen += 1

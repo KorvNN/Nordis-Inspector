@@ -566,7 +566,7 @@ class SmbProtocolFileAdapter:
             raise
         except Exception as exception:
             _try_close_open(directory)
-            yield _directory_denied(
+            yield _directory_failure(
                 target,
                 share_name,
                 display_path,
@@ -584,49 +584,32 @@ class SmbProtocolFileAdapter:
                     status=InventoryStatus.DIRECTORY_LISTABLE,
                 )
             batch = first_batch
+            entry_sequence = 0
             while True:
                 for raw_entry in batch:
                     cancellation.raise_if_cancelled()
-                    name = _entry_name(raw_entry)
-                    if name in {".", ".."}:
-                        continue
-                    attributes = _field_value(raw_entry, "file_attributes")
-                    child_native = _join_native(native_path, name)
-                    child_display = _join_display(display_path, name)
-                    is_directory = bool(attributes & FileAttributes.FILE_ATTRIBUTE_DIRECTORY)
-                    is_reparse = bool(attributes & FileAttributes.FILE_ATTRIBUTE_REPARSE_POINT)
-                    if is_directory:
-                        child_depth = depth + 1
-                        if is_reparse or child_depth > max_depth:
-                            yield InventoryEntry(
-                                target=target,
-                                share_name=share_name,
-                                relative_path=child_display,
-                                kind=InventoryEntryKind.DIRECTORY,
-                                status=InventoryStatus.DEPTH_LIMIT_REACHED,
-                            )
-                        else:
-                            yield from self._walk_directory(
-                                tree=tree,
-                                target=target,
-                                share_name=share_name,
-                                native_path=child_native,
-                                display_path=child_display,
-                                depth=child_depth,
-                                max_depth=max_depth,
-                                include_self=True,
-                                cancellation=cancellation,
-                            )
-                    else:
-                        yield self._file_inventory(
+                    entry_sequence += 1
+                    try:
+                        yield from self._walk_directory_entry(
                             tree=tree,
                             target=target,
                             share_name=share_name,
-                            native_path=child_native,
-                            display_path=child_display,
                             raw_entry=raw_entry,
-                            is_reparse=is_reparse,
+                            native_path=native_path,
+                            display_path=display_path,
+                            depth=depth,
+                            max_depth=max_depth,
                             cancellation=cancellation,
+                        )
+                    except ScanCancelled:
+                        raise
+                    except Exception as exception:
+                        yield _directory_entry_error(
+                            target,
+                            share_name,
+                            display_path,
+                            entry_sequence,
+                            exception,
                         )
 
                 if not batch:
@@ -643,7 +626,7 @@ class SmbProtocolFileAdapter:
                 except ScanCancelled:
                     raise
                 except Exception as exception:
-                    yield _directory_denied(
+                    yield _directory_failure(
                         target,
                         share_name,
                         display_path,
@@ -652,6 +635,61 @@ class SmbProtocolFileAdapter:
                     break
         finally:
             _try_close_open(directory)
+
+    def _walk_directory_entry(
+        self,
+        *,
+        tree: _NativeTree,
+        target: str,
+        share_name: str,
+        raw_entry: object,
+        native_path: str,
+        display_path: str,
+        depth: int,
+        max_depth: int,
+        cancellation: CancellationToken,
+    ) -> Iterator[InventoryEntry]:
+        name = _entry_name(raw_entry)
+        if name in {".", ".."}:
+            return
+        attributes = _field_value(raw_entry, "file_attributes")
+        child_native = _join_native(native_path, name)
+        child_display = _join_display(display_path, name)
+        is_directory = bool(attributes & FileAttributes.FILE_ATTRIBUTE_DIRECTORY)
+        is_reparse = bool(attributes & FileAttributes.FILE_ATTRIBUTE_REPARSE_POINT)
+        if is_directory:
+            child_depth = depth + 1
+            if is_reparse or child_depth > max_depth:
+                yield InventoryEntry(
+                    target=target,
+                    share_name=share_name,
+                    relative_path=child_display,
+                    kind=InventoryEntryKind.DIRECTORY,
+                    status=InventoryStatus.DEPTH_LIMIT_REACHED,
+                )
+                return
+            yield from self._walk_directory(
+                tree=tree,
+                target=target,
+                share_name=share_name,
+                native_path=child_native,
+                display_path=child_display,
+                depth=child_depth,
+                max_depth=max_depth,
+                include_self=True,
+                cancellation=cancellation,
+            )
+            return
+        yield self._file_inventory(
+            tree=tree,
+            target=target,
+            share_name=share_name,
+            native_path=child_native,
+            display_path=child_display,
+            raw_entry=raw_entry,
+            is_reparse=is_reparse,
+            cancellation=cancellation,
+        )
 
     def _file_inventory(
         self,
@@ -929,19 +967,33 @@ def _share_failure(target: str, name: str, exception: BaseException) -> KnownSha
     return KnownShareProbe(share=share, inventory=inventory)
 
 
-def _directory_denied(
+def _directory_failure(
     target: str,
     share_name: str,
     display_path: str,
     exception: BaseException,
 ) -> InventoryEntry:
+    raw_code = _raw_code(exception)
+    denied = isinstance(exception, AccessDenied) or raw_code == 0xC0000022
+    status = (
+        InventoryStatus.DIRECTORY_LIST_DENIED
+        if denied
+        else InventoryStatus.DIRECTORY_LIST_ERROR
+    )
+    target_status = (
+        TargetStatus.DIRECTORY_LIST_DENIED if denied else TargetStatus.DIRECTORY_LIST_ERROR
+    )
     detail = SmbErrorDetail(
         stage=TargetStage.TREE_WALK,
-        status=TargetStatus.DIRECTORY_LIST_DENIED,
+        status=target_status,
         operation="directory_list",
-        raw_code=_raw_code(exception),
-        symbolic_name=_STATUS_NAMES.get(_raw_code(exception), "DIRECTORY_LIST_ERROR"),
-        safe_message="The directory could not be listed.",
+        raw_code=raw_code,
+        symbolic_name=_STATUS_NAMES.get(raw_code, target_status.value.upper()),
+        safe_message=(
+            "Directory listing was denied."
+            if denied
+            else "The directory could not be listed completely."
+        ),
         target=target,
         path=display_path,
     )
@@ -950,7 +1002,36 @@ def _directory_denied(
         share_name=share_name,
         relative_path=display_path,
         kind=InventoryEntryKind.DIRECTORY,
-        status=InventoryStatus.DIRECTORY_LIST_DENIED,
+        status=status,
+        error=detail,
+    )
+
+
+def _directory_entry_error(
+    target: str,
+    share_name: str,
+    display_path: str,
+    sequence: int,
+    exception: BaseException,
+) -> InventoryEntry:
+    placeholder = _join_display(display_path, f"<entry-error-{sequence}>")
+    raw_code = _raw_code(exception)
+    detail = SmbErrorDetail(
+        stage=TargetStage.TREE_WALK,
+        status=TargetStatus.DIRECTORY_LIST_ERROR,
+        operation="directory_entry_parse",
+        raw_code=raw_code,
+        symbolic_name=_STATUS_NAMES.get(raw_code, "DIRECTORY_ENTRY_INVALID"),
+        safe_message="One directory entry was invalid; the remaining entries were inspected.",
+        target=target,
+        path=placeholder,
+    )
+    return InventoryEntry(
+        target=target,
+        share_name=share_name,
+        relative_path=placeholder,
+        kind=InventoryEntryKind.OTHER,
+        status=InventoryStatus.ENTRY_ERROR,
         error=detail,
     )
 

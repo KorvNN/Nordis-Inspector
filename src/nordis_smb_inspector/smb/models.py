@@ -425,6 +425,7 @@ class InventoryEntryKind(StrEnum):
     SHARE = "share"
     DIRECTORY = "directory"
     FILE = "file"
+    OTHER = "other"
 
 
 class InventoryStatus(StrEnum):
@@ -433,11 +434,13 @@ class InventoryStatus(StrEnum):
     NON_FILE_SHARE = "non_file_share"
     DIRECTORY_LISTABLE = "directory_listable"
     DIRECTORY_LIST_DENIED = "directory_list_denied"
+    DIRECTORY_LIST_ERROR = "directory_list_error"
     DEPTH_LIMIT_REACHED = "depth_limit_reached"
     FILE_READABLE = "file_readable"
     FILE_READ_DENIED = "file_read_denied"
     SHARING_VIOLATION = "sharing_violation"
     READ_ERROR = "read_error"
+    ENTRY_ERROR = "entry_error"
 
 
 class WriteAccessStatus(StrEnum):
@@ -462,6 +465,7 @@ _INVENTORY_STATUSES: dict[InventoryEntryKind, frozenset[InventoryStatus]] = {
         {
             InventoryStatus.DIRECTORY_LISTABLE,
             InventoryStatus.DIRECTORY_LIST_DENIED,
+            InventoryStatus.DIRECTORY_LIST_ERROR,
             InventoryStatus.DEPTH_LIMIT_REACHED,
         }
     ),
@@ -473,15 +477,18 @@ _INVENTORY_STATUSES: dict[InventoryEntryKind, frozenset[InventoryStatus]] = {
             InventoryStatus.READ_ERROR,
         }
     ),
+    InventoryEntryKind.OTHER: frozenset({InventoryStatus.ENTRY_ERROR}),
 }
 
 _INVENTORY_ERROR_STATUSES = frozenset(
     {
         InventoryStatus.SHARE_ACCESS_DENIED,
         InventoryStatus.DIRECTORY_LIST_DENIED,
+        InventoryStatus.DIRECTORY_LIST_ERROR,
         InventoryStatus.FILE_READ_DENIED,
         InventoryStatus.SHARING_VIOLATION,
         InventoryStatus.READ_ERROR,
+        InventoryStatus.ENTRY_ERROR,
     }
 )
 
@@ -556,9 +563,11 @@ class InventoryEntry:
             expected = {
                 InventoryStatus.SHARE_ACCESS_DENIED: TargetStatus.ACCESS_DENIED,
                 InventoryStatus.DIRECTORY_LIST_DENIED: TargetStatus.DIRECTORY_LIST_DENIED,
+                InventoryStatus.DIRECTORY_LIST_ERROR: TargetStatus.DIRECTORY_LIST_ERROR,
                 InventoryStatus.FILE_READ_DENIED: TargetStatus.FILE_READ_DENIED,
                 InventoryStatus.SHARING_VIOLATION: TargetStatus.SHARING_VIOLATION,
                 InventoryStatus.READ_ERROR: TargetStatus.FILE_READ_ERROR,
+                InventoryStatus.ENTRY_ERROR: TargetStatus.DIRECTORY_LIST_ERROR,
             }[self.status]
             if self.error.status is not expected:
                 raise ValueError("Inventory status and error status must agree.")
