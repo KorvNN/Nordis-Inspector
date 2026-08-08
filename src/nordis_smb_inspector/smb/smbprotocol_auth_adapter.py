@@ -26,7 +26,9 @@ from spnego.exceptions import (
     BadMechanismError,
     BadNameError,
     CredentialsExpiredError,
+    FeatureMissingError,
     InvalidCredentialError,
+    NoCredentialError,
     OperationNotAvailableError,
 )
 
@@ -80,6 +82,7 @@ _KRB_KDC = frozenset({-1765328355, -1765328299, -1765328298, -1765328228})
 
 _SEC_E_TARGET_UNKNOWN = 0x80090303
 _SEC_E_SECPKG_NOT_FOUND = 0x80090305
+_SEC_E_NO_CREDENTIALS = 0x8009030E
 _SEC_E_NO_AUTHENTICATING_AUTHORITY = 0x80090311
 _SEC_E_TIME_SKEW = 0x80090324
 _STATUS_NO_LOGON_SERVERS = 0xC000005E
@@ -683,7 +686,11 @@ def classify_authentication_exception(
     safe_message = "SMB authentication failed."
     retryable = False
 
-    if any(isinstance(item, BadNameError) for item in chain) or signed_minor_codes & _KRB_SPNS:
+    if (
+        any(isinstance(item, BadNameError) for item in chain)
+        or signed_minor_codes & _KRB_SPNS
+        or raw_code == _SEC_E_TARGET_UNKNOWN
+    ):
         symbolic_name = "KERBEROS_SPN_NOT_FOUND"
         safe_message = "The Kerberos service principal could not be resolved."
         fallback_reason = FallbackReason.SPN_NOT_FOUND
@@ -699,6 +706,7 @@ def classify_authentication_exception(
         signed_minor_codes & _KRB_KDC
         or raw_code in {_SEC_E_NO_AUTHENTICATING_AUTHORITY, _STATUS_NO_LOGON_SERVERS}
         or os_error_number in _NETWORK_ERRNOS
+        or any(isinstance(item, socket.gaierror) for item in chain)
         or any(isinstance(item, (TimeoutError, socket.timeout)) for item in chain)
     ):
         symbolic_name = "KERBEROS_KDC_UNREACHABLE"
@@ -706,8 +714,17 @@ def classify_authentication_exception(
         fallback_reason = FallbackReason.KDC_UNREACHABLE
         retryable = True
     elif any(
-        isinstance(item, (BadMechanismError, OperationNotAvailableError)) for item in chain
-    ) or raw_code == _SEC_E_SECPKG_NOT_FOUND:
+        isinstance(
+            item,
+            (
+                BadMechanismError,
+                FeatureMissingError,
+                NoCredentialError,
+                OperationNotAvailableError,
+            ),
+        )
+        for item in chain
+    ) or raw_code in {_SEC_E_SECPKG_NOT_FOUND, _SEC_E_NO_CREDENTIALS}:
         symbolic_name = "KERBEROS_MECHANISM_UNAVAILABLE"
         safe_message = "Kerberos is unavailable in the local authentication stack."
         fallback_reason = FallbackReason.UNSUPPORTED_MECHANISM
