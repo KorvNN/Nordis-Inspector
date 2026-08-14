@@ -68,13 +68,8 @@ _DEPENDENCY_LOGGERS = (
     "smbprotocol.tree",
 )
 
-_DIRECTORY_ACCESS = (
-    DirectoryAccessMask.FILE_LIST_DIRECTORY | DirectoryAccessMask.FILE_READ_ATTRIBUTES
-)
-_FILE_ACCESS = (
-    FilePipePrinterAccessMask.FILE_READ_DATA
-    | FilePipePrinterAccessMask.FILE_READ_ATTRIBUTES
-)
+_DIRECTORY_ACCESS = DirectoryAccessMask.FILE_LIST_DIRECTORY
+_FILE_ACCESS = FilePipePrinterAccessMask.FILE_READ_DATA
 _SHARE_ACCESS = (
     ShareAccess.FILE_SHARE_READ
     | ShareAccess.FILE_SHARE_WRITE
