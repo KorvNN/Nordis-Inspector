@@ -278,13 +278,17 @@ def negotiation_info_from_native(native: _NativeConnection) -> NegotiationInfo:
     if max_read_size < 1:
         raise NegotiationMetadataError("The negotiated SMB read size was invalid.")
 
-    security_mode = _required_integer(native.server_security_mode, "server_security_mode")
-    signing_required = bool(
-        security_mode & SecurityMode.SMB2_NEGOTIATE_SIGNING_REQUIRED
-    )
-    signing_supported = signing_required or bool(
-        security_mode & SecurityMode.SMB2_NEGOTIATE_SIGNING_ENABLED
-    )
+    security_mode = native.server_security_mode
+    if isinstance(security_mode, int) and not isinstance(security_mode, bool):
+        signing_required: bool | None = bool(
+            security_mode & SecurityMode.SMB2_NEGOTIATE_SIGNING_REQUIRED
+        )
+        signing_supported: bool | None = signing_required or bool(
+            security_mode & SecurityMode.SMB2_NEGOTIATE_SIGNING_ENABLED
+        )
+    else:
+        signing_required = None
+        signing_supported = None
     signing_algorithm, signing_source = _signing_algorithm(
         native,
         dialect_value,
@@ -296,7 +300,9 @@ def negotiation_info_from_native(native: _NativeConnection) -> NegotiationInfo:
         active=None,
         algorithm=signing_algorithm,
         algorithm_source=signing_source,
-        requirement_source=RequirementSource.SERVER if signing_required else None,
+        requirement_source=(
+            RequirementSource.SERVER if signing_required is True else None
+        ),
     )
 
     encryption_supported = _encryption_supported(native, dialect_value)
@@ -422,9 +428,9 @@ def _signing_algorithm(
     native: _NativeConnection,
     dialect: int,
     *,
-    supported: bool,
+    supported: bool | None,
 ) -> tuple[str | None, AlgorithmSource | None]:
-    if not supported:
+    if supported is not True:
         return None, None
     if dialect == 0x0311:
         # SMB2_SIGNING_CAPABILITIES is optional. smbprotocol itself falls back
@@ -433,13 +439,13 @@ def _signing_algorithm(
         # an otherwise usable connection.
         if native.signing_algorithm_id is None:
             return "AES-128-CMAC", AlgorithmSource.DIALECT_INFERRED
-        algorithm_id = _required_integer(native.signing_algorithm_id, "signing_algorithm_id")
-        try:
-            return _SIGNING_ALGORITHMS[algorithm_id], AlgorithmSource.NEGOTIATED
-        except KeyError as exc:
-            raise NegotiationMetadataError(
-                "The negotiated SMB signing algorithm was unsupported."
-            ) from exc
+        algorithm_id = native.signing_algorithm_id
+        if isinstance(algorithm_id, bool) or not isinstance(algorithm_id, int):
+            return None, None
+        return (
+            _SIGNING_ALGORITHMS.get(algorithm_id, _unknown_algorithm(algorithm_id)),
+            AlgorithmSource.NEGOTIATED,
+        )
     if dialect >= 0x0300:
         return "AES-128-CMAC", AlgorithmSource.DIALECT_INFERRED
     return "HMAC-SHA256", AlgorithmSource.DIALECT_INFERRED
@@ -449,14 +455,12 @@ def _encryption_supported(native: _NativeConnection, dialect: int) -> bool:
     if dialect < 0x0300:
         return False
     if native.supports_encryption is None:
-        # SMB 3.1.1 advertises encryption through an optional negotiate
-        # context. Its absence means no encryption algorithm was selected; it
-        # does not invalidate an otherwise usable unencrypted connection.
-        if dialect == 0x0311:
-            return False
-        raise NegotiationMetadataError("SMB encryption capability metadata was missing.")
+        # A missing capability cannot justify rejecting an otherwise usable
+        # unencrypted session. An explicit encryption requirement still fails
+        # because support is not positively confirmed.
+        return False
     if not isinstance(native.supports_encryption, bool):
-        raise NegotiationMetadataError("SMB encryption capability metadata was invalid.")
+        return False
     return native.supports_encryption
 
 
@@ -469,14 +473,18 @@ def _encryption_algorithm(
     if not supported:
         return None, None
     if dialect == 0x0311:
-        algorithm_id = _required_integer(native.cipher_id, "cipher_id")
-        try:
-            return _ENCRYPTION_ALGORITHMS[algorithm_id], AlgorithmSource.NEGOTIATED
-        except KeyError as exc:
-            raise NegotiationMetadataError(
-                "The negotiated SMB encryption algorithm was unsupported."
-            ) from exc
+        algorithm_id = native.cipher_id
+        if isinstance(algorithm_id, bool) or not isinstance(algorithm_id, int):
+            return None, None
+        return (
+            _ENCRYPTION_ALGORITHMS.get(algorithm_id, _unknown_algorithm(algorithm_id)),
+            AlgorithmSource.NEGOTIATED,
+        )
     return "AES-128-CCM", AlgorithmSource.DIALECT_INFERRED
+
+
+def _unknown_algorithm(algorithm_id: int) -> str:
+    return f"Unknown (0x{algorithm_id:04X})"
 
 
 def _required_integer(value: object, name: str) -> int:
