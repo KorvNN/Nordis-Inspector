@@ -47,7 +47,6 @@ const languageSelect = document.querySelector("#language-select");
 const csrfToken = body.dataset.csrfToken;
 const origin = body.dataset.origin;
 const targets = document.querySelector("#targets");
-const knownSharesInput = document.querySelector("#known-shares");
 const scanName = document.querySelector("#scan-name");
 const credentialDomain = document.querySelector("#credential-domain");
 const credentialUsername = document.querySelector("#credential-username");
@@ -59,6 +58,15 @@ const credentialSecretLabel = document.querySelector("#credential-secret-label")
 const credentialCcacheField = document.querySelector("#credential-ccache-field");
 const credentialCcache = document.querySelector("#credential-ccache");
 const authMode = document.querySelector("#auth-mode");
+const useDefaultTermsInput = document.querySelector("#use-default-terms");
+const openDefaultTermsButton = document.querySelector("#open-default-terms");
+const defaultTermsDialog = document.querySelector("#default-terms-dialog");
+const closeDefaultTermsButton = document.querySelector("#close-default-terms");
+const defaultTermsEditor = document.querySelector("#default-terms-editor");
+const defaultTermsFile = document.querySelector("#default-terms-file");
+const defaultTermsCount = document.querySelector("#default-terms-count");
+const defaultTermsStatus = document.querySelector("#default-terms-status");
+const saveDefaultTermsButton = document.querySelector("#save-default-terms");
 const additionalTermsInput = document.querySelector("#additional-terms");
 const additionalTermsFile = document.querySelector("#additional-terms-file");
 const additionalTermsStatus = document.querySelector("#additional-terms-status");
@@ -124,6 +132,7 @@ const scanInputSnapshots = new Map();
 
 const CCACHE_MAX_BYTES = 1024 * 1024;
 const CUSTOM_TERMS_MAX_BYTES = 1024 * 1024;
+const DEFAULT_TERMS_MAX_BYTES = 1024 * 1024;
 const MAX_GENERATED_TERMS = 2000;
 const GENERATOR_CREDENTIAL_FIELDS = [
   "password",
@@ -1367,6 +1376,105 @@ function mutationHeaders() {
   };
 }
 
+function defaultTermEntryCount(text) {
+  const entries = new Set();
+  for (const line of text.split(/\r?\n/u)) {
+    const entry = line.trim();
+    if (entry && !entry.startsWith("#")) entries.add(entry.toLocaleLowerCase("tr-TR"));
+  }
+  return entries.size;
+}
+
+function setDefaultTermsCount(count = null) {
+  const resolved = Number.isInteger(count)
+    ? count
+    : defaultTermEntryCount(defaultTermsEditor.value);
+  defaultTermsCount.textContent = currentLanguage === "en"
+    ? `${resolved.toLocaleString(numberLocale())} entries`
+    : `${resolved.toLocaleString(numberLocale())} kayıt`;
+}
+
+function setDefaultTermsStatus(message, tone = "") {
+  defaultTermsStatus.textContent = uiText(message);
+  defaultTermsStatus.className = `wordlist-status${tone ? ` ${tone}` : ""}`;
+}
+
+async function defaultTermsPayload(response) {
+  try {
+    const payload = await response.json();
+    const document = payload?.content;
+    if (!document || typeof document.text !== "string") return null;
+    return document;
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function refreshDefaultTerms() {
+  defaultTermsEditor.disabled = true;
+  saveDefaultTermsButton.disabled = true;
+  setDefaultTermsStatus("Yükleniyor");
+  try {
+    const response = await fetch("/wordlists", {cache: "no-store", credentials: "omit"});
+    const document = await defaultTermsPayload(response);
+    if (!response.ok || !document) throw new Error("request_failed");
+    defaultTermsEditor.value = document.text;
+    setDefaultTermsCount(document.entry_count);
+    setDefaultTermsStatus("");
+  } catch (_error) {
+    setDefaultTermsStatus("Liste yüklenemedi", "is-error");
+  } finally {
+    defaultTermsEditor.disabled = false;
+    saveDefaultTermsButton.disabled = false;
+  }
+}
+
+async function saveDefaultTerms() {
+  saveDefaultTermsButton.disabled = true;
+  setDefaultTermsStatus("Kaydediliyor");
+  try {
+    const response = await fetch("/wordlists/content", {
+      method: "PUT",
+      credentials: "omit",
+      cache: "no-store",
+      headers: mutationHeaders(),
+      body: JSON.stringify({text: defaultTermsEditor.value}),
+    });
+    const document = await defaultTermsPayload(response);
+    if (!response.ok || !document) throw new Error("request_failed");
+    defaultTermsEditor.value = document.text;
+    setDefaultTermsCount(document.entry_count);
+    setDefaultTermsStatus("Kaydedildi", "is-ok");
+  } catch (_error) {
+    setDefaultTermsStatus("Liste kaydedilemedi", "is-error");
+  } finally {
+    saveDefaultTermsButton.disabled = false;
+  }
+}
+
+async function importDefaultTerms() {
+  const file = defaultTermsFile.files?.[0];
+  if (!file) return;
+  try {
+    if (!file.name.toLocaleLowerCase("tr-TR").endsWith(".txt")) {
+      throw new CredentialInputError(uiText("Yalnız .txt dosyası seçilebilir"));
+    }
+    if (file.size > DEFAULT_TERMS_MAX_BYTES) {
+      throw new CredentialInputError(uiText("TXT dosyası en fazla 1 MiB olabilir"));
+    }
+    defaultTermsEditor.value = await file.text();
+    setDefaultTermsCount();
+    setDefaultTermsStatus("İçe aktarıldı · henüz kaydedilmedi", "is-ok");
+  } catch (error) {
+    const message = error instanceof CredentialInputError
+      ? error.message
+      : uiText("TXT dosyası okunamadı");
+    setDefaultTermsStatus(message, "is-error");
+  } finally {
+    defaultTermsFile.value = "";
+  }
+}
+
 function syncCredentialControls() {
   const hashSelected = credentialKind.value === "nt_hash";
   const ccacheSelected = credentialKind.value === "ccache";
@@ -1554,9 +1662,13 @@ function syncRulePackControls() {
 }
 
 function searchSelectionIsValid({report = false} = {}) {
-  const valid = detectPatternsInput.checked || additionalSearchTerms().length > 0;
+  const valid = useDefaultTermsInput.checked
+    || detectPatternsInput.checked
+    || additionalSearchTerms().length > 0;
   additionalTermsInput.setCustomValidity(
-    valid ? "" : uiText("Otomatik tespiti etkinleştirin veya en az bir özel terim girin."),
+    valid ? "" : uiText(
+      "Varsayılan terimleri veya otomatik tespiti etkinleştirin ya da en az bir özel terim girin.",
+    ),
   );
   if (!valid && report) additionalTermsInput.reportValidity();
   return valid;
@@ -1568,20 +1680,11 @@ function detectionRulePackLabel(pack) {
 
 function scanSearchOptions() {
   return {
+    use_default: useDefaultTermsInput.checked,
     additional_terms: additionalSearchTerms(),
     detect_patterns: detectPatternsInput.checked,
     rule_packs: selectedRulePacks(),
-    known_shares: knownShareNames(),
   };
-}
-
-function knownShareNames() {
-  return [...new Set(
-    knownSharesInput.value
-      .split(/[\n,]+/u)
-      .map((name) => name.trim())
-      .filter(Boolean),
-  )];
 }
 
 function scanTargetInputs(value) {
@@ -1614,12 +1717,11 @@ function captureScanInputs(credential, search) {
     test_ad_write_access: testAdWriteAccessInput.checked,
     credential: storedCredential,
     search: {
+      use_default: search.use_default,
       additional_terms: [...search.additional_terms],
       additional_terms_input: additionalTermsInput.value.trim(),
       detect_patterns: search.detect_patterns,
       rule_packs: [...search.rule_packs],
-      known_shares: [...search.known_shares],
-      known_shares_input: knownSharesInput.value.trim(),
     },
   };
 }
@@ -1637,9 +1739,6 @@ function scanInputsFromServer(state) {
     : [];
   const rulePacks = Array.isArray(search.rule_packs)
     ? search.rule_packs.filter((pack) => typeof pack === "string")
-    : [];
-  const knownShares = Array.isArray(search.known_shares)
-    ? search.known_shares.filter((name) => typeof name === "string")
     : [];
   return {
     name: typeof inputs.name === "string" ? inputs.name : "",
@@ -1662,16 +1761,13 @@ function scanInputsFromServer(state) {
         : {}),
     },
     search: {
+      use_default: search.use_default === true,
       additional_terms: additionalTerms,
       additional_terms_input: typeof search.additional_terms_input === "string"
         ? search.additional_terms_input
         : additionalTerms.join("\n"),
       detect_patterns: search.detect_patterns === true,
       rule_packs: rulePacks,
-      known_shares: knownShares,
-      known_shares_input: typeof search.known_shares_input === "string"
-        ? search.known_shares_input
-        : knownShares.join("\n"),
     },
   };
 }
@@ -2140,6 +2236,20 @@ for (const tab of resultTabs) {
 }
 
 toggleTermGenerator.addEventListener("click", openTermGeneratorDialog);
+openDefaultTermsButton.addEventListener("click", () => {
+  defaultTermsDialog.showModal();
+  refreshDefaultTerms();
+});
+closeDefaultTermsButton.addEventListener("click", () => defaultTermsDialog.close());
+defaultTermsDialog.addEventListener("click", (event) => {
+  if (event.target === defaultTermsDialog) defaultTermsDialog.close();
+});
+defaultTermsEditor.addEventListener("input", () => {
+  setDefaultTermsCount();
+  setDefaultTermsStatus("");
+});
+defaultTermsFile.addEventListener("change", importDefaultTerms);
+saveDefaultTermsButton.addEventListener("click", saveDefaultTerms);
 closeInventoryContentButton.addEventListener("click", closeInventoryContentDialog);
 cancelInventoryContentButton.addEventListener("click", closeInventoryContentDialog);
 inventoryContentDialog.addEventListener("close", () => {
@@ -2152,6 +2262,7 @@ termGenerator.addEventListener("close", () => {
 });
 generateTermsButton.addEventListener("click", addGeneratedTerms);
 detectPatternsInput.addEventListener("change", syncRulePackControls);
+useDefaultTermsInput.addEventListener("change", () => searchSelectionIsValid());
 additionalTermsInput.addEventListener("input", () => {
   setAdditionalTermsStatus("");
   searchSelectionIsValid();

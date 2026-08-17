@@ -68,6 +68,11 @@ from nordis_smb_inspector.core.targets import (
     TargetPlan,
     parse_targets,
 )
+from nordis_smb_inspector.core.wordlist_store import (
+    WordlistDocument,
+    WordlistStore,
+    WordlistStoreError,
+)
 from nordis_smb_inspector.identity_access.directory import DirectoryAccessError
 from nordis_smb_inspector.identity_access.hostname import discover_directory_hostname
 from nordis_smb_inspector.identity_access.inspection import inspect_identity_access
@@ -157,6 +162,7 @@ class WebRuntime:
     identity_access_inspector: Any = field(repr=False)
     directory_hostname_resolver: Callable[[str], str | None] = field(repr=False)
     contents: ContentCatalog = field(repr=False)
+    wordlists: WordlistStore = field(repr=False)
     kerberos_hostname_resolver: Callable[[ExpandedTarget], str | None] = field(
         repr=False
     )
@@ -421,6 +427,7 @@ def create_app(
     directory_hostname_resolver: Callable[
         [str], str | None
     ] = discover_directory_hostname,
+    wordlist_store: WordlistStore | None = None,
 ) -> Starlette:
     runtime = WebRuntime(
         host=host,
@@ -436,6 +443,7 @@ def create_app(
         identity_access_inspector=identity_access_inspector,
         directory_hostname_resolver=directory_hostname_resolver,
         contents=ContentCatalog(),
+        wordlists=wordlist_store or WordlistStore(),
         kerberos_hostname_resolver=kerberos_hostname_resolver,
     )
     routes = [
@@ -449,6 +457,8 @@ def create_app(
         Route("/contents", content_results, methods=["GET"]),
         Route("/contents/{content_id}/preview", content_preview, methods=["GET"]),
         Route("/contents/{content_id}/download", content_download, methods=["GET"]),
+        Route("/wordlists", wordlist_snapshot, methods=["GET"]),
+        Route("/wordlists/content", wordlist_save, methods=["PUT"]),
         Route("/favicon.ico", favicon, methods=["GET"]),
         Route("/static/{asset_name}", static_asset, methods=["GET"]),
     ]
@@ -491,6 +501,30 @@ async def inventory_results(request: Request) -> JSONResponse:
 
 async def finding_results(request: Request) -> JSONResponse:
     return JSONResponse(_result_page_payload(request, findings=True))
+
+
+async def wordlist_snapshot(request: Request) -> JSONResponse:
+    try:
+        document = _runtime(request).wordlists.read()
+    except WordlistStoreError as exc:
+        raise SafeHttpError(HttpErrorCode.INTERNAL_ERROR) from exc
+    return JSONResponse({"content": _wordlist_document_payload(document)})
+
+
+async def wordlist_save(request: Request) -> JSONResponse:
+    runtime = _runtime(request)
+    _protect_post(request, runtime)
+    body = await _read_json(request)
+    text = body.get("text")
+    if not isinstance(text, str):
+        raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
+    try:
+        document = runtime.wordlists.save(text)
+    except WordlistStoreError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
+    return JSONResponse(
+        {"ok": True, "content": _wordlist_document_payload(document)}
+    )
 
 
 async def content_results(request: Request) -> JSONResponse:
@@ -669,7 +703,11 @@ async def scan_start(request: Request) -> JSONResponse:
         )
 
     try:
-        options = parse_scan_options(body.get("search"), _DEFAULT_MAX_DEPTH)
+        options = parse_scan_options(
+            body.get("search"),
+            _DEFAULT_MAX_DEPTH,
+            content_wordlist_path=runtime.wordlists.content_path,
+        )
     except ScanConfigError as exc:
         return JSONResponse(
             {
@@ -964,12 +1002,16 @@ def _run_access_scan(
             authenticator=runtime.authenticator,
             file_adapter=runtime.file_adapter,
             share_discoverer=runtime.share_discoverer,
-            known_share_names=options.known_shares,
             cancellation=target_cancellation,
             detect_patterns=options.detect_patterns,
             pattern_rules=detection_rules_for_packs(options.rule_packs),
             detect_credential_artifacts=(
-                DetectionRulePack.WINDOWS_AD in options.rule_packs
+                options.detect_patterns
+                and DetectionRulePack.WINDOWS_AD in options.rule_packs
+            ),
+            detect_filename_artifacts=(
+                options.detect_patterns
+                and DetectionRulePack.GENERAL_SECRETS in options.rule_packs
             ),
             test_write_access=test_smb_write_access,
             on_target=publish_target_event,
@@ -1615,11 +1657,11 @@ def _public_scan_inputs(
         "test_ad_write_access": test_ad_write_access,
         "credential": credential_metadata,
         "search": {
-            "additional_terms": list(options.terms),
-            "additional_terms_input": "\n".join(options.terms),
+            "use_default": options.use_default,
+            "additional_terms": list(options.additional_terms),
+            "additional_terms_input": "\n".join(options.additional_terms),
             "detect_patterns": options.detect_patterns,
             "rule_packs": [pack.value for pack in options.rule_packs],
-            "known_shares": list(options.known_shares),
         },
     }
 
@@ -1646,6 +1688,10 @@ def _result_page_payload(request: Request, *, findings: bool) -> dict[str, objec
         "total_items": result_page.total_items,
         "total_pages": result_page.total_pages,
     }
+
+
+def _wordlist_document_payload(document: WordlistDocument) -> dict[str, object]:
+    return {"text": document.text, "entry_count": document.entry_count}
 
 
 def _positive_query_integer(request: Request, name: str, *, default: int) -> int:

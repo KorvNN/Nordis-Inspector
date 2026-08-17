@@ -213,16 +213,10 @@ function renderHistoryDetail(item) {
   const targetList = item.targets || (Array.isArray(item.target_list)
     ? item.target_list.join("\n")
     : item.targets);
-  const knownShares = typeof search?.known_shares_input === "string"
-    ? search.known_shares_input || "—"
-    : Array.isArray(search?.known_shares)
-      ? search.known_shares.join("\n") || "—"
-      : uiText("Bu kayıtta saklanmadı.");
   const legacyWriteAccess = item.test_write_access ?? false;
   const scanSection = historyDetailSection("Hedefler", [
     ["Tarama adı", displayValue(item.name), "detail-code"],
     ["Hedef listesi", retainedHistoryValue(targetList), "detail-code"],
-    ["Doğrudan denenecek share adları", knownShares, "detail-code"],
     ["SMB yazma testi", uiText(
       (item.test_smb_write_access ?? legacyWriteAccess) ? "Dahil edildi" : "Dahil edilmedi",
     )],
@@ -265,6 +259,9 @@ function renderHistoryDetail(item) {
         ? search.rule_packs.map(detectionRulePackLabel).join(", ") || "—"
         : uiText("Tümü");
   const searchSection = historyDetailSection("İçerik arama", [
+    ["Varsayılan terimler", !searchRetained
+      ? uiText("Bu kayıtta saklanmadı.")
+      : uiText(search.use_default ? "Dahil edildi" : "Dahil edilmedi")],
     ["Özel terimler", terms, "detail-code"],
     ["Veri kalıpları", !searchRetained
       ? uiText("Bu kayıtta saklanmadı.")

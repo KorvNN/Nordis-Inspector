@@ -701,7 +701,6 @@ function openIdentityTargetsDialog(capability) {
     currentLanguage === "en" ? "Close" : "Kapat",
   );
   cancelIdentityTargetsButton.textContent = currentLanguage === "en" ? "Close" : "Kapat";
-  identityTargetsSearch.placeholder = currentLanguage === "en" ? "Search name or DN" : "Ad veya DN ara";
   identityTargetsSearch.setAttribute(
     "aria-label",
     currentLanguage === "en" ? "Search affected targets" : "Etkilenen hedeflerde ara",

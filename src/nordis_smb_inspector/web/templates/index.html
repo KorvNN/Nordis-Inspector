@@ -38,15 +38,10 @@
       </div>
 
       <label for="scan-name">Tarama adı</label>
-      <input id="scan-name" type="text" autocomplete="off" maxlength="80"
-        placeholder="xxxx">
+      <input id="scan-name" type="text" autocomplete="off" maxlength="80">
       <label for="targets">IP, CIDR veya hostname</label>
-      <textarea id="targets" rows="5" spellcheck="false"
-        placeholder="xxxx&#10;192.0.2.10"></textarea>
+      <textarea id="targets" rows="5" spellcheck="false"></textarea>
       <p class="hint">Virgül veya yeni satırla ayır.</p>
-      <label for="known-shares">Bilinen SMB share adları (isteğe bağlı)</label>
-      <textarea id="known-shares" rows="2" spellcheck="false"></textarea>
-      <p class="hint">Share listesi alınamazsa bu adlar doğrudan denenir.</p>
 
       <fieldset class="credential-block">
         <legend>Kimlik bilgisi</legend>
@@ -91,12 +86,17 @@
       <fieldset class="search-block">
         <legend class="fieldset-legend">
           <span>İçerik arama</span>
+          <button id="open-default-terms" class="inline-management-button secondary-button"
+            type="button">Listeyi aç</button>
         </legend>
+        <label class="option-control" for="use-default-terms">
+          <input id="use-default-terms" type="checkbox" checked>
+          <span>Varsayılan terim listesini kullan</span>
+        </label>
         <div class="field-heading">
           <label for="additional-terms">Özel arama terimleri (isteğe bağlı)</label>
         </div>
-        <textarea id="additional-terms" rows="3" spellcheck="false"
-          placeholder="xxxx, xxxx"></textarea>
+        <textarea id="additional-terms" rows="3" spellcheck="false"></textarea>
         <div class="additional-terms-actions">
           <label class="file-import-button" for="additional-terms-file">TXT içe aktar</label>
           <button id="toggle-term-generator" class="secondary-button" type="button"
@@ -322,8 +322,7 @@
           <div class="panel-toolbar content-toolbar">
             <div class="table-toolbar content-filter-toolbar">
               <label for="content-filter">Ara</label>
-              <input id="content-filter" type="search" autocomplete="off"
-                placeholder="Dosya, nesne veya içerik">
+              <input id="content-filter" type="search" autocomplete="off">
               <select id="content-source-filter" aria-label="İçerik kaynağı">
                 <option value="all">Tüm kaynaklar</option>
                 <option value="smb">SMB</option>
@@ -439,8 +438,7 @@
     </div>
     <div class="identity-targets-toolbar">
       <label class="visually-hidden" for="identity-targets-search">Hedeflerde ara</label>
-      <input id="identity-targets-search" type="search" autocomplete="off"
-        placeholder="Ad veya DN ara">
+      <input id="identity-targets-search" type="search" autocomplete="off">
       <span id="identity-targets-count" class="identity-targets-count"></span>
     </div>
     <div class="identity-targets-table-wrap">
@@ -472,8 +470,7 @@
     <p id="term-generator-description" class="term-generator-dialog-copy">Kuruma özgü adları girin. Parola, token ve API anahtarı terimleri özel arama terimlerine eklenir.</p>
     <div class="term-generator-field">
       <label for="term-generator-roots">Kuruma özgü adlar</label>
-      <textarea id="term-generator-roots" rows="3" spellcheck="false"
-        placeholder="xxxx, xxxx"></textarea>
+      <textarea id="term-generator-roots" rows="3" spellcheck="false"></textarea>
       <p class="hint">Birden fazla adı virgül veya yeni satırla ayırın.</p>
     </div>
     <p id="term-generator-status" class="term-generator-status summary"
@@ -501,6 +498,33 @@
     <div class="confirm-dialog-actions">
       <button id="cancel-history-delete" class="secondary-button" type="button">Vazgeç</button>
       <button id="confirm-history-delete" class="danger-button" type="button">Geçmişten sil</button>
+    </div>
+  </dialog>
+
+  <dialog id="default-terms-dialog" class="wordlist-dialog"
+    aria-labelledby="default-terms-heading">
+    <div class="dialog-heading">
+      <div>
+        <h2 id="default-terms-heading">Varsayılan terimler</h2>
+        <p>TXT içeriğini görüntüleyebilir, düzenleyebilir veya başka bir TXT ile değiştirebilirsin.</p>
+      </div>
+      <button id="close-default-terms" class="icon-button" type="button"
+        aria-label="Kapat">×</button>
+    </div>
+    <div class="wordlist-editor">
+      <div class="wordlist-editor-heading">
+        <label for="default-terms-editor">İçerik arama terimleri</label>
+        <span id="default-terms-count" class="summary">— kayıt</span>
+      </div>
+      <textarea id="default-terms-editor" rows="18" spellcheck="false"></textarea>
+      <div class="wordlist-actions">
+        <label class="file-import-button" for="default-terms-file">TXT içe aktar</label>
+        <input id="default-terms-file" class="visually-hidden" type="file"
+          accept=".txt,text/plain">
+        <button id="save-default-terms" type="button">Kaydet</button>
+        <span id="default-terms-status" class="wordlist-status"
+          aria-live="polite"></span>
+      </div>
     </div>
   </dialog>
 
