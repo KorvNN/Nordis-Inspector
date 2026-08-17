@@ -3,6 +3,7 @@ __pycache__/
 *.egg-info/
 *.py[cod]
 .venv/
+.pip-cache/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -14,6 +15,7 @@ dist/
 .env
 .env.*
 !.env.example
+.setup.log
 *.db
 *.sqlite
 *.sqlite3
