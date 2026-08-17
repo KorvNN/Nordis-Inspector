@@ -47,6 +47,9 @@ where = ["src"]
 ]
 
 [tool.setuptools.data-files]
+"share/nordis-smb-inspector/wordlists" = [
+  "wordlists/default-sensitive.txt",
+]
 "share/nordis-smb-inspector/rules" = [
   "rules/cloud-services.toml",
   "rules/general-secrets.toml",

@@ -102,9 +102,15 @@ class ContentScanResult:
 class MatchOptions:
     case_sensitive: bool = False
     whole_word: bool = False
+    flexible_formats: bool = False
+    reverse_terms: bool = False
     max_line_chars: int = 1_048_576
 
     def __post_init__(self) -> None:
+        if not isinstance(self.flexible_formats, bool):
+            raise TypeError("flexible_formats must be a boolean.")
+        if not isinstance(self.reverse_terms, bool):
+            raise TypeError("reverse_terms must be a boolean.")
         if self.max_line_chars < 1:
             raise ValueError("max_line_chars must be at least 1.")
 
@@ -113,6 +119,7 @@ class MatchOptions:
 class _PreparedTerm:
     original: str
     needle: str
+    flexible: bool = False
 
 
 def scan_text(
@@ -142,7 +149,7 @@ def scan_text(
         raise TypeError("legacy_detection_sample_bytes must be an integer.")
     if not 0 <= legacy_detection_sample_bytes <= _MAX_LEGACY_SAMPLE_BYTES:
         raise ValueError("legacy_detection_sample_bytes is outside the safe range.")
-    prepared_terms = _prepare_terms(terms, effective_options.case_sensitive)
+    prepared_terms = _prepare_terms(terms, effective_options)
     iterator = iter(chunks)
     prefix = bytearray()
     exhausted = False
@@ -356,19 +363,39 @@ class _LineState:
         self.next_line_number += 1
 
 
-def _prepare_terms(terms: Iterable[str], case_sensitive: bool) -> tuple[_PreparedTerm, ...]:
+def _prepare_terms(
+    terms: Iterable[str],
+    options: MatchOptions,
+) -> tuple[_PreparedTerm, ...]:
     prepared: list[_PreparedTerm] = []
-    seen: set[str] = set()
+    seen: set[tuple[bool, str]] = set()
     for term in terms:
         if not isinstance(term, str):
             raise TypeError("Search terms must be strings.")
         if not term:
             raise ValueError("Search terms cannot be empty.")
-        needle = term if case_sensitive else _comparison_fold(term)
-        if needle in seen:
-            continue
-        seen.add(needle)
-        prepared.append(_PreparedTerm(original=term, needle=needle))
+        variants = [term]
+        words = _format_words(term)
+        if options.reverse_terms and len(words) > 1:
+            reversed_term = " ".join(reversed(words))
+            if reversed_term != term:
+                variants.append(reversed_term)
+        for variant in variants:
+            variant_words = _format_words(variant)
+            flexible = options.flexible_formats and len(variant_words) > 1
+            candidate = "".join(variant_words) if flexible else variant
+            needle = candidate if options.case_sensitive else _comparison_fold(candidate)
+            key = (flexible, needle)
+            if key in seen:
+                continue
+            seen.add(key)
+            prepared.append(
+                _PreparedTerm(
+                    original=variant,
+                    needle=needle,
+                    flexible=flexible,
+                )
+            )
     return tuple(prepared)
 
 
@@ -383,30 +410,41 @@ def _match_line(
         index_map: tuple[int, ...] | None = None
     else:
         haystack, index_map = _casefold_with_index_map(line)
+    if any(term.flexible for term in terms):
+        compact_haystack, compact_index_map = _compact_with_index_map(
+            line,
+            case_sensitive=options.case_sensitive,
+        )
+    else:
+        compact_haystack, compact_index_map = "", ()
 
     matches: list[LineMatch] = []
+    claimed_spans: set[tuple[int, int]] = set()
     for term in terms:
+        term_haystack = compact_haystack if term.flexible else haystack
+        term_index_map = compact_index_map if term.flexible else index_map
         spans: list[MatchSpan] = []
         seen_spans: set[tuple[int, int]] = set()
         start_at = 0
         while True:
-            found = haystack.find(term.needle, start_at)
+            found = term_haystack.find(term.needle, start_at)
             if found < 0:
                 break
             folded_end = found + len(term.needle)
-            if index_map is None:
+            if term_index_map is None:
                 start, end = found, folded_end
             else:
-                start = index_map[found]
-                end = index_map[folded_end - 1] + 1
+                start = term_index_map[found]
+                end = term_index_map[folded_end - 1] + 1
             span_key = (start, end)
-            if span_key not in seen_spans and (
+            if span_key not in seen_spans and span_key not in claimed_spans and (
                 not options.whole_word or _has_word_boundaries(line, start, end)
             ):
                 seen_spans.add(span_key)
                 spans.append(MatchSpan(start=start, end=end))
             start_at = found + 1
         if spans:
+            claimed_spans.update((span.start, span.end) for span in spans)
             matches.append(
                 LineMatch(
                     line_number=line_number,
@@ -426,6 +464,59 @@ def _casefold_with_index_map(value: str) -> tuple[str, tuple[int, ...]]:
         folded_parts.append(folded)
         indices.extend((index,) * len(folded))
     return "".join(folded_parts), tuple(indices)
+
+
+def _compact_with_index_map(
+    value: str,
+    *,
+    case_sensitive: bool,
+) -> tuple[str, tuple[int, ...]]:
+    compact_parts: list[str] = []
+    indices: list[int] = []
+    for index, character in enumerate(value):
+        if not character.isalnum():
+            continue
+        normalized = character if case_sensitive else _comparison_fold(character)
+        compact_parts.append(normalized)
+        indices.extend((index,) * len(normalized))
+    return "".join(compact_parts), tuple(indices)
+
+
+def _format_words(value: str) -> tuple[str, ...]:
+    if not value or not value[0].isalnum() or not value[-1].isalnum():
+        return ()
+
+    separated: list[str] = []
+    current: list[str] = []
+    for character in value:
+        if character.isalnum():
+            current.append(character)
+        elif current:
+            separated.append("".join(current))
+            current.clear()
+    if current:
+        separated.append("".join(current))
+    if len(separated) > 1:
+        return tuple(separated)
+
+    camel_boundaries = [0]
+    for index in range(1, len(value)):
+        previous = value[index - 1]
+        character = value[index]
+        following = value[index + 1] if index + 1 < len(value) else ""
+        if character.isupper() and (
+            previous.islower()
+            or previous.isdigit()
+            or (previous.isupper() and following.islower())
+        ):
+            camel_boundaries.append(index)
+    if len(camel_boundaries) == 1:
+        return ()
+    camel_boundaries.append(len(value))
+    return tuple(
+        value[start:end]
+        for start, end in zip(camel_boundaries, camel_boundaries[1:], strict=False)
+    )
 
 
 def _comparison_fold(value: str) -> str:

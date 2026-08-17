@@ -27,6 +27,7 @@ from nordis_smb_inspector.core.credential_artifacts import (
     CredentialArtifactMatch,
     credential_artifact_header_bytes,
     detect_credential_artifact,
+    detect_credential_artifact_name,
 )
 from nordis_smb_inspector.core.credentials import Credential
 from nordis_smb_inspector.core.detection import (
@@ -371,10 +372,10 @@ def inspect_target(
     file_adapter: FileAdapter,
     cancellation: CancellationToken,
     share_discoverer: ShareDiscoverer,
-    known_share_names: Iterable[str] = (),
     detect_patterns: bool = True,
     pattern_rules: tuple[DetectionRule, ...] | None = None,
     detect_credential_artifacts: bool = True,
+    detect_filename_artifacts: bool = True,
     test_write_access: bool = False,
     on_target: TargetCallback | None = None,
     on_inventory: InventoryCallback | None = None,
@@ -383,10 +384,10 @@ def inspect_target(
     """Inspect one target through content scanning with one live session.
 
     SRVSVC enumeration is preferred. If it is unavailable, a bounded set of
-    standard Windows shares and caller-supplied names are probed directly so a
-    usable authenticated session is not discarded. Results retain counters and
-    normalized protocol metadata only. Inventory entries and content findings
-    are delivered as they are encountered and are not accumulated here.
+    standard Windows shares is probed directly so a usable authenticated
+    session is not discarded. Results retain counters and normalized protocol
+    metadata only. Inventory entries and content findings are delivered as they
+    are encountered and are not accumulated here.
     """
 
     _validate_inputs(target, connect_request, credential, max_depth)
@@ -402,10 +403,11 @@ def inspect_target(
         raise TypeError("pattern_rules must be DetectionRule values.")
     if not isinstance(detect_credential_artifacts, bool):
         raise TypeError("detect_credential_artifacts must be a boolean.")
+    if not isinstance(detect_filename_artifacts, bool):
+        raise TypeError("detect_filename_artifacts must be a boolean.")
     if not isinstance(test_write_access, bool):
         raise TypeError("test_write_access must be a boolean.")
     normalized_terms = _normalize_search_terms(search_terms)
-    normalized_known_shares = _normalize_share_names(known_share_names)
 
     connections: list[ConnectionHandle] = []
     session: SessionHandle | None = None
@@ -510,15 +512,9 @@ def inspect_target(
                     error=detail,
                 )
             )
-            shares_to_probe = _merge_share_names(
-                normalized_known_shares,
-                _DIRECT_PROBE_FALLBACK_SHARES,
-            )
+            shares_to_probe = _DIRECT_PROBE_FALLBACK_SHARES
         else:
-            shares_to_probe = _merge_share_names(
-                _normalize_share_names(discovered.names),
-                normalized_known_shares,
-            )
+            shares_to_probe = _normalize_share_names(discovered.names)
 
         last_stage = TargetStage.AUTHORIZATION
         publish_target(
@@ -570,6 +566,7 @@ def inspect_target(
                     detect_patterns=detect_patterns,
                     pattern_rules=selected_pattern_rules,
                     detect_credential_artifacts=detect_credential_artifacts,
+                    detect_filename_artifacts=detect_filename_artifacts,
                     max_depth=max_depth,
                     file_adapter=file_adapter,
                     cancellation=cancellation,
@@ -769,6 +766,7 @@ def _walk_share(
     detect_patterns: bool,
     pattern_rules: tuple[DetectionRule, ...],
     detect_credential_artifacts: bool,
+    detect_filename_artifacts: bool,
     max_depth: int,
     file_adapter: FileAdapter,
     cancellation: CancellationToken,
@@ -816,6 +814,17 @@ def _walk_share(
                     partial = True
                 continue
             counts.files_seen += 1
+            if detect_patterns and detect_filename_artifacts:
+                filename_match = detect_credential_artifact_name(entry.relative_path)
+                if filename_match is not None:
+                    _publish_artifact_finding(
+                        filename_match,
+                        target=target,
+                        share=entry.share_name,
+                        path=entry.relative_path,
+                        counts=counts,
+                        on_finding=on_finding,
+                    )
             if entry.status is not InventoryStatus.FILE_READABLE:
                 counts.unreadable_files += 1
                 partial = True
@@ -828,6 +837,7 @@ def _walk_share(
                 detect_patterns=detect_patterns,
                 pattern_rules=pattern_rules,
                 detect_credential_artifacts=detect_credential_artifacts,
+                detect_filename_artifacts=detect_filename_artifacts,
                 file_adapter=file_adapter,
                 cancellation=cancellation,
                 counts=counts,
@@ -874,6 +884,7 @@ def _scan_file(
     detect_patterns: bool,
     pattern_rules: tuple[DetectionRule, ...],
     detect_credential_artifacts: bool,
+    detect_filename_artifacts: bool,
     file_adapter: FileAdapter,
     cancellation: CancellationToken,
     counts: _InspectionCounts,
@@ -954,24 +965,6 @@ def _scan_file(
             ),
         )
 
-    def publish_artifact_match(match: CredentialArtifactMatch, path: str) -> None:
-        counts.findings += 1
-        _publish(
-            on_finding,
-            ContentFinding(
-                target=target,
-                share=entry.share_name,
-                path=path,
-                line_number=None,
-                term=match.title,
-                full_line=None,
-                method=FindingMethod.ARTIFACT,
-                rule_id=match.rule_id,
-                category=match.category,
-                confidence=match.confidence,
-            ),
-        )
-
     def scan_content(
         content_chunks: Iterable[bytes | bytearray | memoryview],
         *,
@@ -982,7 +975,11 @@ def _scan_file(
         return scan_text(
             content_chunks,
             search_terms,
-            options=MatchOptions(case_sensitive=False),
+            options=MatchOptions(
+                case_sensitive=False,
+                flexible_formats=True,
+                reverse_terms=True,
+            ),
             on_line=publish_pattern_matches,
             on_match=queue_wordlist_match,
             retain_matches=False,
@@ -1051,7 +1048,14 @@ def _scan_file(
                 )
                 artifact = detect_credential_artifact(entry.relative_path, header)
                 if artifact is not None:
-                    publish_artifact_match(artifact, entry.relative_path)
+                    _publish_artifact_finding(
+                        artifact,
+                        target=target,
+                        share=entry.share_name,
+                        path=entry.relative_path,
+                        counts=counts,
+                        on_finding=on_finding,
+                    )
                     counts.files_scanned += 1
                     return partial
             status = scan_content(
@@ -1093,6 +1097,17 @@ def _scan_file(
                         size=member.size,
                     ),
                 )
+                if detect_patterns and detect_filename_artifacts:
+                    filename_match = detect_credential_artifact_name(member.path)
+                    if filename_match is not None:
+                        _publish_artifact_finding(
+                            filename_match,
+                            target=target,
+                            share=entry.share_name,
+                            path=member.path,
+                            counts=counts,
+                            on_finding=on_finding,
+                        )
                 if member.kind is DocumentKind.PLAIN:
                     header = b""
                     if detect_patterns and detect_credential_artifacts:
@@ -1101,7 +1116,14 @@ def _scan_file(
                             raise TypeError("Archive member reads must return bytes.")
                         artifact = detect_credential_artifact(member.path, header)
                         if artifact is not None:
-                            publish_artifact_match(artifact, member.path)
+                            _publish_artifact_finding(
+                                artifact,
+                                target=target,
+                                share=entry.share_name,
+                                path=member.path,
+                                counts=counts,
+                                on_finding=on_finding,
+                            )
                             counts.files_scanned += 1
                             continue
                     content_chunks = chain(
@@ -1199,6 +1221,33 @@ def _scan_file(
                 ),
             )
     return partial
+
+
+def _publish_artifact_finding(
+    match: CredentialArtifactMatch,
+    *,
+    target: str,
+    share: str,
+    path: str,
+    counts: _InspectionCounts,
+    on_finding: FindingCallback | None,
+) -> None:
+    counts.findings += 1
+    _publish(
+        on_finding,
+        ContentFinding(
+            target=target,
+            share=share,
+            path=path,
+            line_number=None,
+            term=match.title,
+            full_line=None,
+            method=FindingMethod.ARTIFACT,
+            rule_id=match.rule_id,
+            category=match.category,
+            confidence=match.confidence,
+        ),
+    )
 
 
 def _iter_binary_stream(
@@ -1540,10 +1589,6 @@ def _normalize_share_names(values: Iterable[str]) -> tuple[str, ...]:
         seen.add(folded)
         normalized.append(candidate)
     return tuple(normalized)
-
-
-def _merge_share_names(*groups: Iterable[str]) -> tuple[str, ...]:
-    return _normalize_share_names(name for group in groups for name in group)
 
 
 def _normalize_search_terms(values: Iterable[str]) -> tuple[str, ...]:

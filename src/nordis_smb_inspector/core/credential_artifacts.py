@@ -10,6 +10,44 @@ from .detection import DetectionConfidence
 _HEADER_BYTES = 16
 _CCACHE_SUFFIXES = frozenset({".ccache"})
 _KEYTAB_SUFFIXES = frozenset({".keytab", ".ktab"})
+_CREDENTIAL_CONTAINER_SUFFIXES = frozenset({".kdb", ".kdbx", ".p12", ".pfx", ".ppk"})
+_PRIVATE_KEY_SUFFIXES = frozenset({".key", ".pem"})
+_NOISE_FILENAME_SUFFIXES = (".adml", ".admx", ".exe")
+_SUSPICIOUS_FILENAME_KEYWORDS = (
+    "şifre",
+    "sifre",
+    "parola",
+    "sunucu bilgi",
+    "sunucu",
+    "kimlik bilgi",
+    "erişim bilgi",
+    "erisim bilgi",
+    "giriş bilgi",
+    "giris bilgi",
+    "envanter",
+    "yedek",
+    "hesap",
+    "bağlantı",
+    "baglanti",
+    "credential",
+    "password",
+    "creds",
+    "secret",
+    "apikey",
+    "api key",
+    "api-key",
+    "token",
+    "vault",
+    "id_rsa",
+    "id_dsa",
+    "id_ed25519",
+    "id_ecdsa",
+    "server",
+    "inventory",
+    "backup",
+    "account",
+    "connection",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,10 +76,52 @@ KERBEROS_KIRBI = CredentialArtifactMatch(
     category="Windows / AD",
     confidence=DetectionConfidence.HIGH,
 )
+CREDENTIAL_CONTAINER_FILENAME = CredentialArtifactMatch(
+    rule_id="credential-container-filename",
+    title="Credential container filename",
+    category="Credential artifact",
+    confidence=DetectionConfidence.MEDIUM,
+)
+PRIVATE_KEY_FILENAME = CredentialArtifactMatch(
+    rule_id="private-key-filename",
+    title="Private-key filename",
+    category="Credential artifact",
+    confidence=DetectionConfidence.MEDIUM,
+)
+CREDENTIAL_RELATED_FILENAME = CredentialArtifactMatch(
+    rule_id="credential-related-filename",
+    title="Credential-related filename",
+    category="Credential artifact",
+    confidence=DetectionConfidence.MEDIUM,
+)
 
 
 def credential_artifact_header_bytes() -> int:
     return _HEADER_BYTES
+
+
+def detect_credential_artifact_name(path: str) -> CredentialArtifactMatch | None:
+    """Flag credential-related file names without reading remote content.
+
+    This deliberately evaluates only the basename. Common Windows policy and
+    executable extensions are excluded before broad keyword matching to avoid
+    well-known noise such as ``CredentialProviders.admx``.
+    """
+
+    if not isinstance(path, str):
+        raise TypeError("path must be text.")
+    normalized = path.replace("\\", "/").casefold()
+    name = PurePosixPath(normalized).name
+    if not name or name.endswith(_NOISE_FILENAME_SUFFIXES):
+        return None
+    suffix = PurePosixPath(name).suffix
+    if suffix in _CREDENTIAL_CONTAINER_SUFFIXES:
+        return CREDENTIAL_CONTAINER_FILENAME
+    if suffix in _PRIVATE_KEY_SUFFIXES:
+        return PRIVATE_KEY_FILENAME
+    if any(keyword in name for keyword in _SUSPICIOUS_FILENAME_KEYWORDS):
+        return CREDENTIAL_RELATED_FILENAME
+    return None
 
 
 def detect_credential_artifact(

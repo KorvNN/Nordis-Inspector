@@ -313,17 +313,15 @@ def _repository_rule_pack_path(filename: str) -> Path | None:
 
 
 def _installed_rule_pack_path(filename: str) -> Path:
-    suffix = f"{_PACKAGED_RULES_SUFFIX}/{filename}"
     try:
         installed = distribution(_DISTRIBUTION_NAME)
-        matches = [
-            entry
-            for entry in installed.files or ()
-            if str(entry).replace("\\", "/").endswith(suffix)
-        ]
-        if len(matches) != 1:
-            raise RulePackError("Built-in detection rule pack is unavailable.")
-        return Path(installed.locate_file(matches[0]))
+        installation_root = Path(installed.locate_file("")).resolve()
+        relative_path = Path(_PACKAGED_RULES_SUFFIX) / filename
+        for candidate_root in (installation_root, *installation_root.parents):
+            candidate = candidate_root / relative_path
+            if candidate.is_file():
+                return candidate
+        raise RulePackError("Built-in detection rule pack is unavailable.")
     except PackageNotFoundError:
         raise RulePackError("Built-in detection rule pack is unavailable.") from None
     except (OSError, TypeError, ValueError):
