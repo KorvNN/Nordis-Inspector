@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import ipaddress
+import os
 import socket
+import sys
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from types import FrameType
@@ -54,15 +56,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from nordis_smb_inspector.web.app import create_app
 
+    blue, green, yellow, reset = _terminal_colors()
     if args.host == "0.0.0.0":
         urls = [f"http://{address}:{args.port}" for address in _local_ipv4_addresses()]
-        print("Nordis Inspector (LAN):")
+        print(f"{blue}Nordis Inspector:{reset}")
         for url in urls or [f"http://<yerel-ip>:{args.port}"]:
-            print(f"  {url}")
-        print("Uyarı: Panel HTTP kullanır; yalnız güvendiğiniz yerel ağda açın.")
+            print(f"  {green}{url}{reset}")
     else:
-        print(f"Nordis Inspector: http://{args.host}:{args.port}")
-    print("Durdurmak için Ctrl+C.")
+        print(f"{blue}Nordis Inspector:{reset} {green}http://{args.host}:{args.port}{reset}")
+    print(f"{yellow}Durdurmak için Ctrl+C.{reset}")
     app = create_app(host=args.host, port=args.port)
     config = uvicorn.Config(
         app,
@@ -86,6 +88,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not server.started:
         return 3
     return 0
+
+
+def _terminal_colors() -> tuple[str, str, str, str]:
+    if not sys.stdout.isatty() or os.environ.get("NO_COLOR") is not None:
+        return "", "", "", ""
+    return "\033[1;34m", "\033[1;32m", "\033[1;33m", "\033[0m"
 
 
 def _port(value: str) -> int:
@@ -118,7 +126,7 @@ def _local_ipv4_addresses() -> tuple[str, ...]:
     try:
         for result in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
             address = ipaddress.IPv4Address(result[4][0])
-            if address.is_private or address.is_link_local:
+            if not address.is_loopback and (address.is_private or address.is_link_local):
                 addresses.add(address.compressed)
     except OSError:
         pass
@@ -126,7 +134,7 @@ def _local_ipv4_addresses() -> tuple[str, ...]:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("192.0.2.1", 9))
             address = ipaddress.IPv4Address(probe.getsockname()[0])
-            if address.is_private or address.is_link_local:
+            if not address.is_loopback and (address.is_private or address.is_link_local):
                 addresses.add(address.compressed)
     except OSError:
         pass
