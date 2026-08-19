@@ -2,13 +2,13 @@
   <title>Nordis Inspector</title>
   <defs>
     <linearGradient id="nordis-accent" x1="12" y1="14" x2="54" y2="52" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#67d7b0"/>
-      <stop offset="1" stop-color="#58d0de"/>
+      <stop stop-color="#56d8e4"/>
+      <stop offset="1" stop-color="#5b8def"/>
     </linearGradient>
   </defs>
   <rect x="2" y="2" width="60" height="60" rx="15" fill="#0b1119"/>
-  <rect x="3.5" y="3.5" width="57" height="57" rx="13.5" fill="none" stroke="url(#nordis-accent)" stroke-opacity=".42" stroke-width="3"/>
+  <rect x="3.5" y="3.5" width="57" height="57" rx="13.5" fill="none" stroke="url(#nordis-accent)" stroke-opacity=".68" stroke-width="3"/>
   <path d="M14 47V17h8l18 20V17h9v30h-8L23 27v20Z" fill="url(#nordis-accent)"/>
-  <circle cx="45" cy="44" r="8" fill="#0b1119" stroke="#e2e8f0" stroke-width="3"/>
-  <path d="m51 50 6 6" fill="none" stroke="#58d0de" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="45" cy="44" r="8" fill="#0b1119" stroke="#dcecff" stroke-width="3"/>
+  <path d="m51 50 6 6" fill="none" stroke="#5b8def" stroke-width="4" stroke-linecap="round"/>
 </svg>
