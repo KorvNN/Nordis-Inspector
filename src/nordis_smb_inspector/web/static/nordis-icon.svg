@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
   <title>Nordis Inspector</title>
   <defs>
-    <linearGradient id="nordis-blue" x1="12" y1="18" x2="57" y2="43" gradientUnits="userSpaceOnUse">
+    <linearGradient id="nordis-blue" x1="34" y1="33" x2="57" y2="56" gradientUnits="userSpaceOnUse">
       <stop stop-color="#54c4d2"/>
       <stop offset="1" stop-color="#537fbd"/>
     </linearGradient>
   </defs>
   <rect x="2" y="2" width="60" height="60" rx="15" fill="#0b1119"/>
   <rect x="3" y="3" width="58" height="58" rx="14" fill="none" stroke="#26364a" stroke-width="2"/>
-  <path d="M12 44V20h5.5l10.5 13V20h6.5v24H29L18.5 31v13Z" fill="url(#nordis-blue)"/>
-  <circle cx="46" cy="28" r="8.5" fill="#0b1119" stroke="#dcecff" stroke-width="4"/>
-  <path d="m52 34 5 5" fill="none" stroke="#537fbd" stroke-width="5" stroke-linecap="round"/>
+  <path d="M14 45V19l24 26V19" fill="none" stroke="#dcecff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="45" cy="43" r="8.5" fill="#0b1119" stroke="url(#nordis-blue)" stroke-width="4"/>
+  <path d="m51 49 5 5" fill="none" stroke="#537fbd" stroke-width="5" stroke-linecap="round"/>
 </svg>
