@@ -11,6 +11,7 @@ dashboard.
 ## Highlights
 
 - Inspects SMB security, shares, readable files, and exposed credential material
+- Combines a default literal term list, structured regex rules, and filename signals
 - Uses authenticated LDAP to separate principal capabilities from environment findings
 - Supports passwords, NT hashes, Kerberos, and CCache files
 
@@ -22,6 +23,10 @@ dashboard.
 
 # Open one of the LAN addresses printed by the command
 ```
+
+`setup.sh` değişmeyen bağımlılıkları sonraki çalıştırmalarda yeniden indirmez ve
+pip önbelleğini `.pip-cache/` altında tutar. Kurulumu bilerek yenilemek için
+`./setup.sh --force` kullanın.
 
 To use another local port:
 
