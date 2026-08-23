@@ -35,3 +35,7 @@ scripts/
 .idea/
 .vscode/
 .DS_Store
+
+# Local scratch files — keep on disk, never commit
+ps/
+smb_share_hunt.py.txt
