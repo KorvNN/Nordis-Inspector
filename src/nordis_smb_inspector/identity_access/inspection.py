@@ -463,6 +463,8 @@ def _inspect_directory_text(
                                 category=match.category,
                                 confidence=match.confidence.value,
                                 line_number=line_number,
+                                match_start=match.start,
+                                match_end=match.end,
                             )
                         )
                 entries.append(

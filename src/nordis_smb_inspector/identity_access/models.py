@@ -46,6 +46,16 @@ class DirectoryTextSignal:
     category: str
     confidence: str
     line_number: int
+    match_start: int | None = None
+    match_end: int | None = None
+
+    def __post_init__(self) -> None:
+        if (self.match_start is None) != (self.match_end is None):
+            raise ValueError("Directory text match bounds must be provided together.")
+        if self.match_start is not None and (
+            self.match_start < 0 or self.match_end <= self.match_start
+        ):
+            raise ValueError("Directory text match range is invalid.")
 
     def public_payload(self) -> dict[str, object]:
         return {
