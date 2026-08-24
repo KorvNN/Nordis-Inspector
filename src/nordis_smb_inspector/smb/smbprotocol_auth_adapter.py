@@ -456,9 +456,20 @@ class SmbProtocolAuthenticator:
             try:
                 return self.authenticate(connection, request, cancellation=cancellation)
             except SmbProtocolAuthenticationError as caught:
-                if caught.fallback_reason is None:
+                fallback_reason = caught.fallback_reason
+                if (
+                    fallback_reason is None
+                    and caught.detail.raw_code == 0xC000006D
+                    and caught.detail.symbolic_name == "LOGON_FAILURE"
+                ):
+                    fallback_reason = FallbackReason.KERBEROS_LOGON_REJECTED
+                if fallback_reason is None:
                     raise
-                kerberos_failure = caught
+                kerberos_failure = SmbProtocolAuthenticationError(
+                    history=caught.history,
+                    detail=caught.detail,
+                    fallback_reason=fallback_reason,
+                )
         else:
             kerberos_failure = _hostname_failure_exception(
                 fallback_reason=FallbackReason.KERBEROS_HOSTNAME_UNRESOLVED

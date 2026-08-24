@@ -197,6 +197,7 @@ class FallbackReason(StrEnum):
     CLOCK_SKEW = "clock_skew"
     REALM_MISMATCH = "realm_mismatch"
     UNSUPPORTED_MECHANISM = "unsupported_mechanism"
+    KERBEROS_LOGON_REJECTED = "kerberos_logon_rejected"
     NTLM_FALLBACK_UNAVAILABLE = "ntlm_fallback_unavailable"
 
 
