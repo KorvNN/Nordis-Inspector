@@ -1,0 +1,274 @@
+# Orta - general credentials, tokens, and secrets
+password
+passwd
+pwd
+passphrase
+credential
+credentials
+username
+user_name
+login_password
+account_password
+service_account_password
+svc_password
+admin_password
+root_password
+proxy_password
+keystore_password
+truststore_password
+certificate_password
+pfx_password
+wallet_password
+key_password
+key_passphrase
+secret
+secret_key
+shared_secret
+master_secret
+client_secret
+api_key
+apikey
+api_secret
+api_token
+access_token
+refresh_token
+session_token
+bearer
+auth_token
+auth_key
+auth_secret
+authorization
+oauth_token
+id_token
+consumer_key
+consumer_secret
+application_key
+application_secret
+hmac_key
+jwt_secret
+webhook_secret
+webhook_token
+sas_token
+security_token
+otp_seed
+totp_seed
+mfa_seed
+recovery_code
+backup_code
+personal_access_token
+deploy_token
+runner_token
+registration_token
+basic_auth_password
+connection_string
+connectionstring
+database_url
+datasource_url
+jdbc_url
+mongodb_uri
+database_password
+db_password
+sql_password
+redis_password
+ldap_password
+bind_password
+smtp_password
+ftp_password
+private_key
+privatekey
+encryption_key
+signing_key
+master_key
+BEGIN PRIVATE KEY
+BEGIN RSA PRIVATE KEY
+BEGIN OPENSSH PRIVATE KEY
+BEGIN EC PRIVATE KEY
+BEGIN ENCRYPTED PRIVATE KEY
+BEGIN PGP PRIVATE KEY BLOCK
+
+# Orta - Turkish credential and access language
+şifre
+sifre
+parola
+kullanıcı adı
+kullanici adi
+gizli anahtar
+kimlik bilgisi
+erişim anahtarı
+erisim anahtari
+özel anahtar
+ozel anahtar
+bağlantı dizesi
+baglanti dizesi
+veritabanı şifresi
+veritabani sifresi
+servis hesabı
+servis hesabi
+servis parolası
+admin şifresi
+yönetici şifresi
+kök parolası
+api anahtarı
+api anahtari
+
+# Orta - cloud, SaaS, source control, and developer services
+aws_access_key_id
+aws_secret_access_key
+aws_session_token
+aws_credentials
+AKIA
+azure_client_secret
+azure_storage_key
+azure_storage_connection_string
+azure_sas_token
+azure_devops_pat
+storage_account_key
+AccountKey=
+SharedAccessSignature=
+google_application_credentials
+gcp_service_account
+google_service_account_key
+service_account_key
+"type": "service_account"
+AIza
+cloudflare_api_token
+digitalocean_token
+github_token
+github_pat
+github_pat_
+ghp_
+gho_
+ghu_
+ghs_
+ghr_
+gitlab_token
+gitlab_pat
+glpat-
+PRIVATE-TOKEN:
+bitbucket_token
+bitbucket_app_password
+slack_token
+slack_bot_token
+slack_signing_secret
+xoxb-
+xoxp-
+stripe_secret_key
+stripe_webhook_secret
+sk_live_
+whsec_
+twilio_auth_token
+sendgrid_api_key
+SG.
+telegram_bot_token
+discord_bot_token
+npm_token
+_authToken
+pypi_token
+pypi-
+docker_password
+docker_auth
+docker_config_json
+kubeconfig
+kubernetes_token
+client-key-data
+terraform_token
+ansible_vault_password
+vault_token
+consul_token
+sentry_auth_token
+datadog_api_key
+grafana_api_key
+sonarqube_token
+jenkins_api_token
+openai_api_key
+anthropic_api_key
+hf_
+
+# Orta - databases, brokers, CI/CD, and infrastructure
+postgres_url
+postgresql_url
+mysql_url
+redis_url
+amqp_url
+rabbitmq_url
+elasticsearch_url
+sqlserver_url
+oracle_connection_string
+postgres://
+postgresql://
+mysql://
+redis://
+amqp://
+mongodb+srv://
+PGPASSWORD
+MYSQL_PWD
+MARIADB_ROOT_PASSWORD
+MSSQL_SA_PASSWORD
+SA_PASSWORD
+ORACLE_PASSWORD
+REDISCLI_AUTH
+MONGO_INITDB_ROOT_PASSWORD
+RABBITMQ_DEFAULT_PASS
+KAFKA_SASL_PASSWORD
+ELASTIC_PASSWORD
+MINIO_ROOT_PASSWORD
+MINIO_SECRET_KEY
+CI_JOB_TOKEN
+CI_DEPLOY_PASSWORD
+SYSTEM_ACCESSTOKEN
+AZURE_DEVOPS_EXT_PAT
+JENKINS_PASSWORD
+ARTIFACTORY_API_KEY
+NEXUS_PASSWORD
+SONAR_TOKEN
+REGISTRY_PASSWORD
+ANSIBLE_BECOME_PASSWORD
+SUDO_PASSWORD
+SSH_PASSWORD
+SSH_PASSPHRASE
+SSL_KEY_PASSWORD
+TLS_KEY_PASSWORD
+
+# Orta - Windows and Active Directory artifacts
+cpassword
+DefaultPassword
+AltDefaultPassword
+AutoAdminLogon
+AutoLogonPassword
+ClearTextPassword
+PSCredential
+ConvertTo-SecureString
+ConvertFrom-SecureString
+krb5tgs
+krb5asrep
+krb5pa
+nthash
+ntlm_hash
+lmhash
+netntlm
+DCC2
+KRB5CCNAME
+.ccache
+DPAPI_SYSTEM
+NL$KM
+BCKUPKEY_
+MasterKey
+krbtgt_hash
+gmsa_password
+machine_account_password
+cached_domain_credential
+msDS-ManagedPassword
+ms-Mcs-AdmPwd
+msLAPS-Password
+msLAPS-EncryptedPassword
+LAPS_Password
+unicodePwd
+userPassword
+supplementalCredentials
+dBCSPwd
+ntPwdHistory
+lmPwdHistory
+runas /savecred
+cmdkey /add
+cmdkey /pass:
+-AsPlainText

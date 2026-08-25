@@ -1,0 +1,94 @@
+# Temel - high-confidence credential and secret terms
+password
+passwd
+pwd
+passphrase
+credential
+credentials
+username
+login_password
+account_password
+service_account_password
+secret
+secret_key
+shared_secret
+client_secret
+api_key
+apikey
+api_secret
+api_token
+access_token
+refresh_token
+session_token
+connection_string
+database_url
+database_password
+db_password
+sql_password
+ldap_password
+bind_password
+private_key
+encryption_key
+signing_key
+BEGIN PRIVATE KEY
+BEGIN RSA PRIVATE KEY
+BEGIN OPENSSH PRIVATE KEY
+BEGIN EC PRIVATE KEY
+
+# Temel - Turkish credential terms
+şifre
+sifre
+parola
+kullanıcı adı
+kullanici adi
+gizli anahtar
+kimlik bilgisi
+erişim anahtarı
+erisim anahtari
+veritabanı şifresi
+veritabani sifresi
+servis hesabı
+servis hesabi
+
+# Temel - common platform credentials
+aws_access_key_id
+aws_secret_access_key
+aws_session_token
+azure_client_secret
+azure_storage_key
+azure_storage_connection_string
+google_application_credentials
+gcp_service_account
+github_token
+gitlab_token
+slack_token
+stripe_secret_key
+twilio_auth_token
+sendgrid_api_key
+npm_token
+docker_auth
+kubeconfig
+
+# Temel - Windows and Active Directory
+cpassword
+DefaultPassword
+AutoAdminLogon
+ClearTextPassword
+PSCredential
+ConvertTo-SecureString
+nthash
+ntlm_hash
+lmhash
+netntlm
+DCC2
+KRB5CCNAME
+DPAPI_SYSTEM
+krbtgt_hash
+gmsa_password
+machine_account_password
+msDS-ManagedPassword
+ms-Mcs-AdmPwd
+msLAPS-Password
+LAPS_Password
+unicodePwd
+userPassword
