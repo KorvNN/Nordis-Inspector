@@ -21,6 +21,7 @@ from nordis_smb_inspector.core.content import (
     ContentScanStatus,
     LineMatch,
     MatchOptions,
+    MatchSpan,
     scan_text,
 )
 from nordis_smb_inspector.core.credential_artifacts import (
@@ -235,6 +236,7 @@ class ContentFinding:
     rule_id: str | None = None
     category: str | None = None
     confidence: DetectionConfidence | None = None
+    match_spans: tuple[MatchSpan, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("target", "share", "path", "term"):
@@ -243,8 +245,16 @@ class ContentFinding:
                 raise ValueError(f"{name} must be non-empty text.")
         if not isinstance(self.method, FindingMethod):
             raise TypeError("method must be a FindingMethod value.")
+        if not isinstance(self.match_spans, tuple) or any(
+            not isinstance(span, MatchSpan) for span in self.match_spans
+        ):
+            raise TypeError("match_spans must be a tuple of MatchSpan values.")
         if self.method is FindingMethod.ARTIFACT:
-            if self.line_number is not None or self.full_line is not None:
+            if (
+                self.line_number is not None
+                or self.full_line is not None
+                or self.match_spans
+            ):
                 raise ValueError("Artifact findings cannot contain decoded line content.")
         else:
             if isinstance(self.line_number, bool) or not isinstance(self.line_number, int):
@@ -253,6 +263,8 @@ class ContentFinding:
                 raise ValueError("line_number must be at least one.")
             if not isinstance(self.full_line, str):
                 raise TypeError("full_line must be text.")
+            if any(span.end > len(self.full_line) for span in self.match_spans):
+                raise ValueError("Finding match spans must fit inside full_line.")
         pattern_metadata = (self.rule_id, self.category, self.confidence)
         if self.method is FindingMethod.WORDLIST:
             if any(value is not None for value in pattern_metadata):
@@ -927,6 +939,7 @@ def _scan_file(
                 term=match.term,
                 full_line=match.line,
                 method=FindingMethod.WORDLIST,
+                match_spans=match.spans,
             ),
         )
 
@@ -962,6 +975,7 @@ def _scan_file(
                 rule_id=match.rule_id,
                 category=match.category,
                 confidence=match.confidence,
+                match_spans=(MatchSpan(match.start, match.end),),
             ),
         )
 
