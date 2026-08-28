@@ -7,10 +7,12 @@ import stat
 import tempfile
 from collections.abc import Iterable, Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import StrEnum
+from fnmatch import fnmatchcase
 from importlib.metadata import PackageNotFoundError, distribution
 from os import PathLike
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from nordis_smb_inspector.core.detection import (
@@ -21,14 +23,98 @@ from nordis_smb_inspector.core.detection import (
 MIN_MAX_DEPTH = 1
 MAX_MAX_DEPTH = 256
 
-_CONTENT_WORDLIST = Path("wordlists/default-sensitive.txt")
 _DISTRIBUTION_NAME = "nordis-smb-inspector"
-_PACKAGED_WORDLIST_SUFFIX = "share/nordis-smb-inspector/wordlists/default-sensitive.txt"
-_USER_WORDLIST = Path("nordis-smb-inspector/wordlists/default-sensitive.txt")
+
+_DEFAULT_MAX_FILE_SIZE_BYTES = 32 * 1024 * 1024
+_DEFAULT_MAX_FILES_PER_SHARE = 2_500
 
 
 class ScanConfigError(ValueError):
     """A content-free validation or configuration error."""
+
+
+class ScanProfile(StrEnum):
+    """Independent default term list selected by the operator."""
+
+    BASIC = "basic"
+    BALANCED = "balanced"
+    THOROUGH = "thorough"
+
+
+_CONTENT_WORDLISTS = {
+    ScanProfile.BASIC: Path("wordlists/basic-sensitive.txt"),
+    ScanProfile.BALANCED: Path("wordlists/balanced-sensitive.txt"),
+    ScanProfile.THOROUGH: Path("wordlists/default-sensitive.txt"),
+}
+_PACKAGED_WORDLIST_SUFFIXES = {
+    profile: Path("share/nordis-smb-inspector") / relative_path
+    for profile, relative_path in _CONTENT_WORDLISTS.items()
+}
+_USER_WORDLISTS = {
+    profile: Path("nordis-smb-inspector") / relative_path
+    for profile, relative_path in _CONTENT_WORDLISTS.items()
+}
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class FileScanFilter:
+    """Bound which remote files are inventoried and opened for content scanning."""
+
+    path_patterns: tuple[str, ...] = ()
+    extensions: tuple[str, ...] = ()
+    max_file_size_bytes: int | None = None
+    max_files_per_share: int | None = None
+
+    def __post_init__(self) -> None:
+        patterns = _normalize_values(
+            self.path_patterns,
+            "File path patterns must be text.",
+        )
+        if len(patterns) > 50 or any(len(pattern) > 160 for pattern in patterns):
+            raise ScanConfigError("At most 50 file path patterns of 160 characters are allowed.")
+        extensions = _normalize_extensions(self.extensions)
+        _validate_optional_limit(
+            self.max_file_size_bytes,
+            name="Maximum file size",
+            maximum=1024 * 1024 * 1024,
+        )
+        _validate_optional_limit(
+            self.max_files_per_share,
+            name="Maximum files per share",
+            maximum=100_000,
+        )
+        object.__setattr__(self, "path_patterns", patterns)
+        object.__setattr__(self, "extensions", extensions)
+
+    def matches(self, relative_path: str, size: int | None) -> bool:
+        """Return whether a normalized SMB file is inside the selected scope."""
+
+        normalized_path = relative_path.replace("/", "\\").casefold()
+        basename = PureWindowsPath(relative_path).name.casefold()
+        if self.path_patterns and not any(
+            fnmatchcase(normalized_path, pattern.replace("/", "\\").casefold())
+            or fnmatchcase(basename, pattern.casefold())
+            for pattern in self.path_patterns
+        ):
+            return False
+        if self.extensions and not any(
+            basename.endswith(extension) for extension in self.extensions
+        ):
+            return False
+        return not (
+            size is not None
+            and self.max_file_size_bytes is not None
+            and size > self.max_file_size_bytes
+        )
+
+    def __repr__(self) -> str:
+        return (
+            "FileScanFilter("
+            f"path_patterns=<redacted {len(self.path_patterns)} entries>, "
+            f"extensions={len(self.extensions)} selected, "
+            f"max_file_size_bytes={self.max_file_size_bytes!r}, "
+            f"max_files_per_share={self.max_files_per_share!r})"
+        )
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -45,6 +131,8 @@ class ScanOptions:
     rule_packs: tuple[DetectionRulePack, ...] = DEFAULT_DETECTION_RULE_PACKS
     use_default: bool = False
     additional_terms: tuple[str, ...] = ()
+    profile: ScanProfile = ScanProfile.THOROUGH
+    file_filter: FileScanFilter = field(default_factory=FileScanFilter)
 
     def __post_init__(self) -> None:
         terms = _normalize_values(self.terms, "Search terms must be text.")
@@ -53,6 +141,10 @@ class ScanOptions:
             raise ScanConfigError("Pattern detection selection must be a boolean.")
         if not isinstance(self.use_default, bool):
             raise ScanConfigError("Default search selection must be a boolean.")
+        if not isinstance(self.profile, ScanProfile):
+            raise ScanConfigError("Scan profile is invalid.")
+        if not isinstance(self.file_filter, FileScanFilter):
+            raise ScanConfigError("File scan filter is invalid.")
         rule_packs = _validate_rule_packs(self.rule_packs)
         additional_terms = _normalize_values(
             self.additional_terms,
@@ -74,7 +166,8 @@ class ScanOptions:
             f"max_depth={self.max_depth!r}, detect_patterns={self.detect_patterns!r}, "
             f"rule_packs={len(self.rule_packs)} selected, "
             f"use_default={self.use_default!r}, "
-            f"additional_terms=<redacted {len(self.additional_terms)} entries>)"
+            f"additional_terms=<redacted {len(self.additional_terms)} entries>, "
+            f"profile={self.profile.value!r}, file_filter={self.file_filter!r})"
         )
 
 
@@ -83,6 +176,11 @@ def parse_scan_options(
     max_depth: object,
     *,
     content_wordlist_path: str | PathLike[str] | None = None,
+    content_wordlist_paths: Mapping[
+        ScanProfile | str,
+        str | PathLike[str],
+    ]
+    | None = None,
 ) -> ScanOptions:
     """Parse literal terms and built-in pattern selections.
 
@@ -94,6 +192,13 @@ def parse_scan_options(
     if not isinstance(search, Mapping):
         raise ScanConfigError("Search settings must be an object.")
 
+    raw_profile = search.get("profile", ScanProfile.THOROUGH.value)
+    if not isinstance(raw_profile, str):
+        raise ScanConfigError("Scan profile must be text.")
+    try:
+        profile = ScanProfile(raw_profile)
+    except ValueError:
+        raise ScanConfigError("Scan profile is unknown.") from None
     use_default = search.get("use_default", True)
     if not isinstance(use_default, bool):
         raise ScanConfigError("Default search selection must be a boolean.")
@@ -124,9 +229,42 @@ def parse_scan_options(
         "Search terms must be text.",
     )
     default_terms = (
-        _load_default_sensitive_terms(content_wordlist_path)
+        _load_default_sensitive_terms(
+            _selected_wordlist_path(
+                profile,
+                content_wordlist_path=content_wordlist_path,
+                content_wordlist_paths=content_wordlist_paths,
+            )
+        )
         if use_default
         else ()
+    )
+
+    path_patterns = _parse_text_array(
+        search.get("file_path_patterns", []),
+        array_error="File path patterns must be an array.",
+        item_error="Each file path pattern must be text.",
+    )
+    requested_extensions = _parse_text_array(
+        search.get("file_extensions", []),
+        array_error="File extensions must be an array.",
+        item_error="Each file extension must be text.",
+    )
+    raw_max_size_mb = search.get("max_file_size_mb")
+    if raw_max_size_mb is None:
+        max_file_size_bytes = _DEFAULT_MAX_FILE_SIZE_BYTES
+    elif isinstance(raw_max_size_mb, bool) or not isinstance(raw_max_size_mb, int):
+        raise ScanConfigError("Maximum file size must be an integer MiB value.")
+    elif not 1 <= raw_max_size_mb <= 1024:
+        raise ScanConfigError("Maximum file size must be between 1 and 1024 MiB.")
+    else:
+        max_file_size_bytes = raw_max_size_mb * 1024 * 1024
+
+    file_filter = FileScanFilter(
+        path_patterns=path_patterns,
+        extensions=requested_extensions,
+        max_file_size_bytes=max_file_size_bytes,
+        max_files_per_share=_DEFAULT_MAX_FILES_PER_SHARE,
     )
 
     return ScanOptions(
@@ -139,15 +277,56 @@ def parse_scan_options(
         rule_packs=rule_packs,
         use_default=use_default,
         additional_terms=normalized_additional_terms,
+        profile=profile,
+        file_filter=file_filter,
     )
 
 
+def _parse_text_array(
+    value: object,
+    *,
+    array_error: str,
+    item_error: str,
+) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ScanConfigError(array_error)
+    if not all(isinstance(item, str) for item in value):
+        raise ScanConfigError(item_error)
+    return _normalize_values(value, item_error)
+
+
+def _normalize_extensions(values: Iterable[Any]) -> tuple[str, ...]:
+    normalized = _normalize_values(values, "File extensions must be text.")
+    result: list[str] = []
+    for value in normalized:
+        extension = value.casefold()
+        if not extension.startswith("."):
+            extension = f".{extension}"
+        if (
+            len(extension) > 24
+            or len(extension) < 2
+            or any(character in extension for character in "\\/*?[]")
+        ):
+            raise ScanConfigError("File extension filter is invalid.")
+        result.append(extension)
+    if len(result) > 64:
+        raise ScanConfigError("At most 64 file extensions are allowed.")
+    return tuple(dict.fromkeys(result))
+
+
+def _validate_optional_limit(value: int | None, *, name: str, maximum: int) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= maximum:
+        raise ScanConfigError(f"{name} is outside the supported range.")
+
+
 def _load_default_sensitive_terms(
-    path: str | PathLike[str] | None,
+    path: str | PathLike[str],
 ) -> tuple[str, ...]:
     wordlist_path = _coerce_wordlist_path(path)
-    if wordlist_path is None:
-        wordlist_path = editable_wordlist_path()
+    if wordlist_path is None:  # pragma: no cover - caller always supplies a path
+        raise ScanConfigError("Default content wordlist path is invalid.")
     try:
         raw = wordlist_path.read_text(encoding="utf-8-sig")
     except UnicodeError as exc:
@@ -168,6 +347,30 @@ def _load_default_sensitive_terms(
     return terms
 
 
+def _selected_wordlist_path(
+    profile: ScanProfile,
+    *,
+    content_wordlist_path: str | PathLike[str] | None,
+    content_wordlist_paths: Mapping[ScanProfile | str, str | PathLike[str]] | None,
+) -> Path:
+    if content_wordlist_path is not None:
+        selected = _coerce_wordlist_path(content_wordlist_path)
+        if selected is None:  # pragma: no cover - non-None input cannot coerce to None
+            raise ScanConfigError("Default content wordlist path is invalid.")
+        return selected
+    if content_wordlist_paths is not None:
+        if not isinstance(content_wordlist_paths, Mapping):
+            raise ScanConfigError("Default content wordlist paths are invalid.")
+        selected_value = content_wordlist_paths.get(profile)
+        if selected_value is None:
+            selected_value = content_wordlist_paths.get(profile.value)
+        selected = _coerce_wordlist_path(selected_value)
+        if selected is None:
+            raise ScanConfigError("Selected content wordlist is unavailable.")
+        return selected
+    return editable_wordlist_path(profile=profile)
+
+
 def _coerce_wordlist_path(value: str | PathLike[str] | None) -> Path | None:
     if value is None:
         return None
@@ -179,19 +382,24 @@ def _coerce_wordlist_path(value: str | PathLike[str] | None) -> Path | None:
 
 def editable_wordlist_path(
     *,
+    profile: ScanProfile = ScanProfile.THOROUGH,
     repository_start: str | PathLike[str] | None = None,
     config_home: str | PathLike[str] | None = None,
 ) -> Path:
     """Return the repository list or an editable per-user installed copy."""
 
-    repository_path = _repository_wordlist_path(repository_start)
+    if not isinstance(profile, ScanProfile):
+        raise ScanConfigError("Scan profile is invalid.")
+    repository_path = _repository_wordlist_path(repository_start, profile=profile)
     if repository_path is not None:
         return repository_path
-    return _initialize_user_wordlist(config_home)
+    return _initialize_user_wordlist(config_home, profile=profile)
 
 
 def _repository_wordlist_path(
     start: str | PathLike[str] | None = None,
+    *,
+    profile: ScanProfile = ScanProfile.THOROUGH,
 ) -> Path | None:
     try:
         anchor = Path(__file__) if start is None else Path(start)
@@ -200,7 +408,7 @@ def _repository_wordlist_path(
         return None
     directory = resolved if resolved.is_dir() else resolved.parent
     for candidate in (directory, *directory.parents):
-        wordlist_path = candidate / _CONTENT_WORDLIST
+        wordlist_path = candidate / _CONTENT_WORDLISTS[profile]
         if wordlist_path.is_file():
             return wordlist_path
     return None
@@ -208,15 +416,17 @@ def _repository_wordlist_path(
 
 def _initialize_user_wordlist(
     config_home: str | PathLike[str] | None,
+    *,
+    profile: ScanProfile,
 ) -> Path:
-    destination = _config_home(config_home) / _USER_WORDLIST
+    destination = _config_home(config_home) / _USER_WORDLISTS[profile]
     if destination.is_file():
         return destination
 
     unavailable = "Default content wordlist is unavailable."
     try:
         destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        default_bytes = _installed_wordlist_path().read_bytes()
+        default_bytes = _installed_wordlist_path(profile).read_bytes()
     except (OSError, ScanConfigError):
         raise ScanConfigError(unavailable) from None
 
@@ -271,11 +481,11 @@ def _config_home(value: str | PathLike[str] | None) -> Path:
     return base
 
 
-def _installed_wordlist_path() -> Path:
+def _installed_wordlist_path(profile: ScanProfile = ScanProfile.THOROUGH) -> Path:
     try:
         installed = distribution(_DISTRIBUTION_NAME)
         installation_root = Path(installed.locate_file("")).resolve()
-        relative_path = Path(_PACKAGED_WORDLIST_SUFFIX)
+        relative_path = _PACKAGED_WORDLIST_SUFFIXES[profile]
         for candidate_root in (installation_root, *installation_root.parents):
             candidate = candidate_root / relative_path
             if candidate.is_file():
