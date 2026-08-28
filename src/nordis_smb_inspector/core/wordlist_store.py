@@ -6,6 +6,7 @@ import os
 import stat
 import tempfile
 import unicodedata
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from enum import StrEnum
@@ -13,7 +14,11 @@ from os import PathLike
 from pathlib import Path
 from threading import RLock
 
-from nordis_smb_inspector.core.scan_config import ScanConfigError, editable_wordlist_path
+from nordis_smb_inspector.core.scan_config import (
+    ScanConfigError,
+    ScanProfile,
+    editable_wordlist_path,
+)
 
 MAX_WORDLIST_BYTES = 1024 * 1024
 
@@ -25,7 +30,9 @@ class WordlistStoreError(ValueError):
 class WordlistKind(StrEnum):
     """A wordlist exposed by the local editor."""
 
-    CONTENT = "content"
+    BASIC = "basic"
+    BALANCED = "balanced"
+    THOROUGH = "thorough"
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -56,46 +63,80 @@ class WordlistDocument:
 
 
 class WordlistStore:
-    """Read and atomically replace the editable default term list."""
+    """Read and atomically replace the three editable default term lists."""
 
-    def __init__(self, *, content_path: str | PathLike[str] | None = None) -> None:
-        if content_path is None:
-            try:
-                content = editable_wordlist_path()
-            except ScanConfigError:
-                raise WordlistStoreError("Wordlist is unavailable.") from None
+    def __init__(
+        self,
+        *,
+        content_path: str | PathLike[str] | None = None,
+        content_paths: Mapping[WordlistKind | str, str | PathLike[str]] | None = None,
+    ) -> None:
+        if content_path is not None and content_paths is not None:
+            raise WordlistStoreError("Wordlist paths are invalid.")
+        if content_paths is not None:
+            paths = {
+                kind: _path_from_mapping(content_paths, kind)
+                for kind in WordlistKind
+            }
+        elif content_path is not None:
+            content = _coerce_path(content_path)
+            paths = {kind: content for kind in WordlistKind}
         else:
             try:
-                content = Path(content_path)
-            except (TypeError, ValueError):
-                raise WordlistStoreError("Wordlist path is invalid.") from None
-        self._content_path = content
+                paths = {
+                    kind: editable_wordlist_path(profile=ScanProfile(kind.value))
+                    for kind in WordlistKind
+                }
+            except ScanConfigError:
+                raise WordlistStoreError("Wordlist is unavailable.") from None
+        self._content_paths = paths
         self._lock = RLock()
 
     @property
     def content_path(self) -> Path:
-        return self._content_path
+        """Compatibility alias for the thorough list path."""
+
+        return self._content_paths[WordlistKind.THOROUGH]
+
+    @property
+    def content_paths(self) -> dict[ScanProfile, Path]:
+        return {
+            ScanProfile(kind.value): path
+            for kind, path in self._content_paths.items()
+        }
 
     def __repr__(self) -> str:
-        return "WordlistStore(content_path=<redacted>)"
+        return "WordlistStore(content_paths=<redacted 3 entries>)"
 
-    def read(self) -> WordlistDocument:
+    def read(self, kind: WordlistKind = WordlistKind.THOROUGH) -> WordlistDocument:
+        if not isinstance(kind, WordlistKind):
+            raise WordlistStoreError("Wordlist kind is invalid.")
         with self._lock:
-            return self._read_unlocked()
+            return self._read_unlocked(kind)
 
-    def save(self, text: str) -> WordlistDocument:
+    def read_all(self) -> tuple[WordlistDocument, ...]:
+        with self._lock:
+            return tuple(self._read_unlocked(kind) for kind in WordlistKind)
+
+    def save(
+        self,
+        text: str,
+        kind: WordlistKind = WordlistKind.THOROUGH,
+    ) -> WordlistDocument:
+        if not isinstance(kind, WordlistKind):
+            raise WordlistStoreError("Wordlist kind is invalid.")
         normalized_text, encoded, entry_count = _prepare_text(text)
         with self._lock:
-            self._replace_unlocked(encoded)
+            self._replace_unlocked(kind, encoded)
             return WordlistDocument(
-                kind=WordlistKind.CONTENT,
+                kind=kind,
                 text=normalized_text,
                 entry_count=entry_count,
             )
 
-    def _read_unlocked(self) -> WordlistDocument:
+    def _read_unlocked(self, kind: WordlistKind) -> WordlistDocument:
         try:
-            encoded = self._content_path.read_bytes()
+            encoded = self._content_paths[kind].read_bytes()
         except OSError:
             raise WordlistStoreError("Wordlist is unavailable.") from None
         if len(encoded) > MAX_WORDLIST_BYTES:
@@ -105,17 +146,18 @@ class WordlistStore:
         except UnicodeError:
             raise WordlistStoreError("Wordlist must be UTF-8 text.") from None
         _, _, entry_count = _prepare_text(text, add_final_newline=False)
-        return WordlistDocument(WordlistKind.CONTENT, text, entry_count)
+        return WordlistDocument(kind, text, entry_count)
 
-    def _replace_unlocked(self, encoded: bytes) -> None:
+    def _replace_unlocked(self, kind: WordlistKind, encoded: bytes) -> None:
+        destination = self._content_paths[kind]
         temporary_path: Path | None = None
         descriptor: int | None = None
         try:
-            mode = stat.S_IMODE(self._content_path.stat().st_mode)
+            mode = stat.S_IMODE(destination.stat().st_mode)
             descriptor, temporary_name = tempfile.mkstemp(
-                prefix=f".{self._content_path.name}.",
+                prefix=f".{destination.name}.",
                 suffix=".tmp",
-                dir=self._content_path.parent,
+                dir=destination.parent,
             )
             temporary_path = Path(temporary_name)
             os.fchmod(descriptor, mode)
@@ -124,7 +166,7 @@ class WordlistStore:
                 temporary_file.write(encoded)
                 temporary_file.flush()
                 os.fsync(temporary_file.fileno())
-            os.replace(temporary_path, self._content_path)
+            os.replace(temporary_path, destination)
             temporary_path = None
         except OSError:
             raise WordlistStoreError("Wordlist could not be saved.") from None
@@ -135,6 +177,27 @@ class WordlistStore:
             if temporary_path is not None:
                 with suppress(OSError):
                     temporary_path.unlink()
+
+
+def _coerce_path(value: str | PathLike[str]) -> Path:
+    try:
+        return Path(value)
+    except (TypeError, ValueError):
+        raise WordlistStoreError("Wordlist path is invalid.") from None
+
+
+def _path_from_mapping(
+    values: Mapping[WordlistKind | str, str | PathLike[str]],
+    kind: WordlistKind,
+) -> Path:
+    if not isinstance(values, Mapping):
+        raise WordlistStoreError("Wordlist paths are invalid.")
+    value = values.get(kind)
+    if value is None:
+        value = values.get(kind.value)
+    if value is None:
+        raise WordlistStoreError("Wordlist path is missing.")
+    return _coerce_path(value)
 
 
 def _prepare_text(
