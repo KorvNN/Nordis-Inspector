@@ -55,8 +55,6 @@ parola
 kullanıcı adı
 kullanici adi
 gizli anahtar
-gizli değer
-gizli deger
 erişim anahtarı
 erisim anahtari
 veritabanı şifresi
@@ -128,7 +126,6 @@ security_token
 otp_seed
 totp_seed
 mfa_seed
-seed_phrase
 recovery_code
 backup_code
 client_assertion
@@ -185,22 +182,10 @@ age-encryption.org/v1
 # Additional Turkish terms
 api anahtarı
 api anahtari
-istemci sırrı
-istemci sirri
-erişim belirteci
-erisim belirteci
-yenileme belirteci
-yenileme tokenı
-oturum belirteci
-oturum tokenı
 özel anahtar
 ozel anahtar
 bağlantı dizesi
 baglanti dizesi
-kurtarma kodu
-yedek kod
-kimlik bilgisi
-yetkilendirme
 
 # Cloud, source-control, SaaS, and developer tokens
 aws_secret_key
@@ -493,138 +478,4 @@ schtasks /rp
 # Additional Turkish credential terms
 admin şifresi
 yönetici şifresi
-kök parolası
 servis parolası
-proxy parolası
-anahtar parolası
-özel anahtar parolası
-erişim tokenı
-kişisel erişim tokenı
-webhook sırrı
-oturum çerezi
-kurtarma anahtarı
-yedekleme parolası
-
-# Expanded Turkish credential and access terms
-paylaşılan sır
-paylasilan sir
-paylaşılan anahtar
-paylasilan anahtar
-ön paylaşımlı anahtar
-on paylasimli anahtar
-önceden paylaşılan anahtar
-onceden paylasilan anahtar
-uygulama anahtarı
-uygulama anahtari
-uygulama sırrı
-uygulama sirri
-oturum anahtarı
-oturum anahtari
-güvenlik anahtarı
-guvenlik anahtari
-imzalama anahtarı
-imzalama anahtari
-sertifika anahtarı
-sertifika anahtari
-depolama anahtarı
-depolama anahtari
-hesap anahtarı
-hesap anahtari
-yedek anahtarı
-yedek anahtari
-kasa anahtarı
-kasa anahtari
-api sırrı
-api sirri
-webhook anahtarı
-webhook anahtari
-yenileme anahtarı
-yenileme anahtari
-imzalama sırrı
-imzalama sirri
-çerez sırrı
-cerez sirri
-oturum sırrı
-oturum sirri
-veritabanı bağlantısı
-veritabani baglantisi
-bağlantı bilgileri
-baglanti bilgileri
-kimlik bilgileri
-kimlik doğrulama bilgileri
-kimlik dogrulama bilgileri
-erişim bilgileri
-erisim bilgileri
-oturum açma bilgileri
-oturum acma bilgileri
-giriş bilgileri
-giris bilgileri
-doğrulama bilgileri
-dogrulama bilgileri
-hizmet hesabı
-hizmet hesabi
-teknik hesap
-otomasyon hesabı
-otomasyon hesabi
-entegrasyon hesabı
-entegrasyon hesabi
-robot hesabı
-robot hesabi
-kurtarma anahtari
-kurtarma ifadesi
-tohum ifadesi
-tohum sözcükleri
-tohum sozcukleri
-gizli sözcük
-gizli sozcuk
-geçiş sözcüğü
-gecis sozcugu
-geçiş ifadesi
-gecis ifadesi
-gizli bilgi
-gizli bilgiler
-gizli değişken
-gizli degisken
-gizli ortam değişkeni
-gizli ortam degiskeni
-gizli yapılandırma
-gizli yapilandirma
-yedekleme anahtarı
-yedekleme anahtari
-yedekleme kodu
-doğrulama anahtarı
-dogrulama anahtari
-güvenlik kodu
-guvenlik kodu
-doğrulama kodu
-dogrulama kodu
-onay kodu
-erişim kodu
-erisim kodu
-tek kullanımlık kod
-tek kullanimlik kod
-pin kodu
-pin numarası
-pin numarasi
-mfa tohumu
-otp tohumu
-totp tohumu
-doğrulayıcı sırrı
-dogrulayici sirri
-güvenlik yanıtı
-guvenlik yaniti
-güvenlik cevabı
-guvenlik cevabi
-kurtarma yanıtı
-kurtarma yaniti
-doğrulama belirteci
-dogrulama belirteci
-kimlik belirteci
-api belirteci
-servis belirteci
-hizmet belirteci
-küme belirteci
-kume belirteci
-kayıt deposu belirteci
-kayit deposu belirteci
-depo belirteci
