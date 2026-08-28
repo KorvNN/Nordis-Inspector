@@ -48,6 +48,8 @@ where = ["src"]
 
 [tool.setuptools.data-files]
 "share/nordis-smb-inspector/wordlists" = [
+  "wordlists/basic-sensitive.txt",
+  "wordlists/balanced-sensitive.txt",
   "wordlists/default-sensitive.txt",
 ]
 "share/nordis-smb-inspector/rules" = [
