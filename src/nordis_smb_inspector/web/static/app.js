@@ -58,15 +58,21 @@ const credentialSecretLabel = document.querySelector("#credential-secret-label")
 const credentialCcacheField = document.querySelector("#credential-ccache-field");
 const credentialCcache = document.querySelector("#credential-ccache");
 const authMode = document.querySelector("#auth-mode");
+const scanProfileInput = document.querySelector("#scan-profile");
+const filePathPatternsInput = document.querySelector("#file-path-patterns");
+const fileExtensionsInput = document.querySelector("#file-extensions");
+const maxFileSizeInput = document.querySelector("#max-file-size-mb");
 const useDefaultTermsInput = document.querySelector("#use-default-terms");
 const openDefaultTermsButton = document.querySelector("#open-default-terms");
 const defaultTermsDialog = document.querySelector("#default-terms-dialog");
 const closeDefaultTermsButton = document.querySelector("#close-default-terms");
+const defaultTermsProfile = document.querySelector("#default-terms-profile");
 const defaultTermsEditor = document.querySelector("#default-terms-editor");
 const defaultTermsFile = document.querySelector("#default-terms-file");
 const defaultTermsCount = document.querySelector("#default-terms-count");
 const defaultTermsStatus = document.querySelector("#default-terms-status");
 const saveDefaultTermsButton = document.querySelector("#save-default-terms");
+const customTermsSelector = document.querySelector("#custom-terms-selector");
 const additionalTermsInput = document.querySelector("#additional-terms");
 const additionalTermsFile = document.querySelector("#additional-terms-file");
 const additionalTermsStatus = document.querySelector("#additional-terms-status");
@@ -80,9 +86,6 @@ const termGeneratorStatus = document.querySelector("#term-generator-status");
 const detectPatternsInput = document.querySelector("#detect-patterns");
 const testSmbWriteAccessInput = document.querySelector("#test-smb-write-access");
 const testAdWriteAccessInput = document.querySelector("#test-ad-write-access");
-const rulePackSelector = document.querySelector("#rule-pack-selector");
-const rulePackCount = document.querySelector("#rule-pack-count");
-const patternRulePackInputs = [...document.querySelectorAll("[data-rule-pack]")];
 const startScanButton = document.querySelector("#start-scan-button");
 const cancelScanButton = document.querySelector("#cancel-scan-button");
 const previewErrors = document.querySelector("#preview-errors");
@@ -129,6 +132,10 @@ let latestGeneration = null;
 let latestContentCount = null;
 let pendingScanInputs = null;
 const scanInputSnapshots = new Map();
+let targetRenderTimer = null;
+let inventoryRenderTimer = null;
+let findingRenderTimer = null;
+let defaultTermsLoadSequence = 0;
 
 const CCACHE_MAX_BYTES = 1024 * 1024;
 const CUSTOM_TERMS_MAX_BYTES = 1024 * 1024;
@@ -327,6 +334,38 @@ function findingSignalValue(record) {
 
 function findingHighlightTerm(record) {
   return findingAssignmentKey(record) ?? (isStructuredFinding(record) ? null : record.term);
+}
+
+function findingMatchSpans(record) {
+  const exactSpans = normalizedMatchSpans(record.fullLine, record.matchSpans);
+  if (exactSpans.length > 0) return exactSpans;
+  return literalMatchSpans(record.fullLine, findingHighlightTerm(record));
+}
+
+function findingExcerpt(value, spans) {
+  const text = displayValue(value);
+  const normalized = normalizedMatchSpans(text, spans);
+  if (text.length <= 360) return {text, spans: normalized, truncated: false};
+
+  const focus = normalized[0];
+  const start = focus ? Math.max(0, focus.start - 110) : 0;
+  const minimumEnd = Math.min(text.length, start + 360);
+  const end = focus
+    ? Math.min(text.length, Math.max(minimumEnd, focus.end + 150))
+    : minimumEnd;
+  const prefix = start > 0 ? "… " : "";
+  const suffix = end < text.length ? " …" : "";
+  const excerptSpans = normalized
+    .filter((span) => span.start < end && start < span.end)
+    .map((span) => ({
+      start: prefix.length + Math.max(span.start, start) - start,
+      end: prefix.length + Math.min(span.end, end) - start,
+    }));
+  return {
+    text: `${prefix}${text.slice(start, end)}${suffix}`,
+    spans: excerptSpans,
+    truncated: start > 0 || end < text.length,
+  };
 }
 
 function firstValue(record, names) {
@@ -584,12 +623,13 @@ function upsertTarget(payload) {
   if (selectedTargetKey === record.ip) {
     renderTargetDetail(targetStore.get(record.ip));
   }
-  renderTargetRows("Hedef durumları bekleniyor.");
+  scheduleLiveRender("targets");
   return true;
 }
 
 function replaceTargets(records) {
   if (!Array.isArray(records)) return false;
+  clearLiveRender("targets");
   targetStore.clear();
   for (const item of records) {
     const record = targetRecord(item);
@@ -868,10 +908,13 @@ function renderFindingDetail(record) {
     context.className = "finding-context";
     const contextLabel = document.createElement("span");
     contextLabel.className = "finding-context-label";
-    contextLabel.textContent = uiText("Satır içeriği");
-    const line = document.createElement("code");
-    appendHighlightedText(line, record.fullLine, findingHighlightTerm(record));
-    context.append(contextLabel, line);
+    contextLabel.textContent = uiText("Eşleşme çevresi");
+    const spans = findingMatchSpans(record);
+    const excerpt = findingExcerpt(record.fullLine, spans);
+    const preview = document.createElement("code");
+    preview.className = "finding-context-preview";
+    appendHighlightedRanges(preview, excerpt.text, excerpt.spans);
+    context.append(contextLabel, preview);
     detailSections.push(context);
   }
   const metadataFields = [
@@ -1291,10 +1334,7 @@ function upsertInventory(payload) {
   const key = inventoryKey(record);
   inventoryStore.set(key, record);
   if (selectedInventoryKey === key) renderInventoryDetail(record);
-  renderInventory();
-  if (currentIdentityAccess() !== null) {
-    renderIdentityAccess(currentIdentityAccess());
-  }
+  scheduleLiveRender("inventory");
   return true;
 }
 
@@ -1304,7 +1344,7 @@ function upsertFinding(payload) {
   const key = findingKey(record);
   findingStore.set(key, record);
   if (selectedFindingKey === key) renderFindingDetail(record);
-  renderFindings();
+  scheduleLiveRender("findings");
   return true;
 }
 
@@ -1319,6 +1359,7 @@ function replaceInventory(records) {
     selectedInventoryKey = null;
     setSelectionPlaceholder(inventorySelectionDetail, "Ayrıntı için bir kayıt seç.");
   }
+  clearLiveRender("inventory");
   renderInventory();
   if (currentIdentityAccess() !== null) {
     renderIdentityAccess(currentIdentityAccess());
@@ -1337,11 +1378,14 @@ function replaceFindings(records) {
     selectedFindingKey = null;
     setSelectionPlaceholder(findingSelectionDetail, "Ayrıntı için bir bulgu seç.");
   }
+  clearLiveRender("findings");
   renderFindings();
   return true;
 }
 
 function clearResults() {
+  clearLiveRender("inventory");
+  clearLiveRender("findings");
   inventoryStore.clear();
   findingStore.clear();
   inventoryGroupOpenState.clear();
@@ -1354,6 +1398,51 @@ function clearResults() {
   renderFindings();
   renderIdentityAccess(null);
   clearContents();
+}
+
+function clearLiveRender(kind) {
+  const timer = kind === "targets"
+    ? targetRenderTimer
+    : kind === "inventory"
+      ? inventoryRenderTimer
+      : findingRenderTimer;
+  if (timer !== null) window.clearTimeout(timer);
+  if (kind === "targets") targetRenderTimer = null;
+  if (kind === "inventory") inventoryRenderTimer = null;
+  if (kind === "findings") findingRenderTimer = null;
+}
+
+function scheduleLiveRender(kind) {
+  const pending = kind === "targets"
+    ? targetRenderTimer
+    : kind === "inventory"
+      ? inventoryRenderTimer
+      : findingRenderTimer;
+  if (pending !== null) return;
+  const timer = window.setTimeout(() => {
+    clearLiveRender(kind);
+    if (kind === "targets") renderTargetRows("Hedef durumları bekleniyor.");
+    if (kind === "inventory") renderInventory();
+    if (kind === "findings") renderFindings();
+  }, 250);
+  if (kind === "targets") targetRenderTimer = timer;
+  if (kind === "inventory") inventoryRenderTimer = timer;
+  if (kind === "findings") findingRenderTimer = timer;
+}
+
+function flushLiveRenders() {
+  if (targetRenderTimer !== null) {
+    clearLiveRender("targets");
+    renderTargetRows("Hedef durumları bekleniyor.");
+  }
+  if (inventoryRenderTimer !== null) {
+    clearLiveRender("inventory");
+    renderInventory();
+  }
+  if (findingRenderTimer !== null) {
+    clearLiveRender("findings");
+    renderFindings();
+  }
 }
 
 function showErrors(errors) {
@@ -1399,10 +1488,10 @@ function setDefaultTermsStatus(message, tone = "") {
   defaultTermsStatus.className = `wordlist-status${tone ? ` ${tone}` : ""}`;
 }
 
-async function defaultTermsPayload(response) {
+async function defaultTermsPayload(response, profile) {
   try {
     const payload = await response.json();
-    const document = payload?.content;
+    const document = payload?.[profile];
     if (!document || typeof document.text !== "string") return null;
     return document;
   } catch (_error) {
@@ -1411,37 +1500,43 @@ async function defaultTermsPayload(response) {
 }
 
 async function refreshDefaultTerms() {
+  const sequence = ++defaultTermsLoadSequence;
+  const profile = defaultTermsProfile.value;
   defaultTermsEditor.disabled = true;
   saveDefaultTermsButton.disabled = true;
   setDefaultTermsStatus("Yükleniyor");
   try {
     const response = await fetch("/wordlists", {cache: "no-store", credentials: "omit"});
-    const document = await defaultTermsPayload(response);
+    const document = await defaultTermsPayload(response, profile);
     if (!response.ok || !document) throw new Error("request_failed");
+    if (sequence !== defaultTermsLoadSequence || profile !== defaultTermsProfile.value) return;
     defaultTermsEditor.value = document.text;
     setDefaultTermsCount(document.entry_count);
     setDefaultTermsStatus("");
   } catch (_error) {
     setDefaultTermsStatus("Liste yüklenemedi", "is-error");
   } finally {
+    if (sequence !== defaultTermsLoadSequence) return;
     defaultTermsEditor.disabled = false;
     saveDefaultTermsButton.disabled = false;
   }
 }
 
 async function saveDefaultTerms() {
+  const profile = defaultTermsProfile.value;
   saveDefaultTermsButton.disabled = true;
   setDefaultTermsStatus("Kaydediliyor");
   try {
-    const response = await fetch("/wordlists/content", {
+    const response = await fetch(`/wordlists/${profile}`, {
       method: "PUT",
       credentials: "omit",
       cache: "no-store",
       headers: mutationHeaders(),
       body: JSON.stringify({text: defaultTermsEditor.value}),
     });
-    const document = await defaultTermsPayload(response);
+    const document = await defaultTermsPayload(response, profile);
     if (!response.ok || !document) throw new Error("request_failed");
+    if (profile !== defaultTermsProfile.value) return;
     defaultTermsEditor.value = document.text;
     setDefaultTermsCount(document.entry_count);
     setDefaultTermsStatus("Kaydedildi", "is-ok");
@@ -1633,31 +1728,14 @@ async function importAdditionalTerms() {
 }
 
 function selectedRulePacks() {
-  return patternRulePackInputs
-    .filter((input) => input.checked)
-    .map((input) => input.value);
+  return Object.keys(DETECTION_RULE_PACK_LABELS);
 }
 
-function rulePacksAreValid({report = false} = {}) {
-  const firstInput = patternRulePackInputs[0];
-  if (!firstInput) return true;
-  const valid = !detectPatternsInput.checked || selectedRulePacks().length > 0;
-  firstInput.setCustomValidity(valid ? "" : uiText("En az bir tespit kuralı paketi seç."));
-  if (!valid && report) firstInput.reportValidity();
-  return valid;
+function rulePacksAreValid() {
+  return true;
 }
 
 function syncRulePackControls() {
-  const enabled = detectPatternsInput.checked;
-  for (const input of patternRulePackInputs) input.disabled = !enabled;
-  rulePackSelector.classList.toggle("is-disabled", !enabled);
-  rulePackSelector.toggleAttribute("inert", !enabled);
-  rulePackSelector.setAttribute("aria-disabled", String(!enabled));
-  if (!enabled) rulePackSelector.open = false;
-  rulePackCount.textContent = enabled
-    ? `${selectedRulePacks().length}/${patternRulePackInputs.length}`
-    : uiText("Kapalı");
-  rulePacksAreValid();
   searchSelectionIsValid();
 }
 
@@ -1670,7 +1748,10 @@ function searchSelectionIsValid({report = false} = {}) {
       "Varsayılan terimleri veya otomatik tespiti etkinleştirin ya da en az bir özel terim girin.",
     ),
   );
-  if (!valid && report) additionalTermsInput.reportValidity();
+  if (!valid && report) {
+    customTermsSelector.open = true;
+    additionalTermsInput.reportValidity();
+  }
   return valid;
 }
 
@@ -1678,12 +1759,29 @@ function detectionRulePackLabel(pack) {
   return uiText(DETECTION_RULE_PACK_LABELS[pack] ?? pack);
 }
 
+function separatedFilterValues(value, {allowSpaces = true} = {}) {
+  const separator = allowSpaces ? /[\s,]+/u : /[\n,]+/u;
+  return [...new Set(
+    value.split(separator).map((item) => item.trim()).filter(Boolean),
+  )];
+}
+
 function scanSearchOptions() {
+  const maxFileSize = maxFileSizeInput.value === ""
+    ? null
+    : Number.parseInt(maxFileSizeInput.value, 10);
   return {
     use_default: useDefaultTermsInput.checked,
     additional_terms: additionalSearchTerms(),
     detect_patterns: detectPatternsInput.checked,
     rule_packs: selectedRulePacks(),
+    profile: scanProfileInput.value,
+    file_path_patterns: separatedFilterValues(
+      filePathPatternsInput.value,
+      {allowSpaces: false},
+    ),
+    file_extensions: separatedFilterValues(fileExtensionsInput.value),
+    max_file_size_mb: maxFileSize,
   };
 }
 
@@ -1722,6 +1820,10 @@ function captureScanInputs(credential, search) {
       additional_terms_input: additionalTermsInput.value.trim(),
       detect_patterns: search.detect_patterns,
       rule_packs: [...search.rule_packs],
+      profile: search.profile,
+      file_path_patterns: [...search.file_path_patterns],
+      file_extensions: [...search.file_extensions],
+      max_file_size_mb: search.max_file_size_mb,
     },
   };
 }
@@ -1768,6 +1870,16 @@ function scanInputsFromServer(state) {
         : additionalTerms.join("\n"),
       detect_patterns: search.detect_patterns === true,
       rule_packs: rulePacks,
+      profile: typeof search.profile === "string" ? search.profile : "thorough",
+      file_path_patterns: Array.isArray(search.file_path_patterns)
+        ? search.file_path_patterns.filter((pattern) => typeof pattern === "string")
+        : [],
+      file_extensions: Array.isArray(search.file_extensions)
+        ? search.file_extensions.filter((extension) => typeof extension === "string")
+        : [],
+      max_file_size_mb: Number.isInteger(search.max_file_size_mb)
+        ? search.max_file_size_mb
+        : null,
     },
   };
 }
@@ -1860,6 +1972,10 @@ function addGeneratedTerms() {
 }
 
 function scanFormIsValid() {
+  if (!maxFileSizeInput.checkValidity()) {
+    maxFileSizeInput.reportValidity();
+    return false;
+  }
   return credentialIsValid()
     && rulePacksAreValid({report: true})
     && searchSelectionIsValid({report: true});
@@ -2017,6 +2133,7 @@ async function startScan() {
 
 async function cancelScan() {
   cancelScanButton.disabled = true;
+  cancelScanButton.textContent = uiText("Durduruluyor…");
   try {
     const response = await fetch("/scan/cancel", {
       method: "POST",
@@ -2025,11 +2142,11 @@ async function cancelScan() {
       headers: mutationHeaders(),
       body: "{}",
     });
-    if (response.ok) {
-      // The main progress panel reflects the cancelling state via SSE.
-    }
+    const payload = await response.json();
+    if (response.ok) setScanState(payload);
   } catch (_error) {
     showErrors([{value: uiText("İptal"), reason: uiText("Yerel panel yanıt vermedi.")}]);
+    cancelScanButton.textContent = uiText("Taramayı durdur");
   }
 }
 
@@ -2094,6 +2211,10 @@ function setScanState(state) {
   const active = ["running", "cancelling"].includes(status);
   startScanButton.disabled = active;
   cancelScanButton.disabled = !active || status === "cancelling";
+  cancelScanButton.textContent = status === "cancelling"
+    ? uiText("Durduruluyor…")
+    : uiText("Taramayı durdur");
+  if (terminal) flushLiveRenders();
 }
 
 function terminalFailureMessage(state) {
@@ -2237,9 +2358,11 @@ for (const tab of resultTabs) {
 
 toggleTermGenerator.addEventListener("click", openTermGeneratorDialog);
 openDefaultTermsButton.addEventListener("click", () => {
+  defaultTermsProfile.value = scanProfileInput.value;
   defaultTermsDialog.showModal();
   refreshDefaultTerms();
 });
+defaultTermsProfile.addEventListener("change", refreshDefaultTerms);
 closeDefaultTermsButton.addEventListener("click", () => defaultTermsDialog.close());
 defaultTermsDialog.addEventListener("click", (event) => {
   if (event.target === defaultTermsDialog) defaultTermsDialog.close();
@@ -2268,10 +2391,6 @@ additionalTermsInput.addEventListener("input", () => {
   searchSelectionIsValid();
 });
 additionalTermsFile.addEventListener("change", importAdditionalTerms);
-for (const input of patternRulePackInputs) {
-  input.addEventListener("change", syncRulePackControls);
-}
-
 startScanButton.addEventListener("click", startScan);
 cancelScanButton.addEventListener("click", cancelScan);
 credentialKind.addEventListener("change", syncCredentialControls);

@@ -150,6 +150,15 @@ function authModeLabel(mode) {
   return labels[mode] ? uiText(labels[mode]) : displayValue(mode);
 }
 
+function scanProfileLabel(profile) {
+  const labels = {
+    basic: "Temel — temel kimlik bilgileri",
+    balanced: "Orta — genişletilmiş servisler",
+    thorough: "Fazla — tam liste",
+  };
+  return labels[profile] ? uiText(labels[profile]) : displayValue(profile);
+}
+
 function retainedHistoryValue(value) {
   return value === null || value === undefined
     ? uiText("Bu kayıtta saklanmadı.")
@@ -258,7 +267,21 @@ function renderHistoryDetail(item) {
       : Array.isArray(search.rule_packs)
         ? search.rule_packs.map(detectionRulePackLabel).join(", ") || "—"
         : uiText("Tümü");
+  const pathPatterns = Array.isArray(search?.file_path_patterns)
+    ? search.file_path_patterns.join(", ") || uiText("Tümü")
+    : uiText("Bu kayıtta saklanmadı.");
+  const extensions = Array.isArray(search?.file_extensions)
+    ? search.file_extensions.join(", ") || uiText("Tümü")
+    : uiText("Bu kayıtta saklanmadı.");
   const searchSection = historyDetailSection("İçerik arama", [
+    ["Terim kapsamı", searchRetained
+      ? scanProfileLabel(search.profile)
+      : uiText("Bu kayıtta saklanmadı.")],
+    ["Dosya adı veya yol kalıbı", pathPatterns, "detail-code"],
+    ["Dosya uzantıları", extensions, "detail-code"],
+    ["En büyük dosya (MiB)", searchRetained
+      ? displayValue(search.max_file_size_mb)
+      : uiText("Bu kayıtta saklanmadı.")],
     ["Varsayılan terimler", !searchRetained
       ? uiText("Bu kayıtta saklanmadı.")
       : uiText(search.use_default ? "Dahil edildi" : "Dahil edilmedi")],

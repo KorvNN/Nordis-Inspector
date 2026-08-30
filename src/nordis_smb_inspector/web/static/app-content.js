@@ -479,7 +479,7 @@ function scheduleContentRefresh() {
   refreshTimer = window.setTimeout(async () => {
     refreshTimer = null;
     await refreshContents();
-  }, 180);
+  }, 1000);
 }
 
 contentFilter.addEventListener("input", scheduleContentRefresh);

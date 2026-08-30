@@ -84,58 +84,74 @@
       </fieldset>
 
       <fieldset class="search-block">
-        <legend class="fieldset-legend">
-          <span>İçerik arama</span>
-          <button id="open-default-terms" class="inline-management-button secondary-button"
-            type="button">Listeyi aç</button>
-        </legend>
-        <label class="option-control" for="use-default-terms">
-          <input id="use-default-terms" type="checkbox" checked>
-          <span>Varsayılan terim listesini kullan</span>
-        </label>
-        <div class="field-heading">
-          <label for="additional-terms">Özel arama terimleri (isteğe bağlı)</label>
+        <legend>İçerik arama</legend>
+        <div class="form-field scan-profile-field">
+          <label for="scan-profile">Terim kapsamı</label>
+          <select id="scan-profile">
+            <option value="basic">Temel — temel kimlik bilgileri</option>
+            <option value="balanced" selected>Orta — genişletilmiş servisler</option>
+            <option value="thorough">Fazla — tam liste</option>
+          </select>
+          <p class="hint">Birbirinden bağımsız üç TXT listesinden birini seçer.</p>
         </div>
-        <textarea id="additional-terms" rows="3" spellcheck="false"></textarea>
-        <div class="additional-terms-actions">
-          <label class="file-import-button" for="additional-terms-file">TXT içe aktar</label>
-          <button id="toggle-term-generator" class="secondary-button" type="button"
-            aria-expanded="false" aria-controls="term-generator">Terim üret</button>
+        <div class="search-toggle-list">
+          <div class="search-source-row">
+            <label class="option-control search-source-toggle" for="use-default-terms">
+              <input id="use-default-terms" type="checkbox" checked>
+              <span>
+                <strong>Varsayılan TXT terim listesi</strong>
+                <small>Seçilen TXT listesindeki kelime ve ifadeleri ara</small>
+              </span>
+            </label>
+            <button id="open-default-terms" class="inline-management-button secondary-button"
+              type="button">Listeyi aç</button>
+          </div>
+          <label class="option-control search-source-row search-source-toggle"
+            for="detect-patterns">
+            <input id="detect-patterns" type="checkbox" checked>
+            <span>
+              <strong>Kurallar İle Otomatik İçerik Tespiti</strong>
+              <small>Gizli değer ve kimlik kalıpları</small>
+            </span>
+          </label>
         </div>
-        <input id="additional-terms-file" class="visually-hidden" type="file"
-          accept=".txt,text/plain">
-        <span id="additional-terms-status" class="additional-terms-status summary"
-          aria-live="polite"></span>
-        <label class="option-control" for="detect-patterns">
-          <input id="detect-patterns" type="checkbox" checked>
-          <span>Otomatik Kural Tespiti</span>
-        </label>
-        <details id="rule-pack-selector" class="rule-pack-selector">
+        <details class="rule-pack-selector file-scan-filter">
           <summary>
-            <span>Tespit kuralı paketleri</span>
-            <span id="rule-pack-count" class="summary">5/5</span>
+            <span>Yalnız belirli dosyaları tara</span>
+            <span class="summary">İsteğe bağlı</span>
           </summary>
-          <div class="rule-pack-options">
-            <label class="option-control rule-pack-option">
-              <input type="checkbox" value="general_secrets" data-rule-pack checked>
-              <span>Genel kimlik bilgileri ve gizli değerler</span>
+          <div class="file-filter-fields">
+            <label for="file-path-patterns">Dosya adı veya yol kalıbı</label>
+            <textarea id="file-path-patterns" rows="2" spellcheck="false"></textarea>
+            <p class="hint">Örnek: *.xlsx, Muhasebe\*, *password*. Boşsa tüm yollar kapsanır.</p>
+            <label for="file-extensions">Dosya uzantıları</label>
+            <input id="file-extensions" type="text" spellcheck="false">
+            <p class="hint">Örnek: .xlsx, .docx, .txt. Boşsa tüm uzantılar kapsanır.</p>
+            <label for="max-file-size-mb">En büyük dosya (MiB)</label>
+            <input id="max-file-size-mb" type="number" min="1" max="1024" step="1">
+            <p class="hint">Boşsa 32 MiB güvenlik sınırı kullanılır.</p>
+            <p class="hint">Share başına en fazla 2.500 eşleşen dosya taranır.</p>
+          </div>
+        </details>
+        <details id="custom-terms-selector" class="rule-pack-selector custom-terms-selector">
+          <summary>
+            <span>Özel arama terimleri</span>
+            <span class="summary">İsteğe bağlı</span>
+          </summary>
+          <div class="custom-term-fields">
+            <label class="visually-hidden" for="additional-terms">
+              Özel arama terimleri (isteğe bağlı)
             </label>
-            <label class="option-control rule-pack-option">
-              <input type="checkbox" value="windows_ad" data-rule-pack checked>
-              <span>Windows ve Active Directory verileri</span>
-            </label>
-            <label class="option-control rule-pack-option">
-              <input type="checkbox" value="password_hashes" data-rule-pack checked>
-              <span>Parola ve kimlik doğrulama hash'leri</span>
-            </label>
-            <label class="option-control rule-pack-option">
-              <input type="checkbox" value="cloud_services" data-rule-pack checked>
-              <span>Bulut, SaaS ve kaynak kod servisleri</span>
-            </label>
-            <label class="option-control rule-pack-option">
-              <input type="checkbox" value="infrastructure" data-rule-pack checked>
-              <span>Altyapı, konteyner ve geliştirici araçları</span>
-            </label>
+            <textarea id="additional-terms" rows="3" spellcheck="false"></textarea>
+            <div class="additional-terms-actions">
+              <label class="file-import-button" for="additional-terms-file">TXT içe aktar</label>
+              <button id="toggle-term-generator" class="secondary-button" type="button"
+                aria-expanded="false" aria-controls="term-generator">Terim üret</button>
+            </div>
+            <input id="additional-terms-file" class="visually-hidden" type="file"
+              accept=".txt,text/plain">
+            <span id="additional-terms-status" class="additional-terms-status summary"
+              aria-live="polite"></span>
           </div>
         </details>
       </fieldset>
@@ -154,8 +170,9 @@
 
       <div class="actions">
         <button id="start-scan-button" type="button">Taramayı başlat</button>
-        <button id="cancel-scan-button" class="secondary-button" type="button" disabled>
-          İptal et
+        <button id="cancel-scan-button" class="secondary-button cancel-button" type="button"
+          disabled>
+          Taramayı durdur
         </button>
       </div>
       <div id="preview-errors" class="error-list" hidden></div>
@@ -512,6 +529,14 @@
         aria-label="Kapat">×</button>
     </div>
     <div class="wordlist-editor">
+      <div class="wordlist-profile-field">
+        <label for="default-terms-profile">Düzenlenecek liste</label>
+        <select id="default-terms-profile">
+          <option value="basic">Temel</option>
+          <option value="balanced">Orta</option>
+          <option value="thorough">Fazla</option>
+        </select>
+      </div>
       <div class="wordlist-editor-heading">
         <label for="default-terms-editor">İçerik arama terimleri</label>
         <span id="default-terms-count" class="summary">— kayıt</span>
