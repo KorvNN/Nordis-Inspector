@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import PureWindowsPath
 from threading import RLock, Thread
+from time import monotonic
 from typing import Any, Protocol
 from urllib.parse import quote
 
@@ -70,6 +71,7 @@ from nordis_smb_inspector.core.targets import (
 )
 from nordis_smb_inspector.core.wordlist_store import (
     WordlistDocument,
+    WordlistKind,
     WordlistStore,
     WordlistStoreError,
 )
@@ -459,6 +461,7 @@ def create_app(
         Route("/contents/{content_id}/download", content_download, methods=["GET"]),
         Route("/wordlists", wordlist_snapshot, methods=["GET"]),
         Route("/wordlists/content", wordlist_save, methods=["PUT"]),
+        Route("/wordlists/{profile}", wordlist_save, methods=["PUT"]),
         Route("/favicon.ico", favicon, methods=["GET"]),
         Route("/static/{asset_name}", static_asset, methods=["GET"]),
     ]
@@ -505,10 +508,15 @@ async def finding_results(request: Request) -> JSONResponse:
 
 async def wordlist_snapshot(request: Request) -> JSONResponse:
     try:
-        document = _runtime(request).wordlists.read()
+        documents = _runtime(request).wordlists.read_all()
     except WordlistStoreError as exc:
         raise SafeHttpError(HttpErrorCode.INTERNAL_ERROR) from exc
-    return JSONResponse({"content": _wordlist_document_payload(document)})
+    payload = {
+        document.kind.value: _wordlist_document_payload(document)
+        for document in documents
+    }
+    payload["content"] = payload[WordlistKind.THOROUGH.value]
+    return JSONResponse(payload)
 
 
 async def wordlist_save(request: Request) -> JSONResponse:
@@ -518,13 +526,26 @@ async def wordlist_save(request: Request) -> JSONResponse:
     text = body.get("text")
     if not isinstance(text, str):
         raise SafeHttpError(HttpErrorCode.BAD_REQUEST)
+    raw_profile = request.path_params.get("profile", "content")
+    if raw_profile == "content":
+        kind = WordlistKind.THOROUGH
+    else:
+        try:
+            kind = WordlistKind(raw_profile)
+        except ValueError:
+            raise SafeHttpError(HttpErrorCode.NOT_FOUND) from None
     try:
-        document = runtime.wordlists.save(text)
+        document = runtime.wordlists.save(text, kind)
     except WordlistStoreError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
-    return JSONResponse(
-        {"ok": True, "content": _wordlist_document_payload(document)}
-    )
+    document_payload = _wordlist_document_payload(document)
+    payload: dict[str, object] = {
+        "ok": True,
+        document.kind.value: document_payload,
+    }
+    if raw_profile == "content":
+        payload["content"] = document_payload
+    return JSONResponse(payload)
 
 
 async def content_results(request: Request) -> JSONResponse:
@@ -706,7 +727,7 @@ async def scan_start(request: Request) -> JSONResponse:
         options = parse_scan_options(
             body.get("search"),
             _DEFAULT_MAX_DEPTH,
-            content_wordlist_path=runtime.wordlists.content_path,
+            content_wordlist_paths=runtime.wordlists.content_paths,
         )
     except ScanConfigError as exc:
         return JSONResponse(
@@ -875,10 +896,31 @@ def _run_access_scan(
     pipeline_failed = False
     cancellation = _CancellationBridge(handle.cancellation)
     candidate_lock = RLock()
+    live_event_lock = RLock()
+    last_snapshot_at = 0.0
+    last_file_event_at: dict[str, float] = {}
     directory_candidates: dict[str, _DirectoryCandidate] = {}
     executor = AccessPipelineExecutor(
         AccessPipelineSettings(max_concurrency=_MAX_TARGET_WORKERS)
     )
+
+    def publish_snapshot(*, force: bool = False) -> None:
+        nonlocal last_snapshot_at
+        now = monotonic()
+        with live_event_lock:
+            if not force and now - last_snapshot_at < 0.25:
+                return
+            last_snapshot_at = now
+        runtime.events.publish("snapshot", _snapshot_payload(runtime))
+
+    def allow_file_event(address: str) -> bool:
+        now = monotonic()
+        with live_event_lock:
+            previous = last_file_event_at.get(address, 0.0)
+            if now - previous < 0.25:
+                return False
+            last_file_event_at[address] = now
+            return True
 
     def remember_directory_candidate(
         entry: InventoryEntry,
@@ -918,6 +960,11 @@ def _run_access_scan(
                 kerberos_hostname = None
 
         def publish_target_event(event: InspectionTargetEvent) -> None:
+            if (
+                event.kind is InspectionEventKind.SCANNING_FILE
+                and not allow_file_event(address)
+            ):
+                return
             message = _inspection_progress_message(
                 address,
                 credential.domain,
@@ -932,7 +979,7 @@ def _run_access_scan(
                     overall_is_estimate=phase_total is None,
                     message=message,
                 )
-                runtime.events.publish("snapshot", _snapshot_payload(runtime))
+                publish_snapshot()
             payload = _inspection_event_payload(
                 target,
                 event,
@@ -962,7 +1009,6 @@ def _run_access_scan(
                 payload,
             )
             runtime.events.publish("inventory.added", payload)
-            runtime.events.publish("snapshot", _snapshot_payload(runtime))
 
         def publish_finding(finding: ContentFinding) -> None:
             content_id = runtime.contents.flag_smb(
@@ -989,7 +1035,6 @@ def _run_access_scan(
             )
             runtime.sessions.add_finding(handle.token, payload)
             runtime.events.publish("finding.added", payload)
-            runtime.events.publish("snapshot", _snapshot_payload(runtime))
 
         return runtime.access_inspector(
             target=address,
@@ -1013,6 +1058,7 @@ def _run_access_scan(
                 options.detect_patterns
                 and DetectionRulePack.GENERAL_SECRETS in options.rule_packs
             ),
+            file_filter=options.file_filter,
             test_write_access=test_smb_write_access,
             on_target=publish_target_event,
             on_inventory=publish_inventory,
@@ -1063,7 +1109,7 @@ def _run_access_scan(
                 overall_is_estimate=phase_total is None,
                 message=f"{completed} hedefte SMB erişimi kontrol edildi.",
             )
-            runtime.events.publish("snapshot", _snapshot_payload(runtime))
+            publish_snapshot(force=True)
 
         state = runtime.sessions.snapshot
         if state.active:
@@ -1104,7 +1150,7 @@ def _run_access_scan(
                 "SMB taraması tamamlanamadığı için kimlik erişimi incelenmedi.",
             )
         _ensure_terminal_error(runtime, handle)
-        runtime.events.publish("snapshot", _snapshot_payload(runtime))
+        publish_snapshot(force=True)
 
 
 def _run_identity_access_stage(
@@ -1489,6 +1535,9 @@ def _finding_payload(
         "confidence": (
             finding.confidence.value if finding.confidence is not None else None
         ),
+        "match_spans": [
+            {"start": span.start, "end": span.end} for span in finding.match_spans
+        ],
     }
 
 
@@ -1536,6 +1585,11 @@ def _directory_finding_payload(
         "rule_id": signal.rule_id,
         "category": signal.category,
         "confidence": signal.confidence,
+        "match_spans": (
+            [{"start": signal.match_start, "end": signal.match_end}]
+            if signal.match_start is not None and signal.match_end is not None
+            else []
+        ),
         "distinguished_name": entry.distinguished_name,
         "subject": entry.subject,
         "subject_type": entry.subject_type,
@@ -1662,6 +1716,14 @@ def _public_scan_inputs(
             "additional_terms_input": "\n".join(options.additional_terms),
             "detect_patterns": options.detect_patterns,
             "rule_packs": [pack.value for pack in options.rule_packs],
+            "profile": options.profile.value,
+            "file_path_patterns": list(options.file_filter.path_patterns),
+            "file_extensions": list(options.file_filter.extensions),
+            "max_file_size_mb": (
+                options.file_filter.max_file_size_bytes // (1024 * 1024)
+                if options.file_filter.max_file_size_bytes is not None
+                else None
+            ),
         },
     }
 
