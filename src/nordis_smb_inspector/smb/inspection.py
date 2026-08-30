@@ -47,6 +47,7 @@ from nordis_smb_inspector.core.documents import (
     iter_archive_members,
     iter_document_lines,
 )
+from nordis_smb_inspector.core.scan_config import FileScanFilter
 
 from .cancellation import CancellationToken, ScanCancelled
 from .contracts import (
@@ -389,6 +390,7 @@ def inspect_target(
     detect_credential_artifacts: bool = True,
     detect_filename_artifacts: bool = True,
     test_write_access: bool = False,
+    file_filter: FileScanFilter | None = None,
     on_target: TargetCallback | None = None,
     on_inventory: InventoryCallback | None = None,
     on_finding: FindingCallback | None = None,
@@ -419,6 +421,9 @@ def inspect_target(
         raise TypeError("detect_filename_artifacts must be a boolean.")
     if not isinstance(test_write_access, bool):
         raise TypeError("test_write_access must be a boolean.")
+    if file_filter is not None and not isinstance(file_filter, FileScanFilter):
+        raise TypeError("file_filter must be a FileScanFilter value.")
+    selected_file_filter = file_filter or FileScanFilter()
     normalized_terms = _normalize_search_terms(search_terms)
 
     connections: list[ConnectionHandle] = []
@@ -579,6 +584,7 @@ def inspect_target(
                     pattern_rules=selected_pattern_rules,
                     detect_credential_artifacts=detect_credential_artifacts,
                     detect_filename_artifacts=detect_filename_artifacts,
+                    file_filter=selected_file_filter,
                     max_depth=max_depth,
                     file_adapter=file_adapter,
                     cancellation=cancellation,
@@ -779,6 +785,7 @@ def _walk_share(
     pattern_rules: tuple[DetectionRule, ...],
     detect_credential_artifacts: bool,
     detect_filename_artifacts: bool,
+    file_filter: FileScanFilter,
     max_depth: int,
     file_adapter: FileAdapter,
     cancellation: CancellationToken,
@@ -792,6 +799,7 @@ def _walk_share(
     """Stream one connected disk share; return whether access was partial."""
 
     partial = False
+    selected_files = 0
     _publish(
         on_target,
         InspectionTargetEvent(
@@ -815,9 +823,9 @@ def _walk_share(
                 partial = True
                 _publish(on_target, _stage_error(target, TargetStage.TREE_WALK))
                 continue
-            counts.inventory_items += 1
-            _publish(on_inventory, entry)
             if entry.kind is not InventoryEntryKind.FILE:
+                counts.inventory_items += 1
+                _publish(on_inventory, entry)
                 if entry.status in {
                     InventoryStatus.DIRECTORY_LIST_DENIED,
                     InventoryStatus.DIRECTORY_LIST_ERROR,
@@ -826,6 +834,18 @@ def _walk_share(
                     partial = True
                 continue
             counts.files_seen += 1
+            inside_file_limit = (
+                file_filter.max_files_per_share is None
+                or selected_files < file_filter.max_files_per_share
+            )
+            if not inside_file_limit or not file_filter.matches(
+                entry.relative_path,
+                entry.size,
+            ):
+                continue
+            selected_files += 1
+            counts.inventory_items += 1
+            _publish(on_inventory, entry)
             if detect_patterns and detect_filename_artifacts:
                 filename_match = detect_credential_artifact_name(entry.relative_path)
                 if filename_match is not None:
