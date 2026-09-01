@@ -51,6 +51,16 @@ const STATUS_LABELS = {
   unknown: "Bilinmiyor",
   error: "Hata",
   cleanup_failed: "Temizleme başarısız",
+  // TargetStage degerleri: canli olayda status bos oldugunda last_status
+  // alanina asama dusuyor (web/app.py: _inspection_event_payload).
+  network: "Ağ katmanı",
+  negotiation: "SMB görüşmesi",
+  authentication: "Kimlik doğrulama",
+  authorization: "Yetkilendirme",
+  share_enumeration: "Share keşfi",
+  tree_walk: "Dizin gezintisi",
+  file_read: "Dosya okuma",
+  complete: "Tamamlandı",
 };
 const FINDING_METHOD_LABELS = {
   wordlist: "Arama terimi",
@@ -337,6 +347,10 @@ const EN_STATUS_LABELS = {
   entry_error: "Invalid directory entry", depth_limit_reached: "Depth limit reached",
   file_readable: "File readable", file_read_denied: "File read denied",
   sharing_violation: "Sharing violation", read_error: "Read error",
+  network: "Network", negotiation: "SMB negotiation",
+  authentication: "Authentication", authorization: "Authorization",
+  share_enumeration: "Share discovery", tree_walk: "Directory walk",
+  file_read: "File read", complete: "Completed",
 };
 const EN_CATEGORY_LABELS = {
   "Cloud / SaaS": "Cloud / SaaS", "Oturum tokenı": "Session token",
