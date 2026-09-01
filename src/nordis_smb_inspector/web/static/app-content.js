@@ -110,8 +110,15 @@ function contentLocation(record) {
   return `\\\\${displayValue(record.target)}\\${displayValue(record.share)}\\${displayValue(record.path)}`;
 }
 
+// Kayit degismez; arama metnini her filtrelemede yeniden kurmak yerine
+// kayit nesnesine bagli olarak sakla. Kayit degistirildiginde yeni nesne
+// olusuyor, eskisi WeakMap ile birlikte toplaniyor.
+const searchTextCache = new WeakMap();
+
 function contentSearchText(record) {
-  return [
+  const cached = searchTextCache.get(record);
+  if (cached !== undefined) return cached;
+  const text = [
     record.source,
     record.title,
     record.target,
@@ -124,6 +131,8 @@ function contentSearchText(record) {
     attributeLabel(record.attribute),
     ...record.signals.flatMap((signal) => [signal.title, signal.category, signal.rule_id]),
   ].map(displayValue).join(" ").toLocaleLowerCase(currentLanguage === "en" ? "en-US" : "tr-TR");
+  searchTextCache.set(record, text);
+  return text;
 }
 
 function tableLocation(record) {
