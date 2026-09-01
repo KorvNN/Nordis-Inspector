@@ -205,35 +205,85 @@ function renderSelectionDetail(container, title, fields) {
   container.replaceChildren(heading, list);
 }
 
-function appendHighlightedText(container, value, term) {
+function literalMatchSpans(value, term) {
   const text = displayValue(value);
   const needle = term === null || term === undefined ? "" : String(term).trim();
-  if (needle === "") {
-    container.textContent = text;
-    return;
-  }
+  if (needle === "") return [];
 
   const searchableText = text.toLocaleLowerCase("tr-TR");
   const searchableNeedle = needle.toLocaleLowerCase("tr-TR");
+  const spans = [];
   let cursor = 0;
   let matchIndex = searchableText.indexOf(searchableNeedle);
-  if (matchIndex === -1) {
-    container.textContent = text;
-    return;
-  }
-
   while (matchIndex !== -1) {
-    container.append(document.createTextNode(text.slice(cursor, matchIndex)));
-    const highlight = document.createElement("mark");
-    highlight.textContent = text.slice(matchIndex, matchIndex + needle.length);
-    container.append(highlight);
+    spans.push({start: matchIndex, end: matchIndex + needle.length});
     cursor = matchIndex + needle.length;
     matchIndex = searchableText.indexOf(searchableNeedle, cursor);
+  }
+  return spans;
+}
+
+function normalizedMatchSpans(value, rawSpans) {
+  const text = displayValue(value);
+  if (!Array.isArray(rawSpans)) return [];
+  const spans = rawSpans
+    .map((span) => {
+      if (Array.isArray(span)) return {start: span[0], end: span[1]};
+      return span && typeof span === "object"
+        ? {start: span.start, end: span.end}
+        : null;
+    })
+    .filter((span) => (
+      span !== null
+      && Number.isInteger(span.start)
+      && Number.isInteger(span.end)
+      && span.start >= 0
+      && span.end > span.start
+      && span.end <= text.length
+    ))
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+
+  const merged = [];
+  for (const span of spans) {
+    const previous = merged.at(-1);
+    if (previous && span.start <= previous.end) {
+      previous.end = Math.max(previous.end, span.end);
+    } else {
+      merged.push({...span});
+    }
+  }
+  return merged;
+}
+
+function appendHighlightedRanges(container, value, spans) {
+  const text = displayValue(value);
+  let cursor = 0;
+  for (const span of normalizedMatchSpans(text, spans)) {
+    container.append(document.createTextNode(text.slice(cursor, span.start)));
+    const highlight = document.createElement("mark");
+    highlight.textContent = text.slice(span.start, span.end);
+    container.append(highlight);
+    cursor = span.end;
   }
   container.append(document.createTextNode(text.slice(cursor)));
 }
 
-function bindSelectableRow(row, {selected, select}) {
+// Secim degistiginde tabloyu bastan kurmak yerine yalnizca satir siniflarini
+// guncelle. Envanter binlerce satira ciktiginda tam yeniden insa gorunur bir
+// takilma yaratiyor; secim tek satirlik bir degisiklik.
+function applyRowSelection(root, selectedKey) {
+  const wanted = selectedKey === null || selectedKey === undefined
+    ? null
+    : String(selectedKey);
+  for (const row of root.querySelectorAll("tr[data-row-key]")) {
+    const selected = row.dataset.rowKey === wanted;
+    row.classList.toggle("is-selected", selected);
+    row.setAttribute("aria-selected", String(selected));
+  }
+}
+
+function bindSelectableRow(row, {key, selected, select}) {
+  if (key !== undefined && key !== null) row.dataset.rowKey = String(key);
   row.tabIndex = 0;
   row.classList.toggle("is-selected", selected);
   row.setAttribute("aria-selected", String(selected));
@@ -588,10 +638,12 @@ function renderTargetRows(emptyMessage = "Henüz tarama başlatılmadı.") {
     ));
     row.append(textCell(record.lastStatus, `status-value ${statusTone(record.lastStatus)}`));
     bindSelectableRow(row, {
+      key: record.ip,
       selected: selectedTargetKey === record.ip,
       select: () => {
+        if (selectedTargetKey === record.ip) return;
         selectedTargetKey = record.ip;
-        renderTargetRows(emptyMessage);
+        applyRowSelection(targetStatusBody, record.ip);
         renderTargetDetail(record);
       },
     });
@@ -1110,10 +1162,12 @@ function inventoryTable(kinds) {
       row.append(textCell(record.path || record.share, "path-value"));
       row.append(inventoryStatusActionCell(record));
       bindSelectableRow(row, {
+        key,
         selected: selectedInventoryKey === key,
         select: () => {
+          if (selectedInventoryKey === key) return;
           selectedInventoryKey = key;
-          renderInventory();
+          applyRowSelection(inventoryGroups, key);
           renderInventoryDetail(record);
         },
       });
@@ -1194,9 +1248,7 @@ function renderInventory() {
       if (shareItem) {
         shareSummary.addEventListener("click", () => {
           selectedInventoryKey = shareItem[0];
-          for (const row of inventoryGroups.querySelectorAll("tr.is-selected")) {
-            row.classList.remove("is-selected");
-          }
+          applyRowSelection(inventoryGroups, shareItem[0]);
           renderInventoryDetail(shareItem[1]);
         });
       }

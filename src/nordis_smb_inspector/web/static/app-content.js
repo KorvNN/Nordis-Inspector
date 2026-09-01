@@ -245,12 +245,27 @@ function textCell(value, className = "") {
   return cell;
 }
 
+// Secim degisince tabloyu bastan kurmak yerine yalnizca satir sinifllarini
+// guncelle: liste binlerce kayda ciktiginda replaceChildren gorunur bir
+// takilma yaratiyor.
+function applySelectionHighlight() {
+  for (const row of contentTableBody.rows) {
+    const id = row.dataset.contentId;
+    if (!id) continue;
+    const selected = id === selectedContentId;
+    row.classList.toggle("is-selected", selected);
+    row.setAttribute("aria-selected", String(selected));
+  }
+}
+
 function bindRow(row, record) {
   const select = () => {
+    if (selectedContentId === record.id) return;
     selectedContentId = record.id;
-    renderContents();
+    applySelectionHighlight();
     renderContentDetail(record);
   };
+  row.dataset.contentId = record.id;
   row.tabIndex = 0;
   row.classList.toggle("is-selected", selectedContentId === record.id);
   row.setAttribute("aria-selected", String(selectedContentId === record.id));
