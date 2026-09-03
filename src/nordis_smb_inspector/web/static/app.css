@@ -22,11 +22,17 @@
   --finding: #e0b85e;
   --finding-dark: #2b2415;
   --finding-line: #5f4f2a;
-  --warning: #e0b85e;
-  --warning-dark: #312a19;
+  --warning: #e8955c;
   --danger: #e77880;
   --danger-dark: #321c20;
   --danger-solid: #a9424d;
+  --source-smb: #7aa2f7;
+  --source-ldap: #82e7c3;
+  --working: #7aa2f7;
+  --working-dark: #16203a;
+  --method-wordlist: #82e7c3;
+  --method-pattern: #7aa2f7;
+  --method-artifact: #cf8ad0;
   --radius-xs: 5px;
   --radius-sm: 7px;
   --radius-md: 10px;
@@ -161,7 +167,7 @@ h2 { margin-bottom: 6px; font-size: 1.08rem; }
   text-transform: uppercase;
 }
 .state.idle { color: var(--muted); background: var(--surface-raised); }
-.state.working { color: var(--warning); background: var(--warning-dark); }
+.state.working { color: var(--working); background: var(--working-dark); }
 .state.ready { color: var(--accent); background: var(--accent-dark); }
 .state.error { color: var(--danger); background: var(--danger-dark); }
 
@@ -633,6 +639,14 @@ button:disabled { opacity: .5; cursor: wait; filter: none; }
   margin-left: 24px;
   border-left: 1px solid var(--line-strong);
 }
+/* Dikey hat grup basligiyla ayni kaynak rengini tasisin; yapisal bir
+   cizgi oldugu icin tam doygunluk yerine karisim. */
+.finding-source-group.is-smb > .group-table-frame {
+  border-left-color: color-mix(in srgb, var(--source-smb) 55%, var(--line-strong));
+}
+.finding-source-group.is-ldap > .group-table-frame {
+  border-left-color: color-mix(in srgb, var(--source-ldap) 55%, var(--line-strong));
+}
 .result-group-status { margin-left: auto; }
 .history-item {
   display: grid;
@@ -782,15 +796,22 @@ tbody tr.is-selected {
   background: var(--surface-selected);
   box-shadow: inset 3px 0 var(--accent);
 }
+/* Satirin vurgusu yontem etiketinin rengini izler: etiket sinifi satira da
+   veriliyor. --row-accent tanimsizsa bulgu altinina duser. */
+.findings-table tbody tr.is-method-wordlist { --row-accent: var(--method-wordlist); }
+.findings-table tbody tr.is-method-pattern { --row-accent: var(--method-pattern); }
+.findings-table tbody tr.is-method-artifact { --row-accent: var(--method-artifact); }
 .findings-table tbody tr:not(.table-empty-row):hover {
-  background: color-mix(in srgb, var(--finding) 7%, var(--surface));
+  background: color-mix(in srgb, var(--row-accent, var(--finding)) 7%, var(--surface));
 }
 .findings-table tbody tr.is-selected {
-  background: color-mix(in srgb, var(--finding) 10%, var(--surface));
-  box-shadow: inset 3px 0 var(--finding);
+  background: color-mix(in srgb, var(--row-accent, var(--finding)) 12%, var(--surface));
+  box-shadow: inset 3px 0 var(--row-accent, var(--finding));
 }
 tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.findings-table tbody tr:focus-visible { outline-color: var(--finding); }
+.findings-table tbody tr:focus-visible {
+  outline-color: var(--row-accent, var(--finding));
+}
 tbody tr:last-child td { border-bottom: 0; }
 .target-status-table th:nth-child(1) { width: 18%; }
 .target-status-table th:nth-child(2) { width: 18%; }
@@ -822,15 +843,28 @@ tbody tr:last-child td { border-bottom: 0; }
 .findings-table th:nth-child(2) { width: 36%; }
 .findings-table th:nth-child(3) { width: 16%; }
 .findings-table th:nth-child(4) { width: 25%; }
-.finding-source-group.is-ldap > summary .result-group-target { color: var(--info); }
+.finding-source-group.is-smb > summary .result-group-target { color: var(--source-smb); }
+.finding-source-group.is-ldap > summary .result-group-target { color: var(--source-ldap); }
 .content-table th:nth-child(1) { width: 10%; }
 .content-table th:nth-child(2) { width: 24%; }
 .content-table th:nth-child(3) { width: 42%; }
 .content-table th:nth-child(4) { width: 12%; }
 .content-table th:nth-child(5) { width: 12%; }
 .content-source-value {
-  color: var(--accent);
+  color: var(--muted);
   font-weight: 800;
+}
+.content-source-value.is-smb { color: var(--source-smb); }
+.content-source-value.is-ldap { color: var(--source-ldap); }
+/* Secili satirin zemini ve sol cubugu da kaynak rengini izler. */
+.content-table tbody tr.is-smb { --row-accent: var(--source-smb); }
+.content-table tbody tr.is-ldap { --row-accent: var(--source-ldap); }
+.content-table tbody tr:not(.table-empty-row):hover {
+  background: color-mix(in srgb, var(--row-accent, var(--accent)) 7%, var(--surface));
+}
+.content-table tbody tr.is-selected {
+  background: color-mix(in srgb, var(--row-accent, var(--accent)) 12%, var(--surface));
+  box-shadow: inset 3px 0 var(--row-accent, var(--accent));
 }
 .content-title-value,
 .content-location-value {
@@ -1018,14 +1052,29 @@ tbody tr:last-child td { border-bottom: 0; }
   background: var(--accent-dark);
 }
 .status-value.is-working {
-  border-color: color-mix(in srgb, var(--warning) 24%, var(--line));
-  color: var(--warning);
-  background: var(--warning-dark);
+  border-color: color-mix(in srgb, var(--working) 24%, var(--line));
+  color: var(--working);
+  background: var(--working-dark);
 }
 .status-value.is-error {
   border-color: color-mix(in srgb, var(--danger) 26%, var(--line));
   color: var(--danger);
   background: var(--danger-dark);
+}
+
+/* Tespit yontemi: kategorik ve kisik. Zemin notr kalir, ayrim yalniz
+   sol kenarlik ve metin tonundan gelir; boylece guven ekseniyle yarismaz. */
+.status-value.is-method-wordlist {
+  border-left: 2px solid var(--method-wordlist);
+  color: var(--method-wordlist);
+}
+.status-value.is-method-pattern {
+  border-left: 2px solid var(--method-pattern);
+  color: var(--method-pattern);
+}
+.status-value.is-method-artifact {
+  border-left: 2px solid var(--method-artifact);
+  color: var(--method-artifact);
 }
 
 .selection-detail {

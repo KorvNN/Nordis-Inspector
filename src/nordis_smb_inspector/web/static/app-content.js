@@ -297,7 +297,12 @@ function renderContents() {
   contentTableBody.replaceChildren();
   for (const record of records) {
     const row = document.createElement("tr");
-    row.append(textCell(sourceLabel(record.source), "content-source-value"));
+    // Satirin vurgu rengi kaynagi izlesin (--row-accent).
+    row.className = `is-${record.source}`;
+    row.append(textCell(
+      sourceLabel(record.source),
+      `content-source-value is-${record.source}`,
+    ));
     row.append(textCell(record.title, "content-title-value"));
     row.append(textCell(tableLocation(record), "content-location-value"));
     row.append(textCell(formatSize(record.size)));

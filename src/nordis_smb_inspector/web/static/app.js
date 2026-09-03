@@ -489,6 +489,16 @@ function statusTone(value) {
   return "";
 }
 
+// Tespit yontemi kategorik bir eksen: ayirt edilebilir ama guven eksenini
+// bastirmayacak kadar kisik.
+function methodTone(value) {
+  const method = normalizedStatus(value);
+  if (method === "WORDLIST") return "is-method-wordlist";
+  if (method === "PATTERN") return "is-method-pattern";
+  if (method === "ARTIFACT") return "is-method-artifact";
+  return "";
+}
+
 function targetRecord(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const candidate = payload.target && typeof payload.target === "object"
@@ -1344,18 +1354,23 @@ function renderFindings() {
         headings: ["Dosya / Nesne", "Konum / Alan", "Yöntem", "Bulgu"],
         rowForRecord: ([key, record]) => {
           const row = document.createElement("tr");
+          // Satirin vurgu rengi yontem etiketiyle ayni olsun (--row-accent).
+          const tone = methodTone(record.method);
+          if (tone) row.classList.add(tone);
           row.append(textCell(record.title, "path-value"));
           row.append(textCell(findingLocation(record), "path-value"));
           row.append(textCell(
             findingLabel(record.method, FINDING_METHOD_LABELS),
-            `status-value ${statusTone(record.method)}`,
+            `status-value ${methodTone(record.method)}`,
           ));
           row.append(textCell(findingSignalValue(record), "finding-term-pill"));
           bindSelectableRow(row, {
+            key,
             selected: selectedFindingKey === key,
             select: () => {
+              if (selectedFindingKey === key) return;
               selectedFindingKey = key;
-              renderFindings();
+              applyRowSelection(findingsGroups, key);
               renderFindingDetail(record);
             },
           });
