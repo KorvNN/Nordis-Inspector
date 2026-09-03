@@ -2,6 +2,7 @@
 
 import {
   clearContents,
+  focusContent,
   refreshContents,
   scheduleContentRefresh,
 } from "./app-content.js";
@@ -334,22 +335,6 @@ function categoryLabel(value) {
   const raw = String(value);
   const labels = currentLanguage === "en" ? EN_CATEGORY_LABELS : TR_CATEGORY_LABELS;
   return labels[raw] ?? raw;
-}
-
-function confidenceLabel(value) {
-  const level = displayValue(value);
-  const explanations = currentLanguage === "en"
-    ? {
-        High: "Strong · A specific credential format was found.",
-        Medium: "Review needed · A general key/value pattern was found.",
-        Low: "Weak · This may be a false positive.",
-      }
-    : {
-        Yüksek: "Güçlü · Belirgin bir kimlik bilgisi biçimi bulundu.",
-        Orta: "İnceleme gerekli · Genel bir anahtar/değer kalıbı bulundu.",
-        Düşük: "Zayıf · Yanlış eşleşme olabilir.",
-      };
-  return explanations[level] ?? level;
 }
 
 function findingAssignmentKey(record) {
@@ -903,7 +888,7 @@ function findingRecord(payload) {
     method: firstValue(candidate, ["method", "detection_method"]),
     ruleId: firstValue(candidate, ["ruleId", "rule_id", "rule"]),
     category: firstValue(candidate, ["category", "rule_category"]),
-    confidence: firstValue(candidate, ["confidence", "confidence_level"]),
+    matchSpans: firstValue(candidate, ["matchSpans", "match_spans"]) ?? [],
   };
 }
 
@@ -994,14 +979,30 @@ function renderFindingDetail(record) {
   }
   metadataFields.push(["Yöntem", findingLabel(record.method, FINDING_METHOD_LABELS)]);
   if (isStructuredFinding(record)) {
-    metadataFields.push(
-      ["Bulgu sınıfı", categoryLabel(record.category)],
-      ["Eşleşme gücü", confidenceLabel(record.confidence)],
-    );
+    metadataFields.push(["Bulgu sınıfı", categoryLabel(record.category)]);
   }
   const metadata = detailList(metadataFields);
   metadata.classList.add("finding-metadata");
-  findingSelectionDetail.replaceChildren(...detailSections, metadata);
+  const detailParts = [...detailSections, metadata];
+  if (record.contentId !== null && record.contentId !== undefined) {
+    const actions = document.createElement("div");
+    actions.className = "finding-actions";
+    const openContent = document.createElement("button");
+    openContent.type = "button";
+    openContent.className = "secondary-button finding-open-content";
+    openContent.textContent = uiText("İçerikler sekmesinde aç");
+    openContent.addEventListener("click", async () => {
+      // Once sekmeyi ac: panel gizliyken scrollIntoView is gormuyor.
+      activateResultTab("content");
+      if (focusContent(record.contentId)) return;
+      // Icerik listesi henuz cekilmemis olabilir.
+      await refreshContents();
+      focusContent(record.contentId);
+    });
+    actions.append(openContent);
+    detailParts.push(actions);
+  }
+  findingSelectionDetail.replaceChildren(...detailParts);
 }
 
 function findingsByTargetAndSource(records) {
@@ -1308,7 +1309,6 @@ function renderFindings() {
       "method",
       "ruleId",
       "category",
-      "confidence",
     ],
   ));
   if (!visibleRecords.some(([key]) => key === selectedFindingKey)) {

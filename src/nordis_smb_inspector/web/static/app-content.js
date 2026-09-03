@@ -519,8 +519,40 @@ for (const button of contentSortButtons) {
 }
 renderContents();
 
+// Bulgu detayindan gelen yonlendirme: kaydi secili satir yapar. Kayit aktif
+// filtrelerin disinda kalmis olabilir; secim sessizce baska bir satira
+// kaymasin diye once filtreleri temizler (renderContents gorunmeyen secimi
+// listenin ilk kaydina dusuruyor).
+function focusContent(contentId) {
+  if (contentId === null || contentId === undefined) return false;
+  const id = String(contentId);
+  const record = contentStore.get(id);
+  if (!record) {
+    // Liste sunucu tarafli aramayla cekilmis olabilir. Cagiran taraf bunun
+    // ardindan refreshContents ile tekrar deniyor; o cekimin filtresiz
+    // olmasi icin kutulari simdiden temizle.
+    contentFilter.value = "";
+    contentSourceFilter.value = "all";
+    contentFlaggedFilter.checked = false;
+    return false;
+  }
+  if (!visibleContents().some((item) => item.id === id)) {
+    contentFilter.value = "";
+    contentSourceFilter.value = "all";
+    contentFlaggedFilter.checked = false;
+  }
+  selectedContentId = id;
+  renderContents();
+  renderContentDetail(record);
+  contentTableBody
+    .querySelector("tr.is-selected")
+    ?.scrollIntoView({block: "nearest"});
+  return true;
+}
+
 export {
   clearContents,
+  focusContent,
   refreshContents,
   scheduleContentRefresh,
 };

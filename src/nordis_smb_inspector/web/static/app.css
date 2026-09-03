@@ -1186,12 +1186,25 @@ tbody tr:last-child td { border-bottom: 0; }
 }
 .finding-context code {
   display: block;
-  max-height: 260px;
-  overflow: auto;
   color: var(--text-soft);
   font: .8rem/1.7 ui-monospace, SFMono-Regular, Consolas, monospace;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+.finding-context-preview { overflow: visible; }
+.finding-actions {
+  display: flex;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.finding-open-content {
+  font-size: .72rem;
+  font-weight: 750;
+}
+.finding-open-content::after {
+  margin-left: 6px;
+  content: "\2192";
 }
 .finding-context mark {
   border-radius: 3px;
