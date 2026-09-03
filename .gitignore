@@ -25,6 +25,7 @@ data/
 reports/
 uploads/
 wordlists/rockyou.txt
+wordlists/rockyou.txt.gz
 
 # Excluded from version control (kept locally)
 tests/
