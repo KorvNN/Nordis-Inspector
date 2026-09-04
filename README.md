@@ -24,9 +24,9 @@ dashboard.
 # Open one of the LAN addresses printed by the command
 ```
 
-`setup.sh` değişmeyen bağımlılıkları sonraki çalıştırmalarda yeniden indirmez ve
-pip önbelleğini `.pip-cache/` altında tutar. Kurulumu bilerek yenilemek için
-`./setup.sh --force` kullanın.
+`setup.sh` does not re-download unchanged dependencies on later runs and keeps
+the pip cache under `.pip-cache/`. Use `./setup.sh --force` to rebuild the
+environment deliberately.
 
 To use another local port:
 
