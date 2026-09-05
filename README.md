@@ -41,7 +41,7 @@ machine:
 ./run.sh --host 127.0.0.1
 ```
 
-The panel uses plain HTTP, so do not expose it to an untrusted network
+The panel uses plain HTTP, so do not expose it to an untrusted network.
 
 ## Safety
 
